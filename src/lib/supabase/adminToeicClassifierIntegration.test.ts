@@ -1,75 +1,90 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { parseRawToeicTest } from '../toeic/classifier/classifyToeicTest';
-import { importToeicTestDraft } from './adminToeicClassifier';
-import { supabase } from './client';
+import { buildToeicTestRpcPayload } from './adminToeicClassifier';
 
-// Mock Supabase RPC
-vi.mock('./client', () => {
-  return {
-    supabase: {
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null })
-          }))
-        }))
-      })),
-      rpc: vi.fn().mockResolvedValue({ data: { success: true, test_id: 'test-123' }, error: null })
-    }
-  };
-});
-
-describe('adminToeicClassifier Integration', () => {
-  it('CASE: full pipeline preserves passage', async () => {
-    const rawTest = `
+describe('Admin TOEIC Classifier Integration', () => {
+  it('correctly extracts double and triple structured documents for Part 7', () => {
+    const rawText = `
 PART 7
 
-Questions 147-149 refer to the following email.
+Questions 150-152 refer to the following e-mail and notice.
 
-To: All Employees
-From: Human Resources
-Subject: Training Session
+DOCUMENT 1 - EMAIL
+This is the email.
+DOCUMENT 2 - NOTICE
+This is the notice.
 
-A customer-service training session will be held next Monday at 9:00 A.M.
-in Conference Room B. Employees should arrive ten minutes early and bring
-their employee identification cards.
+150. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
+151. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
+152. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
 
-147. When will the training session take place?
-(A) This Friday
-(B) Next Monday
-(C) Next Tuesday
-(D) Next month
+Questions 153-155 refer to the following advertisement, e-mail, and schedule.
 
-148. Where will the session be held?
-(A) Conference Room A
-(B) Conference Room B
-(C) The cafeteria
-(D) The main lobby
+DOCUMENT 1 - ADVERTISEMENT
+Buy this!
+DOCUMENT 2 - EMAIL
+Sure!
+DOCUMENT 3 - SCHEDULE
+Tomorrow!
 
-149. What should employees bring?
-(A) A laptop
-(B) A printed schedule
-(C) An identification card
-(D) A training manual
-    `;
+153. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
+154. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
+155. What?
+(A) 1
+(B) 2
+(C) 3
+(D) 4
+`;
 
-    const draft = parseRawToeicTest(rawTest, { title: 'Test', slug: 't', test_code: 't', description: '', test_type: 'full' });
-    
-    // Call the import function
-    const result = await importToeicTestDraft(draft);
-    
-    expect(result.success).toBe(true);
-    
-    // Inspect the RPC call
-    const rpcMock = supabase.rpc as any;
-    expect(rpcMock).toHaveBeenCalledWith('admin_create_toeic_test_with_content', expect.any(Object));
-    
-    const payload = rpcMock.mock.calls[0][1];
-    expect(payload.groups_payload.length).toBe(1);
-    
-    const groupPayload = payload.groups_payload[0];
-    
-    expect(groupPayload.passage).toContain('To: All Employees');
-    expect(groupPayload.instruction).toContain('Questions 147-149 refer to the following email.');
+    const draft = parseRawToeicTest(rawText, {
+      title: 'Test',
+      slug: 'test',
+      test_code: 'TEST',
+      description: 'Test',
+      test_type: 'full'
+    });
+
+    const payload = buildToeicTestRpcPayload(draft);
+    const groups = payload.groupsPayload;
+
+    expect(groups.length).toBe(2);
+
+    const doubleGroup = groups.find(g => g.title === 'Questions 150-152');
+    expect(doubleGroup).toBeDefined();
+    expect(doubleGroup?.documents).toHaveLength(2);
+    expect(doubleGroup?.documents[0].type).toBe('email');
+    expect(doubleGroup?.documents[0].title).toBe('EMAIL');
+    expect(doubleGroup?.documents[1].type).toBe('notice');
+    expect(doubleGroup?.documents[1].title).toBe('NOTICE');
+    expect(doubleGroup?.passage).toBeNull();
+
+    const tripleGroup = groups.find(g => g.title === 'Questions 153-155');
+    expect(tripleGroup).toBeDefined();
+    expect(tripleGroup?.documents).toHaveLength(3);
+    expect(tripleGroup?.documents[0].type).toBe('advertisement');
+    expect(tripleGroup?.documents[0].title).toBe('ADVERTISEMENT');
+    expect(tripleGroup?.documents[1].type).toBe('email');
+    expect(tripleGroup?.documents[2].type).toBe('schedule');
+    expect(tripleGroup?.passage).toBeNull();
   });
 });

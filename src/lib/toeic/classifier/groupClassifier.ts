@@ -151,17 +151,35 @@ export function classifyGroups(questions: ParsedQuestion[], explicitRanges: Arra
     if (range) {
       const chunk = p7Qs.filter(x => x.question_number >= range.start && x.question_number <= range.end);
       const key = getNewKey('part7');
+      
+      let parsedPassage = range.passage || null;
+      let parsedDocuments: any[] = [];
+      if (parsedPassage) {
+        const docPattern = /(?:^|\n)DOCUMENT\s+\d+\s*-\s*([^\n]+)\n([\s\S]*?)(?=(?:\nDOCUMENT\s+\d+\s*-)|$)/gi;
+        const matches = [...parsedPassage.matchAll(docPattern)];
+        if (matches.length > 1) {
+          for (const match of matches) {
+            parsedDocuments.push({
+              type: match[1].trim().toLowerCase(),
+              title: match[1].trim().toUpperCase(),
+              content: match[2].trim()
+            });
+          }
+          parsedPassage = null; // Do not duplicate content
+        }
+      }
+
       groups.push({
         group_temp_key: key,
         part: 'part7',
         group_type: 'reading_set',
         title: `Questions ${range.start}-${range.end}`,
         instruction: range.instruction,
-        passage: range.passage || null,
+        passage: parsedPassage,
         transcript: null,
         audio_url: null,
         image_url: null,
-        documents: []
+        documents: parsedDocuments
       });
       chunk.forEach(c => c.group_temp_key = key);
       i7 += chunk.length;

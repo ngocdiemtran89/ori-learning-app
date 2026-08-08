@@ -606,15 +606,67 @@ export const AdminToeicTestEditPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-slate-700 block mb-1">Đoạn Văn (Passage) / Hướng Dẫn</label>
-                    <textarea
-                      rows={4}
-                      value={groupForm.passage || ''}
-                      onChange={(e) => setGroupForm({ ...groupForm, passage: e.target.value })}
-                      className="w-full p-3 bg-white border rounded-xl font-mono text-xs"
-                    />
-                  </div>
+                  {groupForm.documents && groupForm.documents.length > 0 ? (
+                    <div className="space-y-3">
+                      <label className="text-slate-700 block mb-1 font-extrabold text-sm border-t pt-4">Tài liệu (Documents)</label>
+                      {groupForm.documents.map((doc: any, i: number) => (
+                        <div key={i} className="p-4 bg-white border border-slate-200 shadow-sm rounded-xl space-y-3">
+                          <h5 className="text-xs font-extrabold text-slate-500 uppercase border-b pb-1 mb-2">Tài liệu {i + 1}</h5>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 block mb-1">Loại (Type)</label>
+                              <input
+                                type="text"
+                                value={doc.type || ''}
+                                onChange={(e) => {
+                                  const newDocs = [...groupForm.documents!];
+                                  newDocs[i] = { ...newDocs[i], type: e.target.value };
+                                  setGroupForm({ ...groupForm, documents: newDocs });
+                                }}
+                                className="w-full px-3 py-1.5 bg-slate-50 border rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 block mb-1">Tiêu đề (Title)</label>
+                              <input
+                                type="text"
+                                value={doc.title || ''}
+                                onChange={(e) => {
+                                  const newDocs = [...groupForm.documents!];
+                                  newDocs[i] = { ...newDocs[i], title: e.target.value };
+                                  setGroupForm({ ...groupForm, documents: newDocs });
+                                }}
+                                className="w-full px-3 py-1.5 bg-slate-50 border rounded-lg text-xs"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 block mb-1">Nội dung (Content)</label>
+                            <textarea
+                              rows={4}
+                              value={doc.content || ''}
+                              onChange={(e) => {
+                                const newDocs = [...groupForm.documents!];
+                                newDocs[i] = { ...newDocs[i], content: e.target.value };
+                                setGroupForm({ ...groupForm, documents: newDocs });
+                              }}
+                              className="w-full p-3 bg-slate-50 border rounded-lg text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-slate-700 block mb-1">Đoạn Văn (Passage) / Hướng Dẫn</label>
+                      <textarea
+                        rows={4}
+                        value={groupForm.passage || ''}
+                        onChange={(e) => setGroupForm({ ...groupForm, passage: e.target.value })}
+                        className="w-full p-3 bg-white border rounded-xl font-mono text-xs"
+                      />
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 pt-2">
                     <button
