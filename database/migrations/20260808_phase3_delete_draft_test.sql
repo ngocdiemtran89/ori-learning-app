@@ -4,7 +4,7 @@ create or replace function public.admin_delete_draft_toeic_test(p_test_id uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = pg_catalog
 as $$
 declare
   v_test record;
@@ -17,14 +17,19 @@ begin
   -- 2. Verify target exists and is draft
   select id, status, is_published into v_test
   from public.toeic_tests
-  where id = p_test_id;
+  where id = p_test_id
+  for update;
 
   if not found then
     return jsonb_build_object('success', false, 'error', 'Test not found');
   end if;
 
-  if v_test.status != 'draft' or v_test.is_published = true then
-    return jsonb_build_object('success', false, 'error', 'Cannot delete published or non-draft tests');
+  if v_test.status is distinct from 'draft'
+     or v_test.is_published is distinct from false then
+    return jsonb_build_object(
+      'success', false,
+      'error', 'Cannot delete published or non-draft tests'
+    );
   end if;
 
   -- FUTURE HOOK: Verify no attempt history exists before deletion if/when student attempts are recorded
