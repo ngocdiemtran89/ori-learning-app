@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase/client';
+import { supabase, isSupabaseConfigured, supabaseConfigError } from '../lib/supabase/client';
 import { Profile } from '../lib/supabase/types';
 
 interface AuthContextType {
@@ -117,6 +117,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, pass: string) => {
     setError(null);
+    if (!isSupabaseConfigured) {
+      return {
+        error: supabaseConfigError || 'Chưa cài đặt biến VITE_SUPABASE_URL trên Vercel.',
+      };
+    }
     try {
       const { data, error: authErr } = await supabase.auth.signInWithPassword({
         email,
