@@ -8,7 +8,7 @@ Bộ file này dùng để xây website học viên ORI bằng Google Antigravit
 - UI: Tailwind CSS
 - Router: React Router
 - Backend/Auth/Database: Supabase
-- Hosting: Netlify
+- Hosting: Vercel
 - Git: GitHub
 - Coding agent: Google Antigravity
 - Nội dung trả phí: lưu trong Supabase và bảo vệ bằng RLS
@@ -35,9 +35,9 @@ Bạn cần:
 - Google Antigravity
 - GitHub
 - Supabase
-- Netlify
+- Vercel
 
-Không cần mua domain ngay. Dùng domain miễn phí của Netlify trước.
+Không cần mua domain ngay. Dùng domain miễn phí của Vercel (*.vercel.app) trước.
 
 ### BƯỚC 1 — Tạo thư mục project
 Tạo một folder mới trên máy:
@@ -202,14 +202,14 @@ Yêu cầu Antigravity:
 
 Không commit `.env.local`.
 
-### BƯỚC 15 — Deploy Netlify
+### BƯỚC 15 — Deploy Vercel
 Chạy:
-`prompts/11_DEPLOY_NETLIFY.md`
+`prompts/11_DEPLOY_NETLIFY.md` (Triển khai GitHub → Vercel → Supabase)
 
 Sau deploy:
-- thêm env variables trên Netlify
-- set SPA redirect
-- cập nhật Supabase Auth redirect URLs
+- thêm env variables trên Vercel Dashboard (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
+- cấu hình SPA rewrite (vercel.json)
+- cập nhật Supabase Auth Site URL và Redirect URLs
 - test login trên production
 
 ### BƯỚC 16 — Nhập nội dung thật

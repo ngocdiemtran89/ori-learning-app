@@ -11,7 +11,7 @@ Supabase:
 - Storage nếu cần audio protected
 
 ## Hosting
-Netlify.
+Vercel (GitHub → Vercel → Supabase).
 
 ## Data boundary
 

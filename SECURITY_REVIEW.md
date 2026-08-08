@@ -78,5 +78,5 @@ A comprehensive security & reliability review was conducted for the **ORI Learni
 
 ## 5. Remaining Risks & Phase 2 Recommendations
 
-1. **Netlify Header Configuration**: Upon Netlify deployment (Phase 1 Step 15), ensure custom `_headers` are configured for CSP (Content Security Policy) and HSTS.
+1. **Vercel Security Headers**: Upon Vercel production deployment, custom headers (Content Security Policy & HSTS) can be added to `vercel.json` if additional browser restrictions are desired.
 2. **Media Asset Hosting**: Audio files currently rely on external storage URLs or browser speech synthesis; in Phase 2, audio files should be protected via Supabase Storage bucket policies if exclusive audio copyright protection is needed.

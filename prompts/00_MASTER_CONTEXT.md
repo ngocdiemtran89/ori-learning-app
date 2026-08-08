@@ -16,7 +16,7 @@ Important constraints:
 - Tailwind CSS.
 - React Router.
 - Supabase Auth/Postgres/RLS.
-- Netlify deployment.
+- Vercel deployment (GitHub → Vercel → Supabase).
 - Paid content must not be shipped as public JSON.
 - Never put Supabase service_role secret in frontend code.
 - Do not disable RLS.

@@ -59,7 +59,7 @@
 - [ ] next learning action
 
 ## Production
-- [ ] Netlify deploy
+- [x] Vercel deploy via GitHub
 - [ ] Supabase redirect URLs set
 - [ ] production login tested
 - [ ] mobile tested
