@@ -3,29 +3,38 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Admin Delete Draft TOEIC Test UI Structure', () => {
-  it('Verifies correct UI event handling and form semantics for Draft Deletion', () => {
+  it('Verifies controlled React modal implementation', () => {
     const pagePath = path.resolve(__dirname, '../../pages/AdminToeicTestBankPage.tsx');
     const code = fs.readFileSync(pagePath, 'utf8');
 
-    // A. delete button has type="button"
-    expect(code).toContain('type="button"');
+    // K. no window.confirm remains in delete flow
+    expect(code).not.toContain('window.confirm');
     
-    // B, C. click does not submit parent form or trigger navigation (e.preventDefault & e.stopPropagation)
-    expect(code).toContain('e.preventDefault()');
-    expect(code).toContain('e.stopPropagation()');
-
-    // D, E. confirm flow - does not proceed unless confirmed
-    expect(code).toMatch(/if\s*\(!?window\.confirm/);
+    // A, B. clicking "Xóa Nháp" opens modal, RPC not called
+    expect(code).toContain('onClick={(e) => handleDeleteDraftClick(e, test)}');
+    expect(code).toContain('setDeleteTarget(test)');
     
-    // F. correct UUID sent (test.id is used instead of testId string)
-    expect(code).toContain('deleteDraftToeicTest(test.id)');
+    // C. clicking "Hủy" closes modal and RPC is never called
+    expect(code).toContain('cancelDeleteDraft');
+    expect(code).toContain('setDeleteTarget(null)');
+    
+    // D, E. clicking modal confirm calls RPC exactly once with correct UUID
+    expect(code).toContain('confirmDeleteDraft');
+    expect(code).toContain('deleteDraftToeicTest(deleteTarget.id)');
+    
+    // F. while deleting, confirm button disabled
+    expect(code).toContain('disabled={deleteLoading}');
+    
+    // G, H. RPC failure keeps modal open and shows visible error
+    expect(code).toContain('setDeleteError(`Không thể xóa đề nháp');
+    // In confirmDeleteDraft, setDeleteTarget(null) is only called in the else branch (success)
+    expect(code).toMatch(/if\s*\(!res\.success\)\s*{\s*setDeleteError\([^)]+\);\s*}\s*else\s*{\s*setDeleteTarget\(null\);/);
 
-    // G, H. success handling and error state
-    expect(code).toContain('setError(`Không thể xóa đề nháp: ${res.error');
+    // I, J. RPC success closes modal and removes/refetches test
     expect(code).toContain('loadTests()');
     
-    // I. double click prevented while deleting
-    expect(code).toContain('disabled={deleteLoading === test.id}');
-    expect(code).toContain('deleteLoading === test.id ? \'Đang xóa...\' : \'Xóa Nháp\'');
+    // Check Modal JSX presence
+    expect(code).toContain('Xóa đề nháp?');
+    expect(code).toContain('Hành động này không thể hoàn tác.');
   });
 });

@@ -24,7 +24,9 @@ export const AdminToeicTestBankPage: React.FC = () => {
   const navigate = useNavigate();
   const [tests, setTests] = useState<ToeicTestRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ToeicTestRow | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Filters & Pagination
@@ -65,21 +67,33 @@ export const AdminToeicTestBankPage: React.FC = () => {
     setLoading(false);
   }
 
-  const handleDeleteDraft = async (e: React.MouseEvent, test: ToeicTestRow) => {
+  const handleDeleteDraftClick = (e: React.MouseEvent, test: ToeicTestRow) => {
     e.preventDefault();
     e.stopPropagation();
+    setDeleteTarget(test);
+    setDeleteError(null);
+  };
 
-    if (window.confirm(`Bạn có chắc muốn xóa vĩnh viễn đề nháp này?\n\nĐề thi: ${test.title}`)) {
-      setDeleteLoading(test.id);
-      setError(null);
-      const res = await deleteDraftToeicTest(test.id);
-      setDeleteLoading(null);
-      if (!res.success) {
-        setError(`Không thể xóa đề nháp: ${res.error || 'Lỗi không xác định'}`);
-      } else {
-        loadTests();
-      }
+  const confirmDeleteDraft = async () => {
+    if (!deleteTarget) return;
+    
+    setDeleteLoading(true);
+    setDeleteError(null);
+    const res = await deleteDraftToeicTest(deleteTarget.id);
+    setDeleteLoading(false);
+    
+    if (!res.success) {
+      setDeleteError(`Không thể xóa đề nháp: ${res.error || 'Lỗi không xác định'}`);
+    } else {
+      setDeleteTarget(null);
+      loadTests();
     }
+  };
+
+  const cancelDeleteDraft = () => {
+    if (deleteLoading) return;
+    setDeleteTarget(null);
+    setDeleteError(null);
   };
 
   const handleTogglePublish = async (test: ToeicTestRow) => {
@@ -293,13 +307,13 @@ export const AdminToeicTestBankPage: React.FC = () => {
                           {!test.is_published && (
                             <button
                               type="button"
-                              onClick={(e) => handleDeleteDraft(e, test)}
-                              disabled={deleteLoading === test.id}
+                              onClick={(e) => handleDeleteDraftClick(e, test)}
+                              disabled={deleteTarget?.id === test.id}
                               className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors disabled:opacity-50 text-xs font-extrabold flex items-center gap-1"
                               title="Xóa bản nháp"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
-                              {deleteLoading === test.id ? 'Đang xóa...' : 'Xóa Nháp'}
+                              Xóa Nháp
                             </button>
                           )}
 
@@ -367,6 +381,71 @@ export const AdminToeicTestBankPage: React.FC = () => {
           questions={previewQuestions}
           onClose={() => setPreviewTest(null)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 space-y-4">
+              <h3 className="text-xl font-extrabold text-slate-900">
+                Xóa đề nháp?
+              </h3>
+              
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-600">
+                  Bạn có chắc muốn xóa vĩnh viễn đề nháp này?
+                </p>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                  <p className="font-extrabold text-slate-900 text-sm">
+                    {deleteTarget.title}
+                  </p>
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">
+                    {deleteTarget.slug}
+                  </p>
+                </div>
+                <p className="text-xs font-bold text-rose-600">
+                  Hành động này không thể hoàn tác.
+                </p>
+              </div>
+
+              {deleteError && (
+                <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-xl">
+                  {deleteError}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={cancelDeleteDraft}
+                disabled={deleteLoading}
+                className="px-5 py-2.5 text-slate-600 hover:bg-slate-200 hover:text-slate-900 font-extrabold text-sm rounded-xl transition-colors disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteDraft}
+                disabled={deleteLoading}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-sm rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleteLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Đang xóa...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Xóa đề nháp
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
