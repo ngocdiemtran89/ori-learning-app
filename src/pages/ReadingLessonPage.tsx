@@ -33,17 +33,26 @@ export const ReadingLessonPage: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [scoreResult, setScoreResult] = useState<{ score: number; correct: number; total: number } | null>(null);
 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadReadingLesson() {
       if (!lessonId) return;
 
       setLoading(true);
-      const lessonData = await getLearningLessonBySlug(lessonId);
-      setLesson(lessonData);
+      setFetchError(null);
 
-      if (lessonData) {
-        const qData = await getLessonQuestions(lessonData.id);
-        setQuestions(qData);
+      const res = await getLearningLessonBySlug(lessonId);
+
+      if (res.error) {
+        setFetchError(res.error);
+        setLesson(null);
+      } else {
+        setLesson(res.data);
+        if (res.data) {
+          const qData = await getLessonQuestions(res.data.id);
+          setQuestions(qData);
+        }
       }
 
       setUserAnswers({});
@@ -56,6 +65,23 @@ export const ReadingLessonPage: React.FC = () => {
 
   if (loading) {
     return <LoadingState message="Đang tải bài luyện đọc từ Supabase..." />;
+  }
+
+  if (fetchError) {
+    return (
+      <div className="space-y-6">
+        <NavLink
+          to="/reading"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại danh sách Luyện đọc
+        </NavLink>
+        <EmptyState
+          title="Không thể tải bài học"
+          description={fetchError}
+        />
+      </div>
+    );
   }
 
   if (!lesson) {

@@ -36,17 +36,26 @@ export const ListeningLessonPage: React.FC = () => {
   const [scoreResult, setScoreResult] = useState<{ score: number; correct: number; total: number } | null>(null);
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadListeningLesson() {
       if (!lessonId) return;
 
       setLoading(true);
-      const lessonData = await getLearningLessonBySlug(lessonId);
-      setLesson(lessonData);
+      setFetchError(null);
 
-      if (lessonData) {
-        const qData = await getLessonQuestions(lessonData.id);
-        setQuestions(qData);
+      const res = await getLearningLessonBySlug(lessonId);
+
+      if (res.error) {
+        setFetchError(res.error);
+        setLesson(null);
+      } else {
+        setLesson(res.data);
+        if (res.data) {
+          const qData = await getLessonQuestions(res.data.id);
+          setQuestions(qData);
+        }
       }
 
       setUserAnswers({});
@@ -60,6 +69,23 @@ export const ListeningLessonPage: React.FC = () => {
 
   if (loading) {
     return <LoadingState message="Đang tải bài luyện nghe từ Supabase..." />;
+  }
+
+  if (fetchError) {
+    return (
+      <div className="space-y-6">
+        <NavLink
+          to="/listening"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-purple-600 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại danh sách Luyện nghe
+        </NavLink>
+        <EmptyState
+          title="Không thể tải bài học"
+          description={fetchError}
+        />
+      </div>
+    );
   }
 
   if (!lesson) {

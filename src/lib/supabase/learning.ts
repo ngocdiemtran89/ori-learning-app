@@ -29,21 +29,38 @@ export async function getLearningLessons(kind: ContentKind): Promise<LearningLes
   return data as LearningLesson[];
 }
 
+import { isValidUuid, FetchLessonResult } from './grammar';
+
 /**
- * Fetch a single learning lesson by slug or ID
+ * Fetch a single learning lesson by slug or ID safely
  */
-export async function getLearningLessonBySlug(slug: string): Promise<LearningLesson | null> {
-  const { data, error } = await supabase
+export async function getLearningLessonBySlug(identifier: string): Promise<FetchLessonResult<LearningLesson>> {
+  if (!identifier || identifier.trim() === '') {
+    return { data: null, error: null };
+  }
+
+  const cleanId = identifier.trim();
+  const isUuid = isValidUuid(cleanId);
+
+  let query = supabase
     .from('learning_lessons')
     .select('*')
-    .or(`slug.eq.${slug},id.eq.${slug}`)
-    .maybeSingle();
+    .eq('is_published', true);
+
+  if (isUuid) {
+    query = query.eq('id', cleanId);
+  } else {
+    query = query.eq('slug', cleanId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
-    console.error('[ORI Learning] Error fetching lesson by slug:', error.message);
-    return null;
+    console.error('[ORI Learning] Error fetching lesson by slug/id:', error.message);
+    return { data: null, error: 'Không thể tải bài học. Vui lòng thử lại.' };
   }
-  return data as LearningLesson | null;
+
+  return { data: data as LearningLesson | null, error: null };
 }
 
 /**

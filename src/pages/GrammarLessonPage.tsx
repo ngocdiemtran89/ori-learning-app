@@ -31,6 +31,7 @@ export const GrammarLessonPage: React.FC = () => {
   const [lesson, setLesson] = useState<GrammarLesson | null>(null);
   const [allLessons, setAllLessons] = useState<GrammarLesson[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Quiz state
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
@@ -42,10 +43,18 @@ export const GrammarLessonPage: React.FC = () => {
       if (!lessonId) return;
 
       setLoading(true);
-      const lessonData = await getGrammarLessonBySlug(lessonId);
+      setFetchError(null);
+
+      const res = await getGrammarLessonBySlug(lessonId);
       const lessonsList = await getGrammarLessons();
 
-      setLesson(lessonData);
+      if (res.error) {
+        setFetchError(res.error);
+        setLesson(null);
+      } else {
+        setLesson(res.data);
+      }
+
       setAllLessons(lessonsList);
       setUserAnswers({});
       setIsSubmitted(false);
@@ -57,6 +66,23 @@ export const GrammarLessonPage: React.FC = () => {
 
   if (loading) {
     return <LoadingState message="Đang tải bài học ngữ pháp từ Supabase..." />;
+  }
+
+  if (fetchError) {
+    return (
+      <div className="space-y-6">
+        <NavLink
+          to="/grammar"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại danh sách Ngữ pháp
+        </NavLink>
+        <EmptyState
+          title="Không thể tải bài học"
+          description={fetchError}
+        />
+      </div>
+    );
   }
 
   if (!lesson) {

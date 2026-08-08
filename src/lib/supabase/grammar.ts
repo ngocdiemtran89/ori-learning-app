@@ -37,20 +37,49 @@ export async function getGrammarLessons(): Promise<GrammarLesson[]> {
 }
 
 /**
- * Fetch a single grammar lesson by slug or ID
+ * Check if a string is a valid UUID
  */
-export async function getGrammarLessonBySlug(slug: string): Promise<GrammarLesson | null> {
-  const { data, error } = await supabase
+export function isValidUuid(str: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str.trim());
+}
+
+export interface FetchLessonResult<T> {
+  data: T | null;
+  error: string | null;
+}
+
+/**
+ * Fetch a single grammar lesson by slug or ID safely
+ */
+export async function getGrammarLessonBySlug(identifier: string): Promise<FetchLessonResult<GrammarLesson>> {
+  if (!identifier || identifier.trim() === '') {
+    return { data: null, error: null };
+  }
+
+  const cleanId = identifier.trim();
+  const isUuid = isValidUuid(cleanId);
+
+  let query = supabase
     .from('grammar_lessons')
     .select('*')
-    .or(`slug.eq.${slug},id.eq.${slug}`)
-    .maybeSingle();
+    .eq('is_published', true);
+
+  if (isUuid) {
+    query = query.eq('id', cleanId);
+  } else {
+    query = query.eq('slug', cleanId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
-    console.error('[ORI Grammar] Error fetching lesson by slug:', error.message);
-    return null;
+    console.error('[ORI Grammar] Error fetching lesson by slug/id:', error.message);
+    return { data: null, error: 'Không thể tải bài học. Vui lòng thử lại.' };
   }
-  return data as GrammarLesson | null;
+
+  return { data: data as GrammarLesson | null, error: null };
 }
 
 /**
