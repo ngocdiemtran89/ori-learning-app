@@ -1,11 +1,11 @@
 /**
- * Admin Student Progress Data Access Layer (Phase 2.6)
+ * Admin Student Progress Data Access Layer (Phase 2.6B)
  * Safely fetches target student learning activity from Supabase for Admin view.
  */
 
 import { supabase } from './client';
 import { Profile } from './types';
-import { PublishedLessonInfo } from '../learning/dailyPlan';
+import { PublishedLessonInfo, getRecentlyCompletedLessonIds } from '../learning/dailyPlan';
 import { analyzeLearningPerformance } from '../learning/weaknessAnalysis';
 import { buildLearningRecommendations } from '../learning/recommendationEngine';
 import {
@@ -49,7 +49,7 @@ export async function getAdminStudentProgress(
         .select('question_key, content_type, is_correct, skill_tag, toeic_part, topic, created_at')
         .eq('user_id', studentId)
         .gte('created_at', ninetyDaysAgoISO)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false }) // NEWEST FIRST to ensure recent question states are fetched
         .limit(2000),
       supabase
         .from('user_progress')
@@ -67,6 +67,7 @@ export async function getAdminStudentProgress(
         .order('sort_order', { ascending: true }),
     ]);
 
+    // Profile check
     if (profileRes.error) {
       console.error('[ORI Admin] Error fetching student profile:', profileRes.error.message);
       return { data: null, error: 'Không thể truy cập dữ liệu học viên lúc này.' };
@@ -76,13 +77,31 @@ export async function getAdminStudentProgress(
       return { data: null, error: 'Không tìm thấy thông tin học viên trong hệ thống.' };
     }
 
+    // CORE LEARNING DATA FAILURE CHECK (No silent [] fallback!)
+    if (vocabRes.error || quizRes.error || questionRes.error || progressRes.error) {
+      if (vocabRes.error) console.error('[ORI Admin] vocabRes query failed:', vocabRes.error.message);
+      if (quizRes.error) console.error('[ORI Admin] quizRes query failed:', quizRes.error.message);
+      if (questionRes.error) console.error('[ORI Admin] questionRes query failed:', questionRes.error.message);
+      if (progressRes.error) console.error('[ORI Admin] progressRes query failed:', progressRes.error.message);
+
+      return {
+        data: null,
+        error: 'Không thể tải đầy đủ dữ liệu tiến độ học viên. Vui lòng thử lại.',
+      };
+    }
+
     const studentProfile = profileRes.data as Profile;
     const vocabularyReviews = vocabRes.data || [];
     const quizAttempts = quizRes.data || [];
     const questionAttempts = questionRes.data || [];
     const userProgress = progressRes.data || [];
 
-    // Process published lessons metadata
+    // RECOMMENDATION METADATA FAILURE CHECK (Graceful degraded mode for recommendations)
+    if (grammarMetaRes.error || learningMetaRes.error) {
+      if (grammarMetaRes.error) console.error('[ORI Admin] grammarMetaRes failed:', grammarMetaRes.error.message);
+      if (learningMetaRes.error) console.error('[ORI Admin] learningMetaRes failed:', learningMetaRes.error.message);
+    }
+
     const publishedGrammarLessons: PublishedLessonInfo[] = (grammarMetaRes.data || []).map((g) => ({
       id: g.id,
       kind: 'grammar',
@@ -102,23 +121,22 @@ export async function getAdminStudentProgress(
       toeic_part: l.toeic_part,
     }));
 
-    const completedLessonIds = new Set<string>(
-      userProgress.filter((p) => p.status === 'completed').map((p) => p.content_id)
-    );
-
+    // Extract 7-day recently completed lesson IDs
+    const recentlyCompletedLessonIds = getRecentlyCompletedLessonIds(userProgress);
     const inProgress = userProgress.find((p) => p.status === 'in_progress');
 
-    // Run Pure Weakness Analysis for target student
-    const analysis = analyzeLearningPerformance(questionAttempts);
+    // Run Pure Weakness Analysis (pass isTruncated if exactly 2000 rows fetched)
+    const isTruncated = questionAttempts.length === 2000;
+    const analysis = analyzeLearningPerformance(questionAttempts, { isTruncated });
 
-    // Run Pure Recommendation Engine for target student with target student's level
+    // Run Pure Recommendation Engine for target student with target student level & 7-day recent completions
     const recommendations = buildLearningRecommendations({
       analysis,
       studentLevel: studentProfile.level || 'foundation',
       publishedGrammarLessons,
       publishedLearningLessons,
       inProgressLessonId: inProgress?.content_id,
-      recentlyCompletedLessonIds: completedLessonIds,
+      recentlyCompletedLessonIds,
     });
 
     // Run Pure Summary Engine

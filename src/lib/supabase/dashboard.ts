@@ -4,6 +4,7 @@ import { calculateStudyStreak } from '../srs/streak';
 import {
   buildDailyStudyPlan,
   calculateUnresolvedMistakes,
+  getRecentlyCompletedLessonIds,
   DailyStudyPlan,
   PublishedLessonInfo,
   UserProgressLesson,
@@ -59,7 +60,7 @@ export async function getStudentDashboardMetrics(
   ] = await Promise.all([
     getDueVocabularyItems(userId),
     getVocabularyReviewedTodayCount(userId),
-    supabase.from('user_progress').select('content_id').eq('user_id', userId).eq('status', 'completed'),
+    supabase.from('user_progress').select('content_id, status, completed_at').eq('user_id', userId).eq('status', 'completed'),
     supabase
       .from('user_progress')
       .select('content_id')
@@ -171,13 +172,11 @@ export async function getStudentDashboardMetrics(
     }
   }
 
-  const completedLessonIds = new Set<string>(
-    (completedRes.data || []).map((r) => r.content_id)
-  );
-
   const completedLessonIdsToday = new Set<string>(
     (completedTodayRes.data || []).map((r) => r.content_id)
   );
+
+  const recentlyCompletedLessonIds = getRecentlyCompletedLessonIds(completedRes.data || []);
 
   // Process Weakness Analysis & Recommendations
   const analysis = analyzeLearningPerformance(rawQuestionAttempts);
@@ -187,7 +186,7 @@ export async function getStudentDashboardMetrics(
     publishedGrammarLessons,
     publishedLearningLessons,
     inProgressLessonId: inProgressLesson?.content_id,
-    recentlyCompletedLessonIds: completedLessonIds,
+    recentlyCompletedLessonIds,
   });
 
   // Build Pure Daily Study Plan with primary recommendation slot

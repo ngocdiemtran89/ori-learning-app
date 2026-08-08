@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   summarizeStudentProgress,
   getVietnamDateKey,
+  getVietnamCalendarDayDifference,
   RawStudentProgressData,
 } from './studentProgressSummary';
-import { LearningAnalysis } from './weaknessAnalysis';
+import { LearningAnalysis, analyzeLearningPerformance } from './weaknessAnalysis';
 
 describe('Phase 2.6 — Student Progress Summary Engine', () => {
   const mockNow = new Date('2026-08-08T12:00:00+07:00'); // Saturday 12:00 PM Vietnam time
@@ -155,5 +156,66 @@ describe('Phase 2.6 — Student Progress Summary Engine', () => {
     const midnightAfterISO = '2026-08-07T17:05:00.000Z';
     const dateKey = getVietnamDateKey(midnightAfterISO);
     expect(dateKey).toBe('2026-08-08');
+  });
+
+  describe('Calendar Day Activity Signal (Phase 2.6B)', () => {
+    const mockRef = new Date('2026-08-08T12:00:00+07:00');
+
+    it('Activity today -> 0 day diff -> recent signal', () => {
+      const diff = getVietnamCalendarDayDifference('2026-08-08T09:00:00+07:00', mockRef);
+      expect(diff).toBe(0);
+    });
+
+    it('Activity 2 days ago -> 2 day diff -> recent signal', () => {
+      const diff = getVietnamCalendarDayDifference('2026-08-06T15:00:00+07:00', mockRef);
+      expect(diff).toBe(2);
+    });
+
+    it('Activity 5 days ago -> 5 day diff -> idle_few_days signal', () => {
+      const diff = getVietnamCalendarDayDifference('2026-08-03T15:00:00+07:00', mockRef);
+      expect(diff).toBe(5);
+    });
+
+    it('Activity 10 days ago -> 10 day diff -> idle_week signal', () => {
+      const diff = getVietnamCalendarDayDifference('2026-07-29T15:00:00+07:00', mockRef);
+      expect(diff).toBe(10);
+    });
+  });
+
+  describe('2000-Row Question Attempt Truncation & Recent Ordering (Phase 2.6B)', () => {
+    it('Ensures newest attempt for Question A is preserved and evaluated when descending order limit is applied', () => {
+      // Create 2100 attempts descending (newest first)
+      const attemptsDescending = [];
+      const baseMs = new Date('2026-08-08T12:00:00Z').getTime();
+
+      // Newest attempt (row 0): Question A is CORRECT
+      attemptsDescending.push({
+        question_key: 'q_A',
+        content_type: 'grammar',
+        is_correct: true,
+        created_at: new Date(baseMs).toISOString(),
+      });
+
+      // Older attempts (rows 1..2099): Question A was WRONG
+      for (let i = 1; i < 2100; i++) {
+        attemptsDescending.push({
+          question_key: i === 2050 ? 'q_A' : `q_${i}`,
+          content_type: 'grammar',
+          is_correct: false,
+          created_at: new Date(baseMs - i * 1000).toISOString(),
+        });
+      }
+
+      // Simulate Supabase `.order('created_at', { ascending: false }).limit(2000)`
+      const fetchedNewest2000 = attemptsDescending.slice(0, 2000);
+
+      // analyzeLearningPerformance internal sorting chronologically ascending
+      const analysis = analyzeLearningPerformance(fetchedNewest2000, { isTruncated: true });
+
+      expect(analysis.analysisTruncated).toBe(true);
+      // Unique questions should evaluate Question A's LATEST attempt (which is correct = true)
+      const qAStats = analysis.modules[0];
+      expect(qAStats.correctLatestCount).toBeGreaterThan(0);
+    });
   });
 });

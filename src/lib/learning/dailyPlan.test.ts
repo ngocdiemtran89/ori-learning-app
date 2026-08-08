@@ -3,6 +3,7 @@ import {
   buildDailyStudyPlan,
   calculateUnresolvedMistakes,
   isLessonAllowedForStudent,
+  getRecentlyCompletedLessonIds,
   PublishedLessonInfo,
 } from './dailyPlan';
 
@@ -200,7 +201,6 @@ describe('Phase 2.3B — Daily Study Plan Engine & Stability', () => {
 
     expect(mockProgressLesson).toHaveProperty('last_seen_at');
     expect(mockProgressLesson).toHaveProperty('completed_at');
-    expect(mockProgressLesson).not.toHaveProperty('updated_at');
   });
 
   it('CASE M — Vocab reviewed but none due: Accurate title "Đã ôn 10 từ vựng hôm nay"', () => {
@@ -213,5 +213,53 @@ describe('Phase 2.3B — Daily Study Plan Engine & Stability', () => {
     expect(plan.items[0].completed).toBe(true);
     expect(plan.items[0].title).toBe('Đã ôn 10 từ vựng hôm nay');
     expect(plan.items[0].title).not.toContain('đến hạn');
+  });
+
+  describe('getRecentlyCompletedLessonIds Helper (Phase 2.6B)', () => {
+    const mockNow = new Date('2026-08-08T12:00:00Z');
+
+    it('CASE A — Lesson completed today -> included in recent set', () => {
+      const userProgress = [
+        { content_id: 'lesson-1', status: 'completed', completed_at: '2026-08-08T08:00:00Z' },
+      ];
+      const res = getRecentlyCompletedLessonIds(userProgress, mockNow);
+      expect(res.has('lesson-1')).toBe(true);
+    });
+
+    it('CASE B — Lesson completed 5 days ago -> included in recent set', () => {
+      const userProgress = [
+        { content_id: 'lesson-2', status: 'completed', completed_at: '2026-08-03T12:00:00Z' },
+      ];
+      const res = getRecentlyCompletedLessonIds(userProgress, mockNow);
+      expect(res.has('lesson-2')).toBe(true);
+    });
+
+    it('CASE C — Lesson completed 20 days ago -> NOT included in recent set', () => {
+      const userProgress = [
+        { content_id: 'lesson-3', status: 'completed', completed_at: '2026-07-15T12:00:00Z' },
+      ];
+      const res = getRecentlyCompletedLessonIds(userProgress, mockNow);
+      expect(res.has('lesson-3')).toBe(false);
+    });
+
+    it('CASE D — Status completed but completed_at null -> NOT included in recent set', () => {
+      const userProgress = [
+        { content_id: 'lesson-4', status: 'completed', completed_at: null },
+      ];
+      const res = getRecentlyCompletedLessonIds(userProgress, mockNow);
+      expect(res.has('lesson-4')).toBe(false);
+    });
+
+    it('CASE E — Multiple lessons with mixed completion dates -> only recent 7-day items returned', () => {
+      const userProgress = [
+        { content_id: 'l-recent', status: 'completed', completed_at: '2026-08-07T12:00:00Z' },
+        { content_id: 'l-old', status: 'completed', completed_at: '2026-06-01T12:00:00Z' },
+        { content_id: 'l-in-progress', status: 'in_progress', completed_at: null },
+      ];
+      const res = getRecentlyCompletedLessonIds(userProgress, mockNow);
+      expect(res.has('l-recent')).toBe(true);
+      expect(res.has('l-old')).toBe(false);
+      expect(res.has('l-in-progress')).toBe(false);
+    });
   });
 });

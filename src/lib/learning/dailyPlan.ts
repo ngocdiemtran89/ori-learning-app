@@ -77,6 +77,30 @@ export interface DailyPlanInput {
 }
 
 /**
+ * Pure helper to extract recently completed lesson IDs (completed within recent 7-day window)
+ */
+export function getRecentlyCompletedLessonIds(
+  userProgress: Array<{ content_id?: string; status: string; completed_at?: string | null }>,
+  referenceDate: Date = new Date(),
+  daysWindow: number = 7
+): Set<string> {
+  const recentSet = new Set<string>();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const cutoffMs = referenceDate.getTime() - daysWindow * msPerDay;
+
+  for (const item of userProgress) {
+    if (item.status === 'completed' && item.completed_at && item.content_id) {
+      const completedMs = new Date(item.completed_at).getTime();
+      if (!isNaN(completedMs) && completedMs >= cutoffMs) {
+        recentSet.add(item.content_id);
+      }
+    }
+  }
+
+  return recentSet;
+}
+
+/**
  * Check if a lesson level is allowed for a student level.
  * Rules:
  * - Foundation student: only 'foundation' (never intermediate or advanced).

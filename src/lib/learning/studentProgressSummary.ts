@@ -1,5 +1,5 @@
 /**
- * Pure Student Progress Summary Engine for ORI Learning (Phase 2.6)
+ * Pure Student Progress Summary Engine for ORI Learning (Phase 2.6B)
  * Deterministic summary of student activity, mastery, weaknesses, and recommendations for Admin view.
  */
 
@@ -105,6 +105,30 @@ export function getVietnam7DayWindowKeys(referenceDate: Date = new Date()): stri
 }
 
 /**
+ * Calculate difference in Vietnam calendar days between referenceDate and lastActivity
+ * Returns 0 for same Vietnam day, 1 for yesterday, 2 for 2 days ago, etc.
+ * Returns null if lastActivity is null/invalid.
+ */
+export function getVietnamCalendarDayDifference(
+  lastActivity: string | Date | null | undefined,
+  referenceDate: Date = new Date()
+): number | null {
+  if (!lastActivity) return null;
+  const lastKey = getVietnamDateKey(lastActivity);
+  if (!lastKey) return null;
+
+  const refKey = getVietnamDateKey(referenceDate);
+  if (lastKey === refKey) return 0;
+
+  const lastDate = new Date(lastKey + 'T00:00:00+07:00');
+  const refDate = new Date(refKey + 'T00:00:00+07:00');
+
+  const diffMs = refDate.getTime() - lastDate.getTime();
+  if (diffMs < 0) return 0;
+  return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+}
+
+/**
  * Pure function to summarize student progress metrics for Admin view
  */
 export function summarizeStudentProgress(
@@ -183,12 +207,13 @@ export function summarizeStudentProgress(
   let activitySignal: 'recent' | 'idle_few_days' | 'idle_week' | 'no_data' = 'no_data';
   let activitySignalText = 'Chưa có dữ liệu học tập';
 
-  if (lastActivityAt && latestMs > 0) {
-    const diffDays = (now.getTime() - latestMs) / (1000 * 60 * 60 * 24);
-    if (diffDays <= 2.5) {
+  const dayDiff = getVietnamCalendarDayDifference(lastActivityAt, now);
+
+  if (dayDiff !== null) {
+    if (dayDiff <= 2) {
       activitySignal = 'recent';
       activitySignalText = 'Hoạt động gần đây';
-    } else if (diffDays <= 6.5) {
+    } else if (dayDiff <= 6) {
       activitySignal = 'idle_few_days';
       activitySignalText = 'Chưa học vài ngày';
     } else {
