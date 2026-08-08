@@ -16,6 +16,7 @@ import {
   Sparkles,
   Bookmark,
   AlertTriangle,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,6 +27,7 @@ export const AppShell: React.FC = () => {
 
   const navItems = [
     { label: 'Tổng quan', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Tiến độ & Phân tích', path: '/progress', icon: BarChart3 },
     { label: 'Từ vựng (Vocab)', path: '/vocabulary', icon: BookOpen },
     { label: 'Sổ tay từ khó', path: '/notebook', icon: Bookmark },
     { label: 'Sổ lỗi sai', path: '/mistakes', icon: AlertTriangle },

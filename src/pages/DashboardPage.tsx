@@ -12,16 +12,20 @@ import {
   Flame,
   CalendarCheck,
   Circle,
+  Target,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
 import { PageHeader } from '../components/ui/PageHeader';
 import { LoadingState } from '../components/ui/LoadingState';
 import { DashboardMetrics, getStudentDashboardMetrics } from '../lib/supabase/dashboard';
+import { LearningAnalysis } from '../lib/learning/weaknessAnalysis';
+import { getStudentLearningAnalysis } from '../lib/supabase/analysis';
 
 export const DashboardPage: React.FC = () => {
   const { user, profile, isActive, isExpired } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [analysis, setAnalysis] = useState<LearningAnalysis | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   const studentName = profile?.full_name || user?.email?.split('@')[0] || 'Học viên ORI';
@@ -30,8 +34,14 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     async function loadMetrics() {
       if (!user?.id) return;
-      const data = await getStudentDashboardMetrics(user.id, studentLevel);
+      const [data, analysisRes] = await Promise.all([
+        getStudentDashboardMetrics(user.id, studentLevel),
+        getStudentLearningAnalysis(user.id),
+      ]);
       setMetrics(data);
+      if (analysisRes.data) {
+        setAnalysis(analysisRes.data);
+      }
       setLoading(false);
     }
     loadMetrics();
@@ -218,6 +228,42 @@ export const DashboardPage: React.FC = () => {
               icon={Clock}
               variant={daysRemaining > 7 ? 'purple' : 'amber'}
             />
+          </div>
+
+          {/* Compact Analysis Focus Areas Card (Phase 2.4) */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-rose-50 text-rose-700 text-xs font-extrabold rounded-full">
+                <Target className="w-4 h-4 text-rose-600" />
+                <span>CẦN TẬP TRUNG (PHÂN TÍCH HỌC TẬP)</span>
+              </div>
+              {analysis && analysis.focusAreas && analysis.focusAreas.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  {analysis.focusAreas.slice(0, 2).map((item) => (
+                    <span
+                      key={item.key}
+                      className="px-3 py-1 bg-slate-100 text-slate-800 text-xs font-extrabold rounded-xl border border-slate-200"
+                    >
+                      {item.label}: <span className="text-rose-600 font-black">{item.masteryPercent}%</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 font-semibold pt-1">
+                  {analysis?.hasEnoughData
+                    ? 'Bạn đang duy trì tỷ lệ làm bài rất tốt trên các chuyên đề!'
+                    : 'ORI đang thu thập thêm dữ liệu học tập của bạn.'}
+                </p>
+              )}
+            </div>
+
+            <NavLink
+              to="/progress"
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-md inline-flex items-center justify-center gap-2 transition-all shrink-0"
+            >
+              <span>[ XEM PHÂN TÍCH ]</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </NavLink>
           </div>
 
           {/* Core Module Navigation Cards */}
