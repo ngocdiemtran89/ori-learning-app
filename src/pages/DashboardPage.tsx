@@ -12,6 +12,8 @@ import {
   RotateCcw,
   Award,
   Sparkles,
+  Flame,
+  Bookmark,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
@@ -50,11 +52,23 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={`Chào mừng học viên ${studentName}!`}
-        subtitle={`Trình độ học tập: ${studentLevel.toUpperCase()} • Chuẩn bị bứt phá mục tiêu TOEIC!`}
-        badge={`TÀI KHOẢN ${isActive ? 'ACTIVE' : isExpired ? 'EXPIRED' : 'VERIFIED'}`}
-      />
+      <div className="flex items-center justify-between">
+        <PageHeader
+          title={`Chào mừng học viên ${studentName}!`}
+          subtitle={`Trình độ học tập: ${studentLevel.toUpperCase()} • Chuẩn bị bứt phá mục tiêu TOEIC!`}
+          badge={`TÀI KHOẢN ${isActive ? 'ACTIVE' : isExpired ? 'EXPIRED' : 'VERIFIED'}`}
+        />
+
+        {metrics?.streakDays !== undefined && (
+          <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200 text-orange-700 rounded-2xl shadow-sm shrink-0">
+            <Flame className="w-5 h-5 text-orange-500 fill-orange-500 animate-bounce" />
+            <div className="flex flex-col">
+              <span className="font-extrabold text-sm leading-tight">{metrics.streakDays} ngày</span>
+              <span className="text-[10px] font-bold text-orange-600 uppercase">Chuỗi học liên tục</span>
+            </div>
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <LoadingState message="Đang cập nhật tiến độ học tập thực tế từ Supabase..." />
@@ -124,13 +138,23 @@ export const DashboardPage: React.FC = () => {
                   <p className="text-xs text-slate-500">{metrics.recommendedAction.subtitle}</p>
                 </div>
 
-                <NavLink
-                  to={metrics.recommendedAction.path}
-                  className="px-4 py-2.5 bg-ori-600 hover:bg-ori-700 text-white font-bold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shrink-0"
-                >
-                  <span>Học ngay</span>
-                  <ArrowRight className="w-4 h-4" />
-                </NavLink>
+                <div className="flex items-center gap-2">
+                  <NavLink
+                    to="/notebook"
+                    className="px-3 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Bookmark className="w-4 h-4 fill-amber-500" />
+                    <span>Sổ Tay Từ Khó</span>
+                  </NavLink>
+
+                  <NavLink
+                    to={metrics.recommendedAction.path}
+                    className="px-4 py-2.5 bg-ori-600 hover:bg-ori-700 text-white font-bold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shrink-0"
+                  >
+                    <span>Học ngay</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </NavLink>
+                </div>
               </div>
             </div>
           )}
