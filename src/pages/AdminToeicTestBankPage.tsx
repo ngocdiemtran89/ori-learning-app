@@ -91,13 +91,20 @@ export const AdminToeicTestBankPage: React.FC = () => {
         >
           <ArrowLeft className="w-4 h-4" /> Quay lại CMS Hub
         </NavLink>
-
-        <NavLink
-          to="/admin/content/test-bank/new"
-          className="px-4 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
-        >
-          <Plus className="w-4 h-4" /> Tạo Đề Thi Mới
-        </NavLink>
+        <div className="flex items-center gap-3">
+          <NavLink
+            to="/admin/content/test-bank/classify"
+            className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-extrabold text-xs rounded-2xl shadow-md flex items-center gap-1.5 transition-all"
+          >
+            <Plus className="w-4 h-4" /> Nhập & Phân Loại Đề
+          </NavLink>
+          <NavLink
+            to="/admin/content/test-bank/new"
+            className="px-4 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
+          >
+            <Plus className="w-4 h-4" /> Tạo Đề Thi Mới
+          </NavLink>
+        </div>
       </div>
 
       {/* Page Title */}

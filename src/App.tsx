@@ -37,6 +37,7 @@ import { AdminReadingLessonEditPage } from './pages/AdminReadingLessonEditPage';
 import { AdminContentImportPage } from './pages/AdminContentImportPage';
 import { AdminToeicTestBankPage } from './pages/AdminToeicTestBankPage';
 import { AdminToeicTestEditPage } from './pages/AdminToeicTestEditPage';
+import { AdminToeicClassifierPage } from './pages/AdminToeicClassifierPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -110,6 +111,7 @@ export const App: React.FC = () => {
 
                 {/* Phase 3.5C TOEIC Test Bank Routes */}
                 <Route path="/admin/content/test-bank" element={<AdminToeicTestBankPage />} />
+                <Route path="/admin/content/test-bank/classify" element={<AdminToeicClassifierPage />} />
                 <Route path="/admin/content/test-bank/new" element={<AdminToeicTestEditPage />} />
                 <Route path="/admin/content/test-bank/:testId/edit" element={<AdminToeicTestEditPage />} />
               </Route>
