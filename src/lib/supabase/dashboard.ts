@@ -24,6 +24,7 @@ export interface DashboardMetrics {
   streakDays: number;
   latestQuizAttempt: LatestQuizAttempt | null;
   dailyPlan: DailyStudyPlan;
+  fetchError?: string | null;
   recommendedAction: {
     title: string;
     subtitle: string;
@@ -33,25 +34,28 @@ export interface DashboardMetrics {
 }
 
 /**
- * Fetch real student progress, metrics & Daily Study Plan from Supabase
+ * Fetch real student progress, metrics & Daily Study Plan safely from Supabase
  */
 export async function getStudentDashboardMetrics(
   userId: string,
   studentLevel: string = 'foundation'
 ): Promise<DashboardMetrics> {
   const todayStartISO = getVietnamTodayStartISO();
+  let fetchErrorMsg: string | null = null;
 
-  // 1. Concurrent fetching of lightweight metadata required for Dashboard & Daily Plan
+  // 1. Concurrent fetching of lightweight metadata using CORRECT schema fields:
+  // - completed_at for lessons completed today
+  // - last_seen_at for in-progress lesson ordering
   const [
     dueItems,
     vocabReviewedToday,
-    { data: completedData },
-    { data: completedTodayData },
-    { data: inProgressData },
-    { data: attemptData },
-    { data: questionAttemptsData },
-    { data: grammarMeta },
-    { data: learningMeta },
+    completedRes,
+    completedTodayRes,
+    inProgressRes,
+    attemptRes,
+    questionAttemptsRes,
+    grammarMetaRes,
+    learningMetaRes,
   ] = await Promise.all([
     getDueVocabularyItems(userId),
     getVocabularyReviewedTodayCount(userId),
@@ -61,13 +65,13 @@ export async function getStudentDashboardMetrics(
       .select('content_id')
       .eq('user_id', userId)
       .eq('status', 'completed')
-      .gte('updated_at', todayStartISO),
+      .gte('completed_at', todayStartISO),
     supabase
       .from('user_progress')
-      .select('content_type, content_id, status, updated_at')
+      .select('content_type, content_id, status, last_seen_at')
       .eq('user_id', userId)
       .eq('status', 'in_progress')
-      .order('updated_at', { ascending: false })
+      .order('last_seen_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
     supabase
@@ -94,20 +98,33 @@ export async function getStudentDashboardMetrics(
       .order('sort_order', { ascending: true }),
   ]);
 
+  // Log any Supabase query errors for developers
+  if (completedRes.error) console.error('[ORI Dashboard] Error fetching completed user_progress:', completedRes.error.message);
+  if (completedTodayRes.error) console.error('[ORI Dashboard] Error fetching completedToday user_progress:', completedTodayRes.error.message);
+  if (inProgressRes.error) console.error('[ORI Dashboard] Error fetching inProgress user_progress:', inProgressRes.error.message);
+  if (attemptRes.error) console.error('[ORI Dashboard] Error fetching latest quiz_attempt:', attemptRes.error.message);
+  if (questionAttemptsRes.error) console.error('[ORI Dashboard] Error fetching question_attempts:', questionAttemptsRes.error.message);
+  if (grammarMetaRes.error) console.error('[ORI Dashboard] Error fetching grammar_lessons metadata:', grammarMetaRes.error.message);
+  if (learningMetaRes.error) console.error('[ORI Dashboard] Error fetching learning_lessons metadata:', learningMetaRes.error.message);
+
+  if (completedRes.error || grammarMetaRes.error || learningMetaRes.error) {
+    fetchErrorMsg = 'Không thể kết nối đến dữ liệu học tập. Vui lòng tải lại trang.';
+  }
+
   const dueWordsCount = dueItems.length;
-  const completedLessonsCount = completedData?.length || 0;
-  const latestQuizAttempt = attemptData as LatestQuizAttempt | null;
+  const completedLessonsCount = completedRes.data?.length || 0;
+  const latestQuizAttempt = (attemptRes.data as LatestQuizAttempt | null) || null;
 
   // 2. Process Unresolved Mistakes
   const unresolvedMistakeSummary = calculateUnresolvedMistakes(
-    (questionAttemptsData as Array<{ question_key: string; content_type: string; is_correct: boolean; created_at: string }>) || []
+    (questionAttemptsRes.data as Array<{ question_key: string; content_type: string; is_correct: boolean; created_at: string }>) || []
   );
 
   // 3. Process Available Lessons Metadata
   const availableLessons: PublishedLessonInfo[] = [];
 
-  if (grammarMeta) {
-    grammarMeta.forEach((g) => {
+  if (grammarMetaRes.data) {
+    grammarMetaRes.data.forEach((g) => {
       availableLessons.push({
         id: g.id,
         kind: 'grammar',
@@ -119,8 +136,8 @@ export async function getStudentDashboardMetrics(
     });
   }
 
-  if (learningMeta) {
-    learningMeta.forEach((l) => {
+  if (learningMetaRes.data) {
+    learningMetaRes.data.forEach((l) => {
       availableLessons.push({
         id: l.id,
         kind: l.kind as 'listening' | 'reading',
@@ -132,24 +149,24 @@ export async function getStudentDashboardMetrics(
     });
   }
 
-  // 4. Resolve In-Progress Lesson details if available
+  // 4. Resolve In-Progress Lesson details using last_seen_at
   let inProgressLesson: UserProgressLesson | null = null;
-  if (inProgressData) {
-    const matched = availableLessons.find((l) => l.id === inProgressData.content_id);
+  if (inProgressRes.data) {
+    const matched = availableLessons.find((l) => l.id === inProgressRes.data!.content_id);
     if (matched) {
       inProgressLesson = {
-        content_type: inProgressData.content_type as 'grammar' | 'listening' | 'reading',
-        content_id: inProgressData.content_id,
+        content_type: inProgressRes.data.content_type as 'grammar' | 'listening' | 'reading',
+        content_id: inProgressRes.data.content_id,
         title: matched.title,
         slug: matched.slug,
         status: 'in_progress',
-        last_seen_at: inProgressData.updated_at,
+        last_seen_at: inProgressRes.data.last_seen_at,
       };
     }
   }
 
   const completedLessonIdsToday = new Set<string>(
-    (completedTodayData || []).map((r) => r.content_id)
+    (completedTodayRes.data || []).map((r) => r.content_id)
   );
 
   // 5. Build Pure Daily Study Plan
@@ -198,7 +215,7 @@ export async function getStudentDashboardMetrics(
 
   const streakDays = calculateStudyStreak(activityTimestamps, new Date());
 
-  // 7. Recommendation Action
+  // 7. Recommended Action
   let recommendedAction = {
     title: 'Luyện Từ Vựng Flashcards',
     subtitle: 'Bắt đầu học các bộ từ vựng cốt lõi chuẩn đề thi TOEIC.',
@@ -222,6 +239,7 @@ export async function getStudentDashboardMetrics(
     streakDays,
     latestQuizAttempt,
     dailyPlan,
+    fetchError: fetchErrorMsg,
     recommendedAction,
   };
 }

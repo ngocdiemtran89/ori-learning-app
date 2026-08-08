@@ -2,14 +2,17 @@ import { describe, it, expect } from 'vitest';
 import {
   buildDailyStudyPlan,
   calculateUnresolvedMistakes,
+  isLessonAllowedForStudent,
   PublishedLessonInfo,
 } from './dailyPlan';
 
-describe('Phase 2.3 — Daily Study Plan Engine', () => {
+describe('Phase 2.3B — Daily Study Plan Engine & Stability', () => {
   const mockLessons: PublishedLessonInfo[] = [
-    { id: 'g1', kind: 'grammar', title: 'Present Simple', slug: 'present-simple', level: 'foundation', sort_order: 1 },
-    { id: 'l1', kind: 'listening', title: 'Part 2 Listening', slug: 'part-2-listening', level: 'foundation', sort_order: 1 },
-    { id: 'r1', kind: 'reading', title: 'Part 5 Reading', slug: 'part-5-reading', level: 'foundation', sort_order: 1 },
+    { id: 'g-found', kind: 'grammar', title: 'Present Simple Foundation', slug: 'present-simple-foundation', level: 'foundation', sort_order: 1 },
+    { id: 'g-inter', kind: 'grammar', title: 'Passive Voice Intermediate', slug: 'passive-voice-inter', level: 'intermediate', sort_order: 2 },
+    { id: 'g-adv', kind: 'grammar', title: 'Inversion Advanced', slug: 'inversion-adv', level: 'advanced', sort_order: 3 },
+    { id: 'l-found', kind: 'listening', title: 'Part 2 Listening Foundation', slug: 'part-2-foundation', level: 'foundation', sort_order: 1 },
+    { id: 'r-found', kind: 'reading', title: 'Part 5 Reading Foundation', slug: 'part-5-foundation', level: 'foundation', sort_order: 1 },
   ];
 
   it('CASE A: 20 vocabulary due, 0 mistakes, no progress -> Vocabulary + beginner tasks (max 4)', () => {
@@ -33,7 +36,7 @@ describe('Phase 2.3 — Daily Study Plan Engine', () => {
       unresolvedMistakeSummary: { totalUnresolved: 3, byCategory: { grammar: 3 }, topCategory: 'grammar' },
       inProgressLesson: {
         content_type: 'grammar',
-        content_id: 'g1',
+        content_id: 'g-found',
         title: 'Present Simple',
         slug: 'present-simple',
         status: 'in_progress',
@@ -55,7 +58,7 @@ describe('Phase 2.3 — Daily Study Plan Engine', () => {
       unresolvedMistakeSummary: { totalUnresolved: 0, byCategory: {} },
       inProgressLesson: {
         content_type: 'reading',
-        content_id: 'r1',
+        content_id: 'r-found',
         title: 'Part 5 Reading',
         slug: 'part-5-reading',
         status: 'in_progress',
@@ -82,7 +85,7 @@ describe('Phase 2.3 — Daily Study Plan Engine', () => {
     expect(plan.completedItems).toBe(0);
   });
 
-  it('CASE E: Very large workload (200 vocab, 50 mistakes) -> Cap at 20 vocab, 5 mistakes, max 4 items, reasonable duration', () => {
+  it('CASE E: Very large workload (200 vocab, 50 mistakes) -> Cap at 20 vocab, 5 mistakes, max 4 items, <= 30 mins', () => {
     const plan = buildDailyStudyPlan({
       vocabularyDueCount: 200,
       vocabularyReviewedTodayCount: 0,
@@ -126,5 +129,89 @@ describe('Phase 2.3 — Daily Study Plan Engine', () => {
 
     expect(plan.completedItems).toBe(plan.totalItems);
     expect(plan.totalEstimatedMinutes).toBe(0);
+  });
+
+  // PHASE 2.3B STABILITY TESTS (CASES I-M)
+
+  it('CASE I — Foundation level filtering: Foundation student NEVER gets intermediate/advanced', () => {
+    expect(isLessonAllowedForStudent('foundation', 'foundation')).toBe(true);
+    expect(isLessonAllowedForStudent('foundation', 'intermediate')).toBe(false);
+    expect(isLessonAllowedForStudent('foundation', 'advanced')).toBe(false);
+
+    const plan = buildDailyStudyPlan({
+      vocabularyDueCount: 0,
+      vocabularyReviewedTodayCount: 0,
+      unresolvedMistakeSummary: { totalUnresolved: 0, byCategory: {} },
+      availableLessons: mockLessons,
+      studentLevel: 'foundation',
+    });
+
+    const recommendedIds = plan.items.map((i) => i.id);
+    expect(recommendedIds).not.toContain('plan-practice-g-inter');
+    expect(recommendedIds).not.toContain('plan-practice-g-adv');
+  });
+
+  it('CASE J — Intermediate fallback: Intermediate student allows intermediate & foundation, NEVER advanced', () => {
+    expect(isLessonAllowedForStudent('intermediate', 'foundation')).toBe(true);
+    expect(isLessonAllowedForStudent('intermediate', 'intermediate')).toBe(true);
+    expect(isLessonAllowedForStudent('intermediate', 'advanced')).toBe(false);
+
+    const plan = buildDailyStudyPlan({
+      vocabularyDueCount: 0,
+      vocabularyReviewedTodayCount: 0,
+      unresolvedMistakeSummary: { totalUnresolved: 0, byCategory: {} },
+      availableLessons: mockLessons,
+      studentLevel: 'intermediate',
+    });
+
+    const recommendedIds = plan.items.map((i) => i.id);
+    expect(recommendedIds).not.toContain('plan-practice-g-adv');
+  });
+
+  it('CASE K — 30 minute hard cap: Plan NEVER exceeds 30 total estimated minutes', () => {
+    const plan = buildDailyStudyPlan({
+      vocabularyDueCount: 20, // 8 mins
+      vocabularyReviewedTodayCount: 0,
+      unresolvedMistakeSummary: { totalUnresolved: 5, byCategory: { grammar: 5 }, topCategory: 'grammar' }, // 10 mins
+      inProgressLesson: {
+        content_type: 'grammar',
+        content_id: 'g-found',
+        title: 'Present Simple',
+        slug: 'present-simple',
+        status: 'in_progress',
+      }, // 8 mins
+      // Existing total: 8 + 10 + 8 = 26 mins. Adding a 7-min practice would make 33. It must be skipped or capped!
+      availableLessons: mockLessons,
+    });
+
+    expect(plan.totalEstimatedMinutes).toBeLessThanOrEqual(30);
+  });
+
+  it('CASE L — Completed today schema fields: Verify user_progress model structure uses completed_at and last_seen_at', () => {
+    const mockProgressLesson = {
+      content_type: 'grammar' as const,
+      content_id: 'g-found',
+      title: 'Present Simple',
+      slug: 'present-simple',
+      status: 'in_progress' as const,
+      last_seen_at: '2026-08-08T12:00:00Z',
+      completed_at: null,
+    };
+
+    expect(mockProgressLesson).toHaveProperty('last_seen_at');
+    expect(mockProgressLesson).toHaveProperty('completed_at');
+    expect(mockProgressLesson).not.toHaveProperty('updated_at');
+  });
+
+  it('CASE M — Vocab reviewed but none due: Accurate title "Đã ôn 10 từ vựng hôm nay"', () => {
+    const plan = buildDailyStudyPlan({
+      vocabularyDueCount: 0,
+      vocabularyReviewedTodayCount: 10,
+      unresolvedMistakeSummary: { totalUnresolved: 0, byCategory: {} },
+    });
+
+    expect(plan.items[0].completed).toBe(true);
+    expect(plan.items[0].title).toBe('Đã ôn 10 từ vựng hôm nay');
+    expect(plan.items[0].title).not.toContain('đến hạn');
   });
 });

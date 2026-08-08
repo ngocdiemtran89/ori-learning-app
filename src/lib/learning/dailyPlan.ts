@@ -1,5 +1,5 @@
 /**
- * Pure Daily Study Plan Engine for ORI Learning (Phase 2.3)
+ * Pure Daily Study Plan Engine for ORI Learning (Phase 2.3B)
  * Deterministic, Zero-AI, derives daily study plan from student learning history.
  */
 
@@ -44,6 +44,7 @@ export interface UserProgressLesson {
   slug: string;
   status: 'not_started' | 'in_progress' | 'completed';
   last_seen_at?: string | null;
+  completed_at?: string | null;
 }
 
 export interface PublishedLessonInfo {
@@ -64,6 +65,30 @@ export interface DailyPlanInput {
   availableLessons?: PublishedLessonInfo[];
   completedLessonIdsToday?: Set<string>;
   studentLevel?: string;
+}
+
+/**
+ * Check if a lesson level is allowed for a student level.
+ * Rules:
+ * - Foundation student: only 'foundation' (never intermediate or advanced).
+ * - Intermediate student: 'intermediate' and 'foundation' (if fallback needed), but NEVER 'advanced'.
+ * - Advanced student: 'advanced', 'intermediate', 'foundation'.
+ */
+export function isLessonAllowedForStudent(studentLevel: string, lessonLevel: string): boolean {
+  const sLevel = (studentLevel || 'foundation').toLowerCase().trim();
+  const lLevel = (lessonLevel || 'foundation').toLowerCase().trim();
+
+  const levelRank: Record<string, number> = {
+    foundation: 1,
+    intermediate: 2,
+    advanced: 3,
+  };
+
+  const studentRank = levelRank[sLevel] || 1;
+  const lessonRank = levelRank[lLevel] || 1;
+
+  // Never allow content higher than student rank!
+  return lessonRank <= studentRank;
 }
 
 /**
@@ -129,7 +154,7 @@ export function calculateUnresolvedMistakes(
 }
 
 /**
- * Build deterministic daily study plan (Max 4 achievable tasks)
+ * Build deterministic daily study plan (Max 4 achievable tasks, Hard Cap <= 30 mins)
  */
 export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
   const items: DailyPlanItem[] = [];
@@ -139,18 +164,25 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
 
   // RULE 1 — VOCABULARY REVIEW
   if (input.vocabularyDueCount > 0 || input.vocabularyReviewedTodayCount > 0) {
-    const targetCount = Math.min(
-      input.vocabularyDueCount > 0 ? input.vocabularyDueCount : input.vocabularyReviewedTodayCount,
-      20
-    );
+    const isCompleted = input.vocabularyDueCount === 0 && input.vocabularyReviewedTodayCount > 0;
+    const targetCount = input.vocabularyDueCount > 0
+      ? Math.min(input.vocabularyDueCount, 20)
+      : input.vocabularyReviewedTodayCount;
     const estimatedMinutes = Math.min(8, Math.max(2, Math.ceil(targetCount / 2.5)));
-    const isCompleted = input.vocabularyDueCount === 0 && input.vocabularyReviewedTodayCount >= targetCount;
+
+    const title = isCompleted
+      ? `Đã ôn ${targetCount} từ vựng hôm nay`
+      : `Ôn ${targetCount} từ vựng đến hạn`;
+
+    const description = isCompleted
+      ? 'Bạn đã hoàn thành các từ vựng đến hạn theo chu kỳ SRS'
+      : 'Ôn tập từ vựng theo chu kỳ lặp lại ngắt quãng (SRS)';
 
     items.push({
       id: 'plan-vocab',
       type: 'vocabulary_review',
-      title: `Ôn ${targetCount} từ vựng đến hạn`,
-      description: 'Ôn tập từ vựng theo chu kỳ lặp lại ngắt quãng (SRS)',
+      title,
+      description,
       route: '/vocabulary/review-today',
       estimatedMinutes,
       priority: 1,
@@ -213,30 +245,40 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
       }
     });
 
-    // Sort kinds by least recently practiced
     const recent = input.recentActivityTypes || [];
     kinds.sort((a, b) => {
       const idxA = recent.indexOf(a);
       const idxB = recent.indexOf(b);
       const posA = idxA === -1 ? 999 : idxA;
       const posB = idxB === -1 ? 999 : idxB;
-      return posB - posA; // Least recent first
+      return posB - posA;
     });
 
     for (const kind of kinds) {
       if (items.length >= maxItems) break;
 
-      // Find published lesson matching kind & level
+      const currentTotal = items.filter((i) => !i.completed).reduce((s, i) => s + i.estimatedMinutes, 0);
+      if (currentTotal >= 30) break; // Hard stop at 30 minutes!
+
+      const remainingAvailable = 30 - currentTotal;
+      if (remainingAvailable < 5) break; // Do not add a practice task if less than 5 mins remain!
+
+      // Filter published lessons strictly matching student level rules
       const matchingLessons = input.availableLessons.filter((l) => {
         const matchesKind = l.kind === kind;
-        const matchesLevel = !l.level || l.level.toLowerCase() === level || level === 'foundation';
-        return matchesKind && matchesLevel && !usedLessonIds.has(l.id);
+        const isAllowed = isLessonAllowedForStudent(level, l.level);
+        return matchesKind && isAllowed && !usedLessonIds.has(l.id);
       });
 
-      // Sort by sort_order
-      matchingLessons.sort((a, b) => a.sort_order - b.sort_order);
+      // Sort matching lessons: exact level match first, then sort_order
+      matchingLessons.sort((a, b) => {
+        const aExact = (a.level || 'foundation').toLowerCase() === level ? 0 : 1;
+        const bExact = (b.level || 'foundation').toLowerCase() === level ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+        return a.sort_order - b.sort_order;
+      });
 
-      const selected = matchingLessons[0] || input.availableLessons.find((l) => l.kind === kind && !usedLessonIds.has(l.id));
+      const selected = matchingLessons[0];
 
       if (selected) {
         usedLessonIds.add(selected.id);
@@ -244,9 +286,7 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
 
         const isCompleted = completedToday.has(selected.id);
         const typeTitle = kind === 'grammar' ? 'Ngữ pháp' : kind === 'listening' ? 'Luyện nghe' : 'Luyện đọc';
-        const currentTotal = items.filter(i => !i.completed).reduce((s, i) => s + i.estimatedMinutes, 0);
-        const remainingCap = Math.max(5, 30 - currentTotal);
-        const estMin = Math.min(7, remainingCap);
+        const estMin = Math.min(7, remainingAvailable);
 
         items.push({
           id: `plan-practice-${selected.id}`,
@@ -262,11 +302,12 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
     }
   }
 
-  // Summary Metrics
+  // Summary Metrics — Ensure totalEstimatedMinutes NEVER exceeds 30!
   const completedItems = items.filter((i) => i.completed).length;
-  const totalEstimatedMinutes = items
-    .filter((i) => !i.completed)
-    .reduce((sum, i) => sum + i.estimatedMinutes, 0);
+  const totalEstimatedMinutes = Math.min(
+    30,
+    items.filter((i) => !i.completed).reduce((sum, i) => sum + i.estimatedMinutes, 0)
+  );
 
   return {
     items,
