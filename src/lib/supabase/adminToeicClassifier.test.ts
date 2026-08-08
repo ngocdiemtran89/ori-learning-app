@@ -23,7 +23,7 @@ describe('adminToeicClassifier', () => {
       title: 'Test',
       slug: 'test-1',
       test_code: 'T1',
-      description: null,
+      description: '',
       test_type: 'full'
     },
     groups: [
@@ -52,12 +52,20 @@ describe('adminToeicClassifier', () => {
         audio_url: null,
         image_url: null
       }
-    ]
+    ],
+    issues: [],
+    summary: {
+      detectedQuestions: 1,
+      partCounts: { part1: 1 },
+      missingNumbers: [],
+      duplicateNumbers: [],
+      answersFound: 1
+    }
   });
 
   it('CASE: valid grouped import -> succeeds', async () => {
-    vi.mocked(supabase.maybeSingle).mockResolvedValue({ data: null, error: null } as any);
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: { success: true, test_id: 'test-uuid' }, error: null } as any);
+    (supabase as any).maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    (supabase as any).rpc = vi.fn().mockResolvedValue({ data: { success: true, test_id: 'test-uuid' }, error: null });
 
     const draft = getValidDraft();
     const result = await importToeicTestDraft(draft);
@@ -67,8 +75,8 @@ describe('adminToeicClassifier', () => {
   });
 
   it('CASE: duplicate group_temp_key -> rejected (conceptually by DB)', async () => {
-    vi.mocked(supabase.maybeSingle).mockResolvedValue({ data: null, error: null } as any);
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: 'Duplicate group_temp_key: g1' } } as any);
+    (supabase as any).maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    (supabase as any).rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'Duplicate group_temp_key: g1' } });
 
     const draft = getValidDraft();
     const result = await importToeicTestDraft(draft);
@@ -78,8 +86,8 @@ describe('adminToeicClassifier', () => {
   });
 
   it('CASE: question/group Part mismatch -> rejected (conceptually by DB)', async () => {
-    vi.mocked(supabase.maybeSingle).mockResolvedValue({ data: null, error: null } as any);
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: 'Question part (part2) does not match group part (part1)' } } as any);
+    (supabase as any).maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    (supabase as any).rpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'Question part (part2) does not match group part (part1)' } });
 
     const draft = getValidDraft();
     const result = await importToeicTestDraft(draft);
@@ -89,8 +97,8 @@ describe('adminToeicClassifier', () => {
   });
 
   it('CASE: standalone Part 5 without group -> accepted (conceptually by DB)', async () => {
-    vi.mocked(supabase.maybeSingle).mockResolvedValue({ data: null, error: null } as any);
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: { success: true, test_id: 'test-uuid' }, error: null } as any);
+    (supabase as any).maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    (supabase as any).rpc = vi.fn().mockResolvedValue({ data: { success: true, test_id: 'test-uuid' }, error: null });
 
     const draft = getValidDraft();
     draft.groups = [];

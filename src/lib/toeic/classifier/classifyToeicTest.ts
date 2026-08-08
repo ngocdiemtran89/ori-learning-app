@@ -12,18 +12,41 @@ export function parseRawToeicTest(
   const issues: ParserIssue[] = [];
   const questions: ParsedQuestion[] = [];
   
-  // 1. Break text into blocks. We can pre-process to ensure blank lines after headings.
-  const normalizedText = text.replace(/^\s*(PART\s+[1-7].*)$/gim, '$1\n\n');
+  // Normalize headings in the text so they become their own blocks
+  // Support PART 1, PART I, PART ONE, etc.
+  const headingPattern = /^[\s\-\*]*(PART\s+(?:[1-7]|I{1,3}V?|VI{1,2}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN)).*$/gim;
+  const normalizedText = text.replace(headingPattern, '\n\n$1\n\n');
   const blocks = normalizedText.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
   
   let currentHeading = '';
 
+  const parsePartNumber = (val: string): string | null => {
+    const v = val.toUpperCase();
+    if (['1', 'I', 'ONE'].includes(v)) return 'part1';
+    if (['2', 'II', 'TWO'].includes(v)) return 'part2';
+    if (['3', 'III', 'THREE'].includes(v)) return 'part3';
+    if (['4', 'IV', 'FOUR'].includes(v)) return 'part4';
+    if (['5', 'V', 'FIVE'].includes(v)) return 'part5';
+    if (['6', 'VI', 'SIX'].includes(v)) return 'part6';
+    if (['7', 'VII', 'SEVEN'].includes(v)) return 'part7';
+    return null;
+  };
+
   for (const block of blocks) {
-    // Check if block is a heading like "PART 6" or "Part 1"
-    const headingMatch = block.match(/^PART\s+([1-7])/i);
+    // Check if block is a heading
+    const headingMatch = block.match(/^PART\s+([1-7]|I{1,3}V?|VI{1,2}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN)/i);
     if (headingMatch) {
-      currentHeading = `part${headingMatch[1]}`;
+      const parsedPart = parsePartNumber(headingMatch[1]);
+      if (parsedPart) {
+        currentHeading = parsedPart;
+      }
       continue;
+    }
+
+    // Ignore explicit Part 7 boundary instructions like "Questions 147-149 refer to the following..."
+    // so they are not accidentally parsed as a question if the regex is too loose.
+    if (block.match(/^Questions?\s+\d+\s*-\s*\d+\s+refer/i)) {
+       continue;
     }
 
     const qData = parseQuestionBlock(block);

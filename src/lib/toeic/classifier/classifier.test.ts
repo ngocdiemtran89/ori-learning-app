@@ -130,4 +130,50 @@ describe('Phase 3.5D — TOEIC Classifier Tests', () => {
     expect(q131?.group_temp_key).toBeTruthy();
     expect(q131?.group_temp_key).toBe(q132?.group_temp_key);
   });
+
+  it('CASE: classify headings and ignore instructions', () => {
+    const rawTest = `
+PART 2
+
+7. Question 7
+(A) A
+(B) B
+(C) C
+
+PART 5
+
+101. Question 101
+(A) A
+(B) B
+(C) C
+(D) D
+
+PART 7
+
+Questions 147-149 refer to the following email.
+
+147. Question 147
+(A) A
+(B) B
+(C) C
+(D) D
+    `;
+    const draft = parseRawToeicTest(rawTest, { title: 'Test', slug: 't', test_code: 't', description: '', test_type: 'full' });
+    
+    expect(draft.questions.length).toBe(3);
+    
+    // Check headings
+    const q7 = draft.questions.find(q => q.question_number === 7);
+    const q101 = draft.questions.find(q => q.question_number === 101);
+    const q147 = draft.questions.find(q => q.question_number === 147);
+    
+    expect(q7?.part).toBe('part2');
+    expect(q101?.part).toBe('part5');
+    expect(q147?.part).toBe('part7');
+
+    // Make sure no heading conflicts are generated for these
+    expect(draft.issues.some(i => i.question_number === 7 && i.message.includes('Heading'))).toBe(false);
+    expect(draft.issues.some(i => i.question_number === 101 && i.message.includes('Heading'))).toBe(false);
+    expect(draft.issues.some(i => i.question_number === 147 && i.message.includes('Heading'))).toBe(false);
+  });
 });
