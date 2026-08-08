@@ -1,5 +1,5 @@
 /**
- * Pure Validation & Format Helpers for Phase 3.1 Vocabulary CMS
+ * Pure Validation & Format Helpers for Phase 3.1B Vocabulary CMS
  */
 
 export function slugifyTitle(title: string): string {
@@ -9,6 +9,7 @@ export function slugifyTitle(title: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // remove diacritics
     .replace(/[^a-z0-9]+/g, '-') // replace non-alphanumeric with hyphens
+    .replace(/-+/g, '-') // collapse consecutive hyphens
     .replace(/^-+|-+$/g, '') // trim hyphens
     .trim();
 }
@@ -55,6 +56,11 @@ export interface VocabularyItemValidationInput {
   sort_order: number;
 }
 
+export function isValidSlug(slug: string): boolean {
+  if (!slug) return false;
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug.trim());
+}
+
 export function validateDeckInput(input: DeckValidationInput): { isValid: boolean; errors: Record<string, string> } {
   const errors: Record<string, string> = {};
 
@@ -64,15 +70,19 @@ export function validateDeckInput(input: DeckValidationInput): { isValid: boolea
 
   if (!input.slug || !input.slug.trim()) {
     errors.slug = 'Slug không được để trống.';
-  } else if (!/^[a-z0-9-]+$/.test(input.slug.trim())) {
-    errors.slug = 'Slug chỉ được chứa chữ cái thường (a-z), chữ số (0-9) và dấu gạch ngang (-).';
+  } else if (!isValidSlug(input.slug)) {
+    errors.slug = 'Slug chỉ chứa chữ cái thường (a-z), chữ số (0-9) và dấu gạch ngang đơn (không bắt đầu/kết thúc hoặc chứa dấu gạch nối kép).';
   }
 
   if (!input.level || !input.level.trim()) {
     errors.level = 'Trình độ không được để trống.';
   }
 
-  if (typeof input.sort_order !== 'number' || isNaN(input.sort_order) || input.sort_order < 0) {
+  if (
+    typeof input.sort_order !== 'number' ||
+    !Number.isInteger(input.sort_order) ||
+    input.sort_order < 0
+  ) {
     errors.sort_order = 'Thứ tự hiển thị phải là số nguyên lớn hơn hoặc bằng 0.';
   }
 
@@ -96,7 +106,11 @@ export function validateVocabularyItemInput(
     errors.deck_id = 'Bộ từ vựng (Deck) không được để trống.';
   }
 
-  if (typeof input.sort_order !== 'number' || isNaN(input.sort_order) || input.sort_order < 0) {
+  if (
+    typeof input.sort_order !== 'number' ||
+    !Number.isInteger(input.sort_order) ||
+    input.sort_order < 0
+  ) {
     errors.sort_order = 'Thứ tự hiển thị phải là số nguyên lớn hơn hoặc bằng 0.';
   }
 
@@ -104,4 +118,60 @@ export function validateVocabularyItemInput(
     isValid: Object.keys(errors).length === 0,
     errors,
   };
+}
+
+export function canPublishVocabularyItem(input: {
+  word?: string;
+  meaning_vi?: string;
+  deck_id?: string;
+  sort_order?: number;
+}): { canPublish: boolean; error: string | null } {
+  if (!input.word || !input.word.trim()) {
+    return { canPublish: false, error: 'Từ vựng (Word) không được để trống khi xuất bản.' };
+  }
+  if (!input.meaning_vi || !input.meaning_vi.trim()) {
+    return { canPublish: false, error: 'Nghĩa tiếng Việt không được để trống khi xuất bản.' };
+  }
+  if (!input.deck_id || !input.deck_id.trim()) {
+    return { canPublish: false, error: 'Bộ từ vựng không được để trống.' };
+  }
+  if (
+    typeof input.sort_order !== 'number' ||
+    !Number.isInteger(input.sort_order) ||
+    input.sort_order < 0
+  ) {
+    return { canPublish: false, error: 'Thứ tự hiển thị phải là số nguyên lớn hơn hoặc bằng 0.' };
+  }
+
+  return { canPublish: true, error: null };
+}
+
+export function canPublishDeck(
+  input: { title?: string; slug?: string; level?: string; sort_order?: number },
+  publishedWordsCount: number
+): { canPublish: boolean; error: string | null } {
+  if (!input.title || !input.title.trim()) {
+    return { canPublish: false, error: 'Tên bộ từ vựng không được để trống khi xuất bản.' };
+  }
+  if (!input.slug || !input.slug.trim() || !isValidSlug(input.slug)) {
+    return { canPublish: false, error: 'Slug bộ từ không hợp lệ.' };
+  }
+  if (!input.level || !input.level.trim()) {
+    return { canPublish: false, error: 'Trình độ bộ từ không được để trống.' };
+  }
+  if (
+    typeof input.sort_order !== 'number' ||
+    !Number.isInteger(input.sort_order) ||
+    input.sort_order < 0
+  ) {
+    return { canPublish: false, error: 'Thứ tự hiển thị phải là số nguyên lớn hơn hoặc bằng 0.' };
+  }
+  if (publishedWordsCount <= 0) {
+    return {
+      canPublish: false,
+      error: 'Bạn cần xuất bản ít nhất 1 từ trước khi xuất bản bộ từ.',
+    };
+  }
+
+  return { canPublish: true, error: null };
 }

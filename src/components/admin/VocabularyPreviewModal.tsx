@@ -14,12 +14,19 @@ export const VocabularyPreviewModal: React.FC<VocabularyPreviewModalProps> = ({
   onClose,
 }) => {
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   const handlePlayAudio = (e: React.MouseEvent) => {
     e.stopPropagation();
+    setAudioError(null);
+
     if (item.audio_url) {
       const audio = new Audio(item.audio_url);
-      audio.play().catch(() => {});
+      audio
+        .play()
+        .catch(() => {
+          setAudioError('Không thể phát audio từ URL này.');
+        });
     } else if (item.word && 'speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(item.word);
       utterance.lang = 'en-US';
@@ -45,6 +52,13 @@ export const VocabularyPreviewModal: React.FC<VocabularyPreviewModalProps> = ({
           </button>
         </div>
 
+        {audioError && (
+          <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-xl flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{audioError}</span>
+          </div>
+        )}
+
         {/* Flashcard Box */}
         <div
           onClick={() => setIsFlipped(!isFlipped)}
@@ -57,15 +71,19 @@ export const VocabularyPreviewModal: React.FC<VocabularyPreviewModalProps> = ({
           {!isFlipped ? (
             /* FRONT CARD */
             <div className="flex flex-col items-center justify-center text-center my-auto space-y-3">
-              <span className="text-xs font-bold text-indigo-600 uppercase tracking-widest">
-                {item.part_of_speech || 'noun'}
+              <span className={`text-xs font-bold tracking-widest ${item.part_of_speech ? 'text-indigo-600 uppercase' : 'text-slate-400 font-normal italic'}`}>
+                {item.part_of_speech || 'Chưa nhập từ loại'}
               </span>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
                 {item.word || 'word'}
               </h2>
-              {item.ipa && (
+              {item.ipa ? (
                 <span className="text-sm font-semibold text-slate-500 font-mono">
                   {item.ipa}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 italic font-mono">
+                  Chưa nhập phiên âm IPA
                 </span>
               )}
 
@@ -90,7 +108,7 @@ export const VocabularyPreviewModal: React.FC<VocabularyPreviewModalProps> = ({
                 </h3>
               </div>
 
-              {(item.example_en || item.example_vi) && (
+              {(item.example_en || item.example_vi) ? (
                 <div className="p-3.5 bg-slate-800/80 rounded-2xl border border-slate-700/80 space-y-1">
                   {item.example_en && (
                     <p className="text-xs font-semibold text-indigo-200 italic">
@@ -102,6 +120,10 @@ export const VocabularyPreviewModal: React.FC<VocabularyPreviewModalProps> = ({
                       {item.example_vi}
                     </p>
                   )}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-800/40 rounded-xl text-xs text-slate-500 italic">
+                  Chưa nhập câu ví dụ
                 </div>
               )}
 

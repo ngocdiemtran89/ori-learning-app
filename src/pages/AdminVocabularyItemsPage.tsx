@@ -80,7 +80,10 @@ export const AdminVocabularyItemsPage: React.FC = () => {
     loadData(1);
   };
 
+  const [updatingWordId, setUpdatingWordId] = useState<string | null>(null);
+
   const handleTogglePublish = async (item: VocabularyItem) => {
+    setUpdatingWordId(item.id);
     const nextStatus = !item.is_published;
     const res = await setVocabularyItemPublished(item.id, nextStatus);
 
@@ -88,9 +91,10 @@ export const AdminVocabularyItemsPage: React.FC = () => {
       setToastMsg(`Lỗi: ${res.error}`);
     } else {
       setToastMsg(`Đã ${nextStatus ? 'xuất bản' : 'ẩn'} từ "${item.word}".`);
-      loadData(page);
+      await loadData(page);
     }
-    setTimeout(() => setToastMsg(null), 3500);
+    setUpdatingWordId(null);
+    setTimeout(() => setToastMsg(null), 4000);
   };
 
   return (
@@ -274,14 +278,15 @@ export const AdminVocabularyItemsPage: React.FC = () => {
 
                       <button
                         type="button"
+                        disabled={updatingWordId === item.id}
                         onClick={() => handleTogglePublish(item)}
-                        className={`px-2.5 py-1.5 font-extrabold text-[11px] rounded-lg transition-colors ${
+                        className={`px-2.5 py-1.5 font-extrabold text-[11px] rounded-lg transition-colors disabled:opacity-50 ${
                           item.is_published
                             ? 'bg-amber-50 hover:bg-amber-100 text-amber-800'
                             : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                         }`}
                       >
-                        {item.is_published ? 'Ẩn' : 'Xuất bản'}
+                        {updatingWordId === item.id ? 'Đang xử lý...' : item.is_published ? 'Ẩn' : 'Xuất bản'}
                       </button>
                     </td>
                   </tr>

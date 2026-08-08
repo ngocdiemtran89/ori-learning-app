@@ -1,11 +1,12 @@
 /**
- * Admin Vocabulary CMS Data Layer (Phase 3.1)
+ * Admin Vocabulary CMS Data Layer (Phase 3.1B)
  * Data mutations and queries for Vocabulary Decks and Items.
  * STRICT RULE: NO HARD DELETE MUTATIONS EXPOSED.
  */
 
 import { supabase } from './client';
 import { VocabularyDeck, VocabularyItem } from './types';
+import { canPublishDeck, canPublishVocabularyItem } from '../cms/vocabularyValidation';
 
 export interface AdminDeckInfo extends VocabularyDeck {
   total_words_count: number;
@@ -77,12 +78,18 @@ export async function getAdminVocabularyDecks(): Promise<{ data: AdminDeckInfo[]
         .order('title', { ascending: true }),
       supabase
         .from('vocabulary_items')
-        .select('deck_id, is_published'),
+        .select('deck_id, is_published'), // Only minimal 2 columns for efficiency
     ]);
 
     if (decksRes.error) {
       console.error('[ORI CMS] Error fetching decks:', decksRes.error.message);
       return { data: [], error: 'Không thể tải danh sách bộ từ vựng từ cơ sở dữ liệu.' };
+    }
+
+    // Explicit error check for words count query to prevent silent 0 counts
+    if (wordsRes.error) {
+      console.error('[ORI CMS] Error fetching vocabulary item counts:', wordsRes.error.message);
+      return { data: [], error: 'Không thể tải đầy đủ thống kê bộ từ vựng.' };
     }
 
     const words = wordsRes.data || [];
@@ -212,23 +219,47 @@ export async function updateVocabularyDeck(
 }
 
 /**
- * Toggle Deck published status
+ * Toggle Deck published status (Blocks publishing empty decks!)
  */
 export async function setVocabularyDeckPublished(
   deckId: string,
   is_published: boolean
 ): Promise<{ success: boolean; error: string | null }> {
-  const { error } = await supabase
-    .from('vocabulary_decks')
-    .update({ is_published })
-    .eq('id', deckId);
+  try {
+    if (is_published) {
+      // Validate deck data & published words count before allowing publish
+      const [deckRes, wordsRes] = await Promise.all([
+        supabase.from('vocabulary_decks').select('*').eq('id', deckId).maybeSingle(),
+        supabase.from('vocabulary_items').select('id').eq('deck_id', deckId).eq('is_published', true),
+      ]);
 
-  if (error) {
-    console.error('[ORI CMS] Error toggling deck published status:', error.message);
-    return { success: false, error: 'Không thể thay đổi trạng thái xuất bản bộ từ vựng.' };
+      if (deckRes.error || !deckRes.data) {
+        return { success: false, error: 'Không tìm thấy bộ từ vựng để xuất bản.' };
+      }
+
+      const publishedWordsCount = (wordsRes.data || []).length;
+      const validation = canPublishDeck(deckRes.data, publishedWordsCount);
+
+      if (!validation.canPublish) {
+        return { success: false, error: validation.error };
+      }
+    }
+
+    const { error } = await supabase
+      .from('vocabulary_decks')
+      .update({ is_published })
+      .eq('id', deckId);
+
+    if (error) {
+      console.error('[ORI CMS] Error toggling deck published status:', error.message);
+      return { success: false, error: 'Không thể thay đổi trạng thái xuất bản bộ từ vựng.' };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    console.error('[ORI CMS] Exception in setVocabularyDeckPublished:', err);
+    return { success: false, error: 'Lỗi không xác định khi thay đổi trạng thái bộ từ.' };
   }
-
-  return { success: true, error: null };
 }
 
 export interface GetItemsOptions {
@@ -244,6 +275,13 @@ export interface PaginatedVocabularyItems {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+/**
+ * Sanitize search input to prevent PostgREST expression breakage
+ */
+function sanitizeSearchQuery(query: string): string {
+  return query.replace(/[,()%]/g, '').trim();
 }
 
 /**
@@ -270,8 +308,9 @@ export async function getAdminVocabularyItems(
       query = query.eq('is_published', false);
     }
 
-    if (options.searchQuery && options.searchQuery.trim()) {
-      const q = `%${options.searchQuery.trim().toLowerCase()}%`;
+    const cleanSearch = options.searchQuery ? sanitizeSearchQuery(options.searchQuery) : '';
+    if (cleanSearch) {
+      const q = `%${cleanSearch.toLowerCase()}%`;
       query = query.or(`word.ilike.${q},meaning_vi.ilike.${q}`);
     }
 
@@ -288,7 +327,7 @@ export async function getAdminVocabularyItems(
     }
 
     const totalCount = count || 0;
-    const totalPages = Math.ceil(totalCount / pageSize) || 1;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
     return {
       data: {
@@ -417,21 +456,43 @@ export async function updateVocabularyItem(
 }
 
 /**
- * Toggle Vocabulary Item published status
+ * Toggle Vocabulary Item published status (Validates before publishing!)
  */
 export async function setVocabularyItemPublished(
   wordId: string,
   is_published: boolean
 ): Promise<{ success: boolean; error: string | null }> {
-  const { error } = await supabase
-    .from('vocabulary_items')
-    .update({ is_published })
-    .eq('id', wordId);
+  try {
+    if (is_published) {
+      const { data: word, error: fetchErr } = await supabase
+        .from('vocabulary_items')
+        .select('*')
+        .eq('id', wordId)
+        .maybeSingle();
 
-  if (error) {
-    console.error('[ORI CMS] Error toggling word published status:', error.message);
-    return { success: false, error: 'Không thể thay đổi trạng thái xuất bản của từ vựng.' };
+      if (fetchErr || !word) {
+        return { success: false, error: 'Không tìm thấy từ vựng để xuất bản.' };
+      }
+
+      const validation = canPublishVocabularyItem(word);
+      if (!validation.canPublish) {
+        return { success: false, error: validation.error };
+      }
+    }
+
+    const { error } = await supabase
+      .from('vocabulary_items')
+      .update({ is_published })
+      .eq('id', wordId);
+
+    if (error) {
+      console.error('[ORI CMS] Error toggling word published status:', error.message);
+      return { success: false, error: 'Không thể thay đổi trạng thái xuất bản của từ vựng.' };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    console.error('[ORI CMS] Exception in setVocabularyItemPublished:', err);
+    return { success: false, error: 'Lỗi không xác định khi xuất bản từ vựng.' };
   }
-
-  return { success: true, error: null };
 }

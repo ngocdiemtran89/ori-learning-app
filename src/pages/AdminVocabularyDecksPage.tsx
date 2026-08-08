@@ -32,7 +32,10 @@ export const AdminVocabularyDecksPage: React.FC = () => {
     fetchDecks();
   }, []);
 
+  const [updatingDeckId, setUpdatingDeckId] = useState<string | null>(null);
+
   const handleTogglePublish = async (deck: AdminDeckInfo) => {
+    setUpdatingDeckId(deck.id);
     const nextStatus = !deck.is_published;
     const res = await setVocabularyDeckPublished(deck.id, nextStatus);
 
@@ -40,9 +43,10 @@ export const AdminVocabularyDecksPage: React.FC = () => {
       setToastMsg(`Lỗi: ${res.error}`);
     } else {
       setToastMsg(`Đã ${nextStatus ? 'xuất bản' : 'ẩn'} bộ từ vựng "${deck.title}".`);
-      fetchDecks();
+      await fetchDecks();
     }
-    setTimeout(() => setToastMsg(null), 3500);
+    setUpdatingDeckId(null);
+    setTimeout(() => setToastMsg(null), 4000);
   };
 
   return (
@@ -152,14 +156,17 @@ export const AdminVocabularyDecksPage: React.FC = () => {
 
                 <button
                   type="button"
+                  disabled={updatingDeckId === deck.id}
                   onClick={() => handleTogglePublish(deck)}
-                  className={`px-3.5 py-2 text-xs font-extrabold rounded-xl flex items-center gap-1.5 transition-colors ${
+                  className={`px-3.5 py-2 text-xs font-extrabold rounded-xl flex items-center gap-1.5 transition-colors disabled:opacity-50 ${
                     deck.is_published
                       ? 'bg-amber-50 hover:bg-amber-100 text-amber-800'
                       : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                   }`}
                 >
-                  {deck.is_published ? (
+                  {updatingDeckId === deck.id ? (
+                    'Đang xử lý...'
+                  ) : deck.is_published ? (
                     <>
                       <EyeOff className="w-3.5 h-3.5" /> Ẩn Bài
                     </>
