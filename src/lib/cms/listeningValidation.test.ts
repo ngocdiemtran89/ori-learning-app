@@ -140,6 +140,84 @@ describe('Phase 3.3 — Listening CMS Pure Validation & Stable Identity Tests', 
     expect(shouldRotateLearningQuestionIdentity(original, optionEdit)).toBe(true);
   });
 
+  it('Phase 3.3B — CASE A: Replacement insert fails', async () => {
+    let oldIsActive = true;
+    const res = await listeningCmsModule.executeSafeQuestionReplacement({
+      insertInactiveNew: async () => ({ data: null, error: 'DB Network Error' }),
+      hideOld: async () => {
+        oldIsActive = false;
+        return { error: null };
+      },
+      activateNew: async () => ({ data: { id: 'new' }, error: null }),
+      restoreOld: async () => ({ error: null }),
+    });
+
+    expect(res.error).toBe('Không thể lưu thay đổi câu hỏi. Nội dung cũ vẫn được giữ an toàn.');
+    expect(oldIsActive).toBe(true); // Old question remains untouched!
+  });
+
+  it('Phase 3.3B — CASE B: Replacement inserted inactive, hiding old fails', async () => {
+    let oldIsActive = true;
+    let newIsActive = false;
+
+    const res = await listeningCmsModule.executeSafeQuestionReplacement({
+      insertInactiveNew: async () => ({ data: { id: 'new-uuid' }, error: null }),
+      hideOld: async () => ({ error: 'Lock Error' }),
+      activateNew: async () => {
+        newIsActive = true;
+        return { data: { id: 'new-uuid' }, error: null };
+      },
+      restoreOld: async () => ({ error: null }),
+    });
+
+    expect(res.error).toBe('Không thể lưu thay đổi câu hỏi. Nội dung cũ vẫn được giữ an toàn.');
+    expect(oldIsActive).toBe(true); // Old stays active
+    expect(newIsActive).toBe(false); // New stays inactive
+  });
+
+  it('Phase 3.3B — CASE C: All 6 steps succeed (Clean Replacement)', async () => {
+    let oldIsActive = true;
+    let newIsActive = false;
+
+    const res = await listeningCmsModule.executeSafeQuestionReplacement({
+      insertInactiveNew: async () => ({ data: { id: 'new-uuid' }, error: null }),
+      hideOld: async () => {
+        oldIsActive = false;
+        return { error: null };
+      },
+      activateNew: async (newId) => {
+        newIsActive = true;
+        return { data: { id: newId, is_active: true }, error: null };
+      },
+      restoreOld: async () => ({ error: null }),
+    });
+
+    expect(res.error).toBeNull();
+    expect(res.data).toEqual({ id: 'new-uuid', is_active: true });
+    expect(oldIsActive).toBe(false); // Old inactive
+    expect(newIsActive).toBe(true); // New active
+  });
+
+  it('Phase 3.3B — CASE D: New activation fails, old restoration succeeds', async () => {
+    let oldIsActive = false;
+
+    const res = await listeningCmsModule.executeSafeQuestionReplacement({
+      insertInactiveNew: async () => ({ data: { id: 'new-uuid' }, error: null }),
+      hideOld: async () => {
+        oldIsActive = false;
+        return { error: null };
+      },
+      activateNew: async () => ({ data: null, error: 'Activation Error' }),
+      restoreOld: async () => {
+        oldIsActive = true;
+        return { error: null };
+      },
+    });
+
+    expect(res.error).toBe('Không thể kích hoạt câu hỏi mới. Nội dung cũ vẫn được giữ an toàn.');
+    expect(oldIsActive).toBe(true); // Old successfully restored to active!
+  });
+
   it('R: NO DELETE MUTATION EXPOSED: Confirm Listening validation module has no delete exports', () => {
     expect((listeningCmsModule as any).deleteListeningLesson).toBeUndefined();
     expect((listeningCmsModule as any).deleteLessonQuestion).toBeUndefined();

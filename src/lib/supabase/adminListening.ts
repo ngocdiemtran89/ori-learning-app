@@ -11,6 +11,7 @@ import {
   shouldRotateLearningQuestionIdentity,
   validateListeningLessonForPublish,
   normalizeToeicPart,
+  executeSafeQuestionReplacement,
   ListeningLessonCMSInput,
   ListeningQuestionInput,
 } from '../cms/listeningValidation';
@@ -329,33 +330,51 @@ export async function saveListeningQuestion(
         .maybeSingle();
 
       if (origQ && isLessonPublished && shouldRotateLearningQuestionIdentity(origQ as any, input)) {
-        // MATERIAL EDIT ON PUBLISHED QUESTION -> HIDE OLD, INSERT NEW QUESTION (Preserves historical ID)
-        await supabase
-          .from('lesson_questions')
-          .update({ is_active: false })
-          .eq('id', input.id);
-
-        const { data: newQ, error: insErr } = await supabase
-          .from('lesson_questions')
-          .insert({
-            lesson_id: lessonId,
-            question_text,
-            options,
-            correct_answer,
-            explanation,
-            sort_order,
-            is_active: true,
-            skill_tag,
-            topic,
-            image_url,
-          })
-          .select('*')
-          .single();
-
-        if (insErr) {
-          return { data: null, error: 'Không thể tạo câu hỏi thay thế.' };
-        }
-        return { data: newQ as LessonQuestion, error: null };
+        // MATERIAL EDIT ON PUBLISHED QUESTION -> 6-STEP SAFE REPLACEMENT
+        return executeSafeQuestionReplacement({
+          insertInactiveNew: async () => {
+            const { data: newQ, error: insErr } = await supabase
+              .from('lesson_questions')
+              .insert({
+                lesson_id: lessonId,
+                question_text,
+                options,
+                correct_answer,
+                explanation,
+                sort_order,
+                is_active: false, // Step 1: Insert inactive
+                skill_tag,
+                topic,
+                image_url,
+              })
+              .select('*')
+              .single();
+            return { data: newQ, error: insErr };
+          },
+          hideOld: async () => {
+            const { error: hideErr } = await supabase
+              .from('lesson_questions')
+              .update({ is_active: false })
+              .eq('id', input.id!);
+            return { error: hideErr };
+          },
+          activateNew: async (newId: string) => {
+            const { data: actQ, error: actErr } = await supabase
+              .from('lesson_questions')
+              .update({ is_active: true })
+              .eq('id', newId)
+              .select('*')
+              .single();
+            return { data: actQ, error: actErr };
+          },
+          restoreOld: async () => {
+            const { error: recErr } = await supabase
+              .from('lesson_questions')
+              .update({ is_active: true })
+              .eq('id', input.id!);
+            return { error: recErr };
+          },
+        });
       }
 
       // Non-material edit or unpublished lesson -> update in-place
