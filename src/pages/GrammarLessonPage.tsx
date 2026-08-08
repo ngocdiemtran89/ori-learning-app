@@ -106,7 +106,7 @@ export const GrammarLessonPage: React.FC = () => {
 
   const content = (lesson.lesson_content as unknown as GrammarLessonContent) || {};
   const sections = content.sections || [];
-  const quiz = content.quiz || [];
+  const quiz = (content.quiz || []).filter((q: any) => q.is_active !== false);
 
   const handleSelectAnswer = (qIndex: number, optionValue: string) => {
     if (isSubmitted) return; // Lock after submission
@@ -147,21 +147,21 @@ export const GrammarLessonPage: React.FC = () => {
       );
 
       if (attemptRes.attemptId) {
-        const qAttempts = quiz.map((q: QuizQuestionItem, idx: number) => {
+        const qAttempts = quiz.map((q: any, idx: number) => {
           const selected = userAnswers[idx] || null;
           return {
             attempt_id: attemptRes.attemptId!,
             user_id: user.id,
             content_type: 'grammar' as const,
             content_id: lesson.id,
-            question_key: `grammar:${lesson.id}:${idx}`,
+            question_key: q.question_key || `grammar:${lesson.id}:${idx}`,
             question_index: idx,
             question_text: q.question,
             selected_answer: selected,
             correct_answer: q.answer,
             is_correct: selected === q.answer,
             explanation: q.explanation || null,
-            skill_tag: lesson.title,
+            skill_tag: content.skill_tag || lesson.title,
             toeic_part: 'part5',
           };
         });

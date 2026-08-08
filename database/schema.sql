@@ -346,8 +346,15 @@ for update to authenticated
 using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "admin_grammar_all" on public.grammar_lessons;
-create policy "admin_grammar_all" on public.grammar_lessons
-for all to authenticated
+drop policy if exists "admin_grammar_insert" on public.grammar_lessons;
+drop policy if exists "admin_grammar_update" on public.grammar_lessons;
+
+create policy "admin_grammar_insert" on public.grammar_lessons
+for insert to authenticated
+with check (public.is_admin());
+
+create policy "admin_grammar_update" on public.grammar_lessons
+for update to authenticated
 using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "admin_lessons_all" on public.learning_lessons;

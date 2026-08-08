@@ -28,6 +28,8 @@ import { AdminVocabularyDecksPage } from './pages/AdminVocabularyDecksPage';
 import { AdminVocabularyDeckEditPage } from './pages/AdminVocabularyDeckEditPage';
 import { AdminVocabularyItemsPage } from './pages/AdminVocabularyItemsPage';
 import { AdminVocabularyItemEditPage } from './pages/AdminVocabularyItemEditPage';
+import { AdminGrammarLessonsPage } from './pages/AdminGrammarLessonsPage';
+import { AdminGrammarLessonEditPage } from './pages/AdminGrammarLessonEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -80,6 +82,11 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/vocabulary/decks/:deckId" element={<AdminVocabularyItemsPage />} />
                 <Route path="/admin/content/vocabulary/decks/:deckId/words/new" element={<AdminVocabularyItemEditPage />} />
                 <Route path="/admin/content/vocabulary/words/:wordId/edit" element={<AdminVocabularyItemEditPage />} />
+
+                {/* Phase 3.2 Grammar CMS Routes */}
+                <Route path="/admin/content/grammar" element={<AdminGrammarLessonsPage />} />
+                <Route path="/admin/content/grammar/new" element={<AdminGrammarLessonEditPage />} />
+                <Route path="/admin/content/grammar/:lessonId/edit" element={<AdminGrammarLessonEditPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

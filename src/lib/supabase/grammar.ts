@@ -15,6 +15,7 @@ export interface LessonSectionItem {
 }
 
 export interface GrammarLessonContent {
+  skill_tag?: string;
   sections?: LessonSectionItem[];
   quiz?: QuizQuestionItem[];
 }
