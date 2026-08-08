@@ -65,11 +65,14 @@ export const AdminToeicTestBankPage: React.FC = () => {
     setLoading(false);
   }
 
-  const handleDeleteDraft = async (testId: string, testTitle: string) => {
-    if (window.confirm(`Bạn có chắc muốn xóa vĩnh viễn đề nháp này?\n\nĐề thi: ${testTitle}`)) {
-      setDeleteLoading(testId);
+  const handleDeleteDraft = async (e: React.MouseEvent, test: ToeicTestRow) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (window.confirm(`Bạn có chắc muốn xóa vĩnh viễn đề nháp này?\n\nĐề thi: ${test.title}`)) {
+      setDeleteLoading(test.id);
       setError(null);
-      const res = await deleteDraftToeicTest(testId);
+      const res = await deleteDraftToeicTest(test.id);
       setDeleteLoading(null);
       if (!res.success) {
         setError(`Không thể xóa đề nháp: ${res.error || 'Lỗi không xác định'}`);
@@ -290,12 +293,13 @@ export const AdminToeicTestBankPage: React.FC = () => {
                           {!test.is_published && (
                             <button
                               type="button"
-                              onClick={() => handleDeleteDraft(test.id, test.title)}
+                              onClick={(e) => handleDeleteDraft(e, test)}
                               disabled={deleteLoading === test.id}
-                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors disabled:opacity-50"
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors disabled:opacity-50 text-xs font-extrabold flex items-center gap-1"
                               title="Xóa bản nháp"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
+                              {deleteLoading === test.id ? 'Đang xóa...' : 'Xóa Nháp'}
                             </button>
                           )}
 
