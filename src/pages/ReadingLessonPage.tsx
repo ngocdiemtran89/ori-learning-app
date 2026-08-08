@@ -158,7 +158,8 @@ export const ReadingLessonPage: React.FC = () => {
             is_correct: selected === q.correct_answer,
             explanation: q.explanation || null,
             toeic_part: lesson.toeic_part || 'reading',
-            skill_tag: lesson.title,
+            skill_tag: q.skill_tag || lesson.title,
+            topic: q.topic || null,
           };
         });
 

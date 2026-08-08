@@ -32,6 +32,8 @@ import { AdminGrammarLessonsPage } from './pages/AdminGrammarLessonsPage';
 import { AdminGrammarLessonEditPage } from './pages/AdminGrammarLessonEditPage';
 import { AdminListeningLessonsPage } from './pages/AdminListeningLessonsPage';
 import { AdminListeningLessonEditPage } from './pages/AdminListeningLessonEditPage';
+import { AdminReadingLessonsPage } from './pages/AdminReadingLessonsPage';
+import { AdminReadingLessonEditPage } from './pages/AdminReadingLessonEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -94,6 +96,11 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/listening" element={<AdminListeningLessonsPage />} />
                 <Route path="/admin/content/listening/new" element={<AdminListeningLessonEditPage />} />
                 <Route path="/admin/content/listening/:lessonId/edit" element={<AdminListeningLessonEditPage />} />
+
+                {/* Phase 3.4 Reading CMS Routes */}
+                <Route path="/admin/content/reading" element={<AdminReadingLessonsPage />} />
+                <Route path="/admin/content/reading/new" element={<AdminReadingLessonEditPage />} />
+                <Route path="/admin/content/reading/:lessonId/edit" element={<AdminReadingLessonEditPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

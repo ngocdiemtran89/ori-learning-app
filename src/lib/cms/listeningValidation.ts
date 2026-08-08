@@ -34,61 +34,10 @@ export interface ListeningQuestionInput {
   image_url?: string | null;
 }
 
-export interface QuestionReplacementDeps {
-  insertInactiveNew: () => Promise<{ data: { id: string } | null; error: any }>;
-  hideOld: () => Promise<{ error: any }>;
-  activateNew: (newId: string) => Promise<{ data: any; error: any }>;
-  restoreOld: () => Promise<{ error: any }>;
-}
-
-/**
- * 6-Step Safe Question Replacement Orchestrator (Phase 3.3B)
- * Prevents questions from being lost or duplicated on partial network failures.
- */
-export async function executeSafeQuestionReplacement(
-  deps: QuestionReplacementDeps
-): Promise<{ data: any | null; error: string | null }> {
-  // Step 1 & 2: Insert replacement question as inactive
-  const insRes = await deps.insertInactiveNew();
-  if (insRes.error || !insRes.data || !insRes.data.id) {
-    return {
-      data: null,
-      error: 'Không thể lưu thay đổi câu hỏi. Nội dung cũ vẫn được giữ an toàn.',
-    };
-  }
-
-  const newId = insRes.data.id;
-
-  // Step 3 & 4: Hide old question
-  const hideRes = await deps.hideOld();
-  if (hideRes.error) {
-    // Old stays active, new stays inactive -> safely report failure
-    return {
-      data: null,
-      error: 'Không thể lưu thay đổi câu hỏi. Nội dung cũ vẫn được giữ an toàn.',
-    };
-  }
-
-  // Step 5: Activate new replacement question
-  const actRes = await deps.activateNew(newId);
-  if (actRes.error || !actRes.data) {
-    // Step 5 failed -> Attempt recovery: restore old question as active
-    const recRes = await deps.restoreOld();
-    if (!recRes.error) {
-      return {
-        data: null,
-        error: 'Không thể kích hoạt câu hỏi mới. Nội dung cũ vẫn được giữ an toàn.',
-      };
-    }
-    return {
-      data: null,
-      error: 'Lỗi nghiêm trọng khi cập nhật trạng thái câu hỏi. Vui lòng tải lại trang.',
-    };
-  }
-
-  // Step 6: Success!
-  return { data: actRes.data, error: null };
-}
+export {
+  executeSafeQuestionReplacement,
+  type QuestionReplacementDeps,
+} from './learningQuestionReplacement';
 
 export interface ListeningLessonCMSInput {
   title: string;
