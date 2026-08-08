@@ -8,6 +8,7 @@ export interface ExtractedQuestionData {
 // To prevent arbitrary numbers from being parsed (e.g. "15 people"), we require punctuation or the explicit word "Question"/"Q"
 const QUESTION_NUMBER_REGEX = /^(?:(?:Question\s+|Q)(\d{1,3})[\.\)]?\s*(.*)|(\d{1,3})[\.\)]\s+(.*))$/is;
 const OPTION_REGEX = /^[\(\[]?([A-D])[\.\)\]]\s+(.*)$/i;
+const INLINE_OPTIONS_REGEX = /(?:\s+)[\(\[]?A[\.\)\]]\s+(.*?)(?:\s+)[\(\[]?B[\.\)\]]\s+(.*?)(?:\s+)[\(\[]?C[\.\)\]]\s+(.*?)(?:(?:\s+)[\(\[]?D[\.\)\]]\s+(.*))?$/i;
 
 export function parseQuestionBlock(textBlock: string): ExtractedQuestionData | null {
   const lines = textBlock.split('\n').map(l => l.trim()).filter(Boolean);
@@ -28,8 +29,23 @@ export function parseQuestionBlock(textBlock: string): ExtractedQuestionData | n
     return null; // Out of range for a full test
   }
 
+
   let questionText = qText.trim() || null;
   const options: string[] = [];
+
+  // Check inline options in question text
+  if (questionText) {
+    const inlineMatch = questionText.match(INLINE_OPTIONS_REGEX);
+    if (inlineMatch) {
+      options.push(`(A) ${inlineMatch[1].trim()}`);
+      options.push(`(B) ${inlineMatch[2].trim()}`);
+      options.push(`(C) ${inlineMatch[3].trim()}`);
+      if (inlineMatch[4]) {
+        options.push(`(D) ${inlineMatch[4].trim()}`);
+      }
+      questionText = questionText.replace(INLINE_OPTIONS_REGEX, '').trim();
+    }
+  }
 
   // Parse remaining lines for options or continuation of question text
   for (let i = 1; i < lines.length; i++) {
@@ -40,6 +56,11 @@ export function parseQuestionBlock(textBlock: string): ExtractedQuestionData | n
       // It's an option. Store it normalized as (A) text
       options.push(`(${optMatch[1].toUpperCase()}) ${optMatch[2].trim()}`);
     } else {
+      // Stop parsing options if we hit the next question header (prevents consuming subsequent questions)
+      if (line.match(QUESTION_NUMBER_REGEX)) {
+        break;
+      }
+      
       // If we haven't found options yet, maybe it's continuation of question text
       if (options.length === 0) {
         questionText = questionText ? questionText + ' ' + line : line;

@@ -39,6 +39,24 @@ export function validateParsedDraftForImport(draft: ParsedToeicTestDraft): { isV
      errors.push('Tồn tại câu hỏi có phân loại Part không hợp lệ.');
   }
 
+  // Enforce option counts and non-empty options
+  const invalidOptions = draft.questions.filter(q => {
+    const expectedCount = q.part === 'part2' ? 3 : 4;
+    if (q.options.length !== expectedCount) return true;
+    return q.options.some(opt => typeof opt !== 'string' || opt.trim() === '');
+  });
+
+  if (invalidOptions.length > 0) {
+    const invalidNumbers = invalidOptions.map(q => q.question_number).join(', ');
+    errors.push(`Tồn tại câu hỏi có số lượng hoặc nội dung đáp án (options) không hợp lệ (Câu: ${invalidNumbers}). Vui lòng cập nhật.`);
+  }
+
+  // Also enforce missing question_number
+  const missingNum = draft.questions.filter(q => !q.question_number || typeof q.question_number !== 'number');
+  if (missingNum.length > 0) {
+    errors.push('Tồn tại câu hỏi bị thiếu số thứ tự câu (question_number).');
+  }
+
   return {
     isValid: errors.length === 0,
     errors

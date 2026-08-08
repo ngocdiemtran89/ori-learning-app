@@ -279,7 +279,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
 
   // Calculate completeness summary
   const partSummary = getPartSummary(questions);
-  const activeQuestionsCount = questions.filter((q) => q.is_active !== false).length;
+  const activeQuestionsCount = new Set(questions.filter((q) => q.is_active !== false).map((q) => q.question_number)).size;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
@@ -859,6 +859,12 @@ export const AdminToeicTestEditPage: React.FC = () => {
                       </div>
 
                       {q.question_text && <p className="text-xs font-bold text-slate-900 mt-2">{q.question_text}</p>}
+                      
+                      {(!Array.isArray(q.options) || q.options.length === 0 || q.options.some((o: string) => !o || o.trim() === '')) && (
+                        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold">
+                          ⚠️ Cảnh báo: Câu hỏi này thiếu đáp án hoặc có đáp án rỗng!
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                         {Array.isArray(q.options) &&

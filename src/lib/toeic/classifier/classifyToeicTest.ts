@@ -16,7 +16,9 @@ export function parseRawToeicTest(
   // Support PART 1, PART I, PART ONE, etc.
   const headingPattern = /^[\s\-\*]*(PART\s+(?:[1-7]|I{1,3}V?|VI{1,2}|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN)).*$/gim;
   const normalizedText = text.replace(headingPattern, '\n\n$1\n\n');
-  const blocks = normalizedText.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
+  // Ensure questions are separated into different blocks even if there are no blank lines
+  const preprocessedText = normalizedText.replace(/\n(?=(?:Question\s+|Q)?\d{1,3}[\.\)]\s)/gi, '\n\n');
+  const blocks = preprocessedText.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
   
   let currentHeading = '';
   let pendingInstruction = '';
@@ -113,6 +115,15 @@ export function parseRawToeicTest(
         issues.push({
           type: 'ERROR',
           message: `Trùng lặp số câu hỏi: ${questionNumber}`,
+          question_number: questionNumber
+        });
+      }
+      
+      const expectedOptionCount = expectedPart === 'part2' ? 3 : 4;
+      if (options.length !== expectedOptionCount) {
+        issues.push({
+          type: 'ERROR',
+          message: `Câu ${questionNumber} (Part ${expectedPart.replace('part','')}) phải có đúng ${expectedOptionCount} đáp án (hiện có ${options.length}).`,
           question_number: questionNumber
         });
       }
