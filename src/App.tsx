@@ -10,6 +10,7 @@ import { VocabularyPage } from './pages/VocabularyPage';
 import { VocabularyDeckPage } from './pages/VocabularyDeckPage';
 import { VocabularyReviewTodayPage } from './pages/VocabularyReviewTodayPage';
 import { SavedWordsPage } from './pages/SavedWordsPage';
+import { MistakesPage } from './pages/MistakesPage';
 import { GrammarPage } from './pages/GrammarPage';
 import { GrammarLessonPage } from './pages/GrammarLessonPage';
 import { ListeningPage } from './pages/ListeningPage';
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
                 <Route path="/vocabulary/review-today" element={<VocabularyReviewTodayPage />} />
                 <Route path="/vocabulary/:deckId" element={<VocabularyDeckPage />} />
                 <Route path="/notebook" element={<SavedWordsPage />} />
+                <Route path="/mistakes" element={<MistakesPage />} />
 
                 <Route path="/grammar" element={<GrammarPage />} />
                 <Route path="/grammar/:lessonId" element={<GrammarLessonPage />} />

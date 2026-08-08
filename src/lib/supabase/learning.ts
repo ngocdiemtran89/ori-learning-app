@@ -77,3 +77,95 @@ export async function getLessonQuestions(lessonId: string): Promise<LessonQuesti
 
   return normalized as LessonQuestion[];
 }
+
+export interface MistakeQuestionAttempt {
+  id: string;
+  attempt_id: string;
+  user_id: string;
+  content_type: 'grammar' | 'listening' | 'reading' | 'vocabulary';
+  content_id: string;
+  question_key: string;
+  question_id: string | null;
+  question_index: number | null;
+  question_text: string;
+  selected_answer: string | null;
+  correct_answer: string;
+  is_correct: boolean;
+  explanation: string | null;
+  skill_tag: string | null;
+  toeic_part: string | null;
+  topic: string | null;
+  created_at: string;
+}
+
+export interface MistakeNotebookItem {
+  question_key: string;
+  content_type: 'grammar' | 'listening' | 'reading' | 'vocabulary';
+  content_id: string;
+  wrong_count: number;
+  latest_attempt: MistakeQuestionAttempt;
+  latest_wrong_at: string;
+  is_resolved: boolean;
+}
+
+/**
+ * Fetch and process student's wrong answer notebook items from question_attempts
+ */
+export async function getMistakeNotebookItems(userId: string): Promise<MistakeNotebookItem[]> {
+  const { data, error } = await supabase
+    .from('question_attempts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) {
+    console.error('[ORI Notebook] Error fetching question attempts:', error?.message);
+    return [];
+  }
+
+  const map = new Map<string, {
+    wrong_count: number;
+    latest_attempt: MistakeQuestionAttempt;
+    latest_wrong_at: string;
+  }>();
+
+  for (const row of data as MistakeQuestionAttempt[]) {
+    const key = row.question_key;
+    const existing = map.get(key);
+
+    let wrongCount = existing ? existing.wrong_count : 0;
+    let latestWrongAt = existing ? existing.latest_wrong_at : row.created_at;
+
+    if (!row.is_correct) {
+      wrongCount++;
+      latestWrongAt = row.created_at;
+    }
+
+    map.set(key, {
+      wrong_count: wrongCount,
+      latest_attempt: row,
+      latest_wrong_at: latestWrongAt,
+    });
+  }
+
+  const results: MistakeNotebookItem[] = [];
+
+  for (const [key, entry] of map.entries()) {
+    // Only include questions that have been answered wrong at least once
+    if (entry.wrong_count > 0) {
+      const isResolved = entry.latest_attempt.is_correct === true;
+      results.push({
+        question_key: key,
+        content_type: entry.latest_attempt.content_type,
+        content_id: entry.latest_attempt.content_id,
+        wrong_count: entry.wrong_count,
+        latest_attempt: entry.latest_attempt,
+        latest_wrong_at: entry.latest_wrong_at,
+        is_resolved: isResolved,
+      });
+    }
+  }
+
+  // Sort by latest_wrong_at descending
+  return results.sort((a, b) => new Date(b.latest_wrong_at).getTime() - new Date(a.latest_wrong_at).getTime());
+}

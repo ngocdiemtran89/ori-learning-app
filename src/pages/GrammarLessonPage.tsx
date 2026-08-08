@@ -16,6 +16,7 @@ import {
   getGrammarLessonBySlug,
   getGrammarLessons,
   recordQuizAttempt,
+  recordQuestionAttempts,
   updateUserProgress,
   GrammarLessonContent,
   QuizQuestionItem,
@@ -87,8 +88,14 @@ export const GrammarLessonPage: React.FC = () => {
     }));
   };
 
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
+
   const handleSubmitQuiz = async () => {
-    if (isSubmitted || quiz.length === 0) return;
+    if (isSubmitted || isSubmitting || quiz.length === 0) return;
+
+    setIsSubmitting(true);
+    setSyncWarning(null);
 
     let correctCount = 0;
     quiz.forEach((q, idx) => {
@@ -104,9 +111,45 @@ export const GrammarLessonPage: React.FC = () => {
     setIsSubmitted(true);
 
     if (user?.id) {
-      await recordQuizAttempt(user.id, 'grammar', lesson.id, finalScore, correctCount, totalCount, userAnswers);
+      const attemptRes = await recordQuizAttempt(
+        user.id,
+        'grammar',
+        lesson.id,
+        finalScore,
+        correctCount,
+        totalCount,
+        userAnswers
+      );
+
+      if (attemptRes.attemptId) {
+        const qAttempts = quiz.map((q: QuizQuestionItem, idx: number) => {
+          const selected = userAnswers[idx] || null;
+          return {
+            attempt_id: attemptRes.attemptId!,
+            user_id: user.id,
+            content_type: 'grammar' as const,
+            content_id: lesson.id,
+            question_key: `grammar:${lesson.id}:${idx}`,
+            question_index: idx,
+            question_text: q.question,
+            selected_answer: selected,
+            correct_answer: q.answer,
+            is_correct: selected === q.answer,
+            explanation: q.explanation || null,
+            skill_tag: lesson.title,
+            toeic_part: 'part5',
+          };
+        });
+
+        const qRes = await recordQuestionAttempts(qAttempts);
+        if (!qRes.success) {
+          setSyncWarning('Kết quả bài tập đã lưu, nhưng chi tiết câu sai chưa được ghi nhận vào Sổ lỗi sai.');
+        }
+      }
+
       await updateUserProgress(user.id, 'grammar', lesson.id, 'completed', finalScore);
     }
+    setIsSubmitting(false);
   };
 
   // Find next lesson slug
@@ -250,13 +293,19 @@ export const GrammarLessonPage: React.FC = () => {
             </div>
 
             {/* Quiz Action Buttons */}
+            {syncWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl">
+                ⚠️ {syncWarning}
+              </div>
+            )}
+
             {!isSubmitted ? (
               <button
                 onClick={handleSubmitQuiz}
-                disabled={Object.keys(userAnswers).length === 0}
+                disabled={isSubmitting || Object.keys(userAnswers).length === 0}
                 className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-sm rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.01]"
               >
-                <Send className="w-4 h-4" /> Nộp Bài Tập & Chấm Điểm
+                <Send className="w-4 h-4" /> {isSubmitting ? 'Đang nộp bài...' : 'Nộp Bài Tập & Chấm Điểm'}
               </button>
             ) : (
               <div className="pt-2 flex items-center justify-between">

@@ -18,7 +18,7 @@ import {
   getLessonQuestions,
   LessonQuestion,
 } from '../lib/supabase/learning';
-import { recordQuizAttempt, updateUserProgress } from '../lib/supabase/grammar';
+import { recordQuizAttempt, recordQuestionAttempts, updateUserProgress } from '../lib/supabase/grammar';
 import { LoadingState } from '../components/ui/LoadingState';
 import { EmptyState } from '../components/ui/EmptyState';
 
@@ -87,8 +87,14 @@ export const ListeningLessonPage: React.FC = () => {
     }));
   };
 
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
+
   const handleSubmitQuiz = async () => {
-    if (isSubmitted || questions.length === 0) return;
+    if (isSubmitted || isSubmitting || questions.length === 0) return;
+
+    setIsSubmitting(true);
+    setSyncWarning(null);
 
     let correctCount = 0;
     questions.forEach((q, idx) => {
@@ -104,9 +110,46 @@ export const ListeningLessonPage: React.FC = () => {
     setIsSubmitted(true);
 
     if (user?.id) {
-      await recordQuizAttempt(user.id, 'listening', lesson.id, finalScore, correctCount, totalCount, userAnswers);
+      const attemptRes = await recordQuizAttempt(
+        user.id,
+        'listening',
+        lesson.id,
+        finalScore,
+        correctCount,
+        totalCount,
+        userAnswers
+      );
+
+      if (attemptRes.attemptId) {
+        const qAttempts = questions.map((q: LessonQuestion, idx: number) => {
+          const selected = userAnswers[idx] || null;
+          return {
+            attempt_id: attemptRes.attemptId!,
+            user_id: user.id,
+            content_type: 'listening' as const,
+            content_id: lesson.id,
+            question_key: q.id,
+            question_id: q.id,
+            question_index: idx,
+            question_text: q.question_text,
+            selected_answer: selected,
+            correct_answer: q.correct_answer,
+            is_correct: selected === q.correct_answer,
+            explanation: q.explanation || null,
+            toeic_part: lesson.toeic_part || 'listening',
+            skill_tag: lesson.title,
+          };
+        });
+
+        const qRes = await recordQuestionAttempts(qAttempts);
+        if (!qRes.success) {
+          setSyncWarning('Kết quả bài tập đã lưu, nhưng chi tiết câu sai chưa được ghi nhận vào Sổ lỗi sai.');
+        }
+      }
+
       await updateUserProgress(user.id, 'listening', lesson.id, 'completed', finalScore);
     }
+    setIsSubmitting(false);
   };
 
   return (
@@ -237,13 +280,19 @@ export const ListeningLessonPage: React.FC = () => {
               })}
             </div>
 
+            {syncWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl">
+                ⚠️ {syncWarning}
+              </div>
+            )}
+
             {!isSubmitted ? (
               <button
                 onClick={handleSubmitQuiz}
-                disabled={Object.keys(userAnswers).length === 0}
+                disabled={isSubmitting || Object.keys(userAnswers).length === 0}
                 className="w-full py-3.5 px-4 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.01]"
               >
-                <Send className="w-4 h-4" /> Nộp Bài Luyện Nghe & Xem Điểm Số
+                <Send className="w-4 h-4" /> {isSubmitting ? 'Đang nộp bài...' : 'Nộp Bài Luyện Nghe & Xem Điểm Số'}
               </button>
             ) : null}
           </div>

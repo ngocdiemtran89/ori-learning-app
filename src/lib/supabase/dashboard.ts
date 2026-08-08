@@ -52,22 +52,24 @@ export async function getStudentDashboardMetrics(userId: string): Promise<Dashbo
 
   const latestQuizAttempt = attemptData as LatestQuizAttempt | null;
 
-  // 4. Combine activity timestamps from BOTH vocabulary_reviews AND quiz_attempts (bounded history)
+  // 4. Combine activity timestamps from BOTH vocabulary_reviews AND quiz_attempts (180-day cutoff window)
+  const cutoffDateISO = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+
   const [{ data: reviews }, { data: attempts }] = await Promise.all([
     supabase
       .from('vocabulary_reviews')
       .select('last_reviewed_at')
       .eq('user_id', userId)
       .not('last_reviewed_at', 'is', null)
-      .order('last_reviewed_at', { ascending: false })
-      .limit(100),
+      .gte('last_reviewed_at', cutoffDateISO)
+      .order('last_reviewed_at', { ascending: false }),
     supabase
       .from('quiz_attempts')
       .select('created_at')
       .eq('user_id', userId)
       .not('created_at', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(100),
+      .gte('created_at', cutoffDateISO)
+      .order('created_at', { ascending: false }),
   ]);
 
   const activityTimestamps: string[] = [];

@@ -15,6 +15,7 @@ import {
   GraduationCap,
   Sparkles,
   Bookmark,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -27,6 +28,7 @@ export const AppShell: React.FC = () => {
     { label: 'Tổng quan', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Từ vựng (Vocab)', path: '/vocabulary', icon: BookOpen },
     { label: 'Sổ tay từ khó', path: '/notebook', icon: Bookmark },
+    { label: 'Sổ lỗi sai', path: '/mistakes', icon: AlertTriangle },
     { label: 'Ngữ pháp (Grammar)', path: '/grammar', icon: FileText },
     { label: 'Luyện nghe (Listening)', path: '/listening', icon: Headphones },
     { label: 'Luyện đọc (Reading)', path: '/reading', icon: BookCheck },

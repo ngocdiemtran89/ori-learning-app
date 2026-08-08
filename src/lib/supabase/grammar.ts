@@ -79,8 +79,26 @@ export async function getUserProgressMap(
   return map;
 }
 
+export interface QuestionAttemptInput {
+  attempt_id: string;
+  user_id: string;
+  content_type: 'grammar' | 'listening' | 'reading' | 'vocabulary';
+  content_id: string;
+  question_key: string;
+  question_id?: string | null;
+  question_index?: number | null;
+  question_text: string;
+  selected_answer: string | null;
+  correct_answer: string;
+  is_correct: boolean;
+  explanation?: string | null;
+  skill_tag?: string | null;
+  toeic_part?: string | null;
+  topic?: string | null;
+}
+
 /**
- * Save a quiz attempt to quiz_attempts table
+ * Save a quiz attempt to quiz_attempts table and return created attempt_id
  */
 export async function recordQuizAttempt(
   userId: string,
@@ -89,21 +107,48 @@ export async function recordQuizAttempt(
   score: number,
   correctCount: number,
   totalCount: number,
-  answers: Record<number, string>
-) {
-  const { error } = await supabase.from('quiz_attempts').insert({
-    user_id: userId,
-    content_type: contentType,
-    content_id: contentId,
-    score,
-    correct_count: correctCount,
-    total_count: totalCount,
-    answers,
-  });
+  answers: Record<number | string, string>
+): Promise<{ attemptId: string | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('quiz_attempts')
+    .insert({
+      user_id: userId,
+      content_type: contentType,
+      content_id: contentId,
+      score,
+      correct_count: correctCount,
+      total_count: totalCount,
+      answers,
+    })
+    .select('id')
+    .single();
 
   if (error) {
     console.error('[ORI Quiz] Error recording quiz attempt:', error.message);
+    return { attemptId: null, error: error.message };
   }
+
+  return { attemptId: data?.id || null, error: null };
+}
+
+/**
+ * Record detailed question attempts for a quiz submission
+ */
+export async function recordQuestionAttempts(
+  questionAttempts: QuestionAttemptInput[]
+): Promise<{ success: boolean; error: string | null }> {
+  if (!questionAttempts || questionAttempts.length === 0) {
+    return { success: true, error: null };
+  }
+
+  const { error } = await supabase.from('question_attempts').insert(questionAttempts);
+
+  if (error) {
+    console.error('[ORI Quiz] Error recording question attempts:', error.message);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true, error: null };
 }
 
 /**
