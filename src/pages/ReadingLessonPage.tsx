@@ -34,6 +34,8 @@ export const ReadingLessonPage: React.FC = () => {
   const [scoreResult, setScoreResult] = useState<{ score: number; correct: number; total: number } | null>(null);
 
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadReadingLesson() {
@@ -108,9 +110,6 @@ export const ReadingLessonPage: React.FC = () => {
       [qIndex]: optionValue,
     }));
   };
-
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   const handleSubmitQuiz = async () => {
     if (isSubmitted || isSubmitting || questions.length === 0) return;

@@ -37,6 +37,8 @@ export const GrammarLessonPage: React.FC = () => {
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({});
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [scoreResult, setScoreResult] = useState<{ score: number; correct: number; total: number } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadLessonData() {
@@ -113,9 +115,6 @@ export const GrammarLessonPage: React.FC = () => {
       [qIndex]: optionValue,
     }));
   };
-
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   const handleSubmitQuiz = async () => {
     if (isSubmitted || isSubmitting || quiz.length === 0) return;
