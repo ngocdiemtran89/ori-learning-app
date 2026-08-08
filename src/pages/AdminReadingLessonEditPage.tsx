@@ -174,17 +174,25 @@ export const AdminReadingLessonEditPage: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    // Protection 1: Block material passage change if lesson has student history
-    if (isEditing && hasHistory && originalLesson) {
-      if (hasMaterialPassageChange(originalLesson.passage, passage)) {
-        setFormError(
-          'Bài đọc này đã có lịch sử học viên. Thay đổi lớn nội dung passage có thể làm sai dữ liệu tiến độ. Hãy tạo một bài Reading mới nếu muốn thay đổi nội dung chính.'
-        );
+    // Re-verify learning history before material modifications
+    if (isEditing && lessonId && originalLesson) {
+      const histCheck = await hasReadingLessonHistory(lessonId);
+      if (histCheck.status === 'ERROR') {
+        setFormError('Không thể kiểm tra lịch sử học viên lúc này. Thay đổi này chưa được thực hiện để bảo vệ dữ liệu tiến độ.');
         return;
       }
-      if (originalLesson.toeic_part && originalLesson.toeic_part !== toeicPart) {
-        setFormError('Bài này đã có dữ liệu học viên nên không thể đổi TOEIC Part. Hãy tạo bài mới nếu cần.');
-        return;
+
+      if (histCheck.hasHistory) {
+        if (hasMaterialPassageChange(originalLesson.passage, passage)) {
+          setFormError(
+            'Bài đọc này đã có lịch sử học viên. Thay đổi lớn nội dung passage có thể làm sai dữ liệu tiến độ. Hãy tạo một bài Reading mới nếu muốn thay đổi nội dung chính.'
+          );
+          return;
+        }
+        if (originalLesson.toeic_part && originalLesson.toeic_part !== toeicPart) {
+          setFormError('Bài này đã có dữ liệu học viên nên không thể đổi TOEIC Part. Hãy tạo bài mới nếu cần.');
+          return;
+        }
       }
     }
 

@@ -208,6 +208,73 @@ describe('Phase 3.4 — Reading CMS Pure Validation & History Protection Tests',
     expect(hasMaterialPassageChange(origPassage, editedWhitespaceOnly)).toBe(false);
   });
 
+  it('Phase 3.4B — CASE A-E: 3-Table History Decision Combinations', () => {
+    // Case A: question_attempt exists
+    const resA = readingCmsModule.combineHistoryQueryResults([
+      { dataCount: 1, error: null },
+      { dataCount: 0, error: null },
+      { dataCount: 0, error: null },
+    ]);
+    expect(resA.hasHistory).toBe(true);
+    expect(resA.status).toBe('YES');
+
+    // Case B: quiz_attempt exists (legacy student)
+    const resB = readingCmsModule.combineHistoryQueryResults([
+      { dataCount: 0, error: null },
+      { dataCount: 1, error: null },
+      { dataCount: 0, error: null },
+    ]);
+    expect(resB.hasHistory).toBe(true);
+    expect(resB.status).toBe('YES');
+
+    // Case C: user_progress exists
+    const resC = readingCmsModule.combineHistoryQueryResults([
+      { dataCount: 0, error: null },
+      { dataCount: 0, error: null },
+      { dataCount: 1, error: null },
+    ]);
+    expect(resC.hasHistory).toBe(true);
+    expect(resC.status).toBe('YES');
+
+    // Case D: none exist
+    const resD = readingCmsModule.combineHistoryQueryResults([
+      { dataCount: 0, error: null },
+      { dataCount: 0, error: null },
+      { dataCount: 0, error: null },
+    ]);
+    expect(resD.hasHistory).toBe(false);
+    expect(resD.status).toBe('NO');
+
+    // Case E: one query errors -> ERROR (safety default blocks operation)
+    const resE = readingCmsModule.combineHistoryQueryResults([
+      { dataCount: 0, error: null },
+      { dataCount: 0, error: 'DB Timeout' },
+      { dataCount: 0, error: null },
+    ]);
+    expect(resE.hasHistory).toBe(true);
+    expect(resE.status).toBe('ERROR');
+    expect(resE.error).toContain('Không thể kiểm tra lịch sử học viên lúc này');
+  });
+
+  it('Phase 3.4B — CASE M-P: Unpublished Lesson Historical Question Identity Protection', () => {
+    const originalQ = {
+      id: 'uuid-unpub-1',
+      question_text: 'What is the main topic?',
+      options: ['A', 'B', 'C', 'D'],
+      correct_answer: 'A',
+    };
+    const editedText = { ...originalQ, question_text: 'What is the primary topic?' };
+    const editedExpOnly = { ...originalQ, explanation: 'Updated explanation' };
+
+    // Material edit on question with history -> MUST rotate even if lesson is unpublished (Case M)
+    const isMaterial = shouldRotateLearningQuestionIdentity(originalQ, editedText);
+    expect(isMaterial).toBe(true);
+
+    // Non-material explanation edit -> Same UUID (Case O)
+    const isMaterialExp = shouldRotateLearningQuestionIdentity(originalQ, editedExpOnly);
+    expect(isMaterialExp).toBe(false);
+  });
+
   it('Safe Question Replacement Orchestration (Cases A-D)', async () => {
     // Case A: Insert fails -> old active
     let oldActive = true;

@@ -15,6 +15,45 @@ export {
   type QuestionReplacementDeps,
 };
 
+export type HistoryCheckStatus = 'YES' | 'NO' | 'ERROR';
+
+export interface HistoryCheckResult {
+  hasHistory: boolean;
+  status: HistoryCheckStatus;
+  error: string | null;
+}
+
+/**
+ * Pure decision helper for combining history queries into a safe HistoryCheckResult.
+ * Safety Default: If any query errored, returns status: 'ERROR', hasHistory: true.
+ */
+export function combineHistoryQueryResults(results: Array<{ dataCount: number; error: any }>): HistoryCheckResult {
+  for (const r of results) {
+    if (r.error) {
+      return {
+        hasHistory: true,
+        status: 'ERROR',
+        error: 'Không thể kiểm tra lịch sử học viên lúc này. Thay đổi này chưa được thực hiện để bảo vệ dữ liệu tiến độ.',
+      };
+    }
+  }
+
+  const totalCount = results.reduce((acc, r) => acc + (r.dataCount || 0), 0);
+  if (totalCount > 0) {
+    return {
+      hasHistory: true,
+      status: 'YES',
+      error: null,
+    };
+  }
+
+  return {
+    hasHistory: false,
+    status: 'NO',
+    error: null,
+  };
+}
+
 export const VALID_READING_TOEIC_PARTS = ['part5', 'part6', 'part7'] as const;
 export type ReadingToeicPart = (typeof VALID_READING_TOEIC_PARTS)[number];
 

@@ -12,6 +12,8 @@ import {
   validateReadingLessonForPublish,
   normalizeReadingToeicPart,
   executeSafeQuestionReplacement,
+  combineHistoryQueryResults,
+  HistoryCheckResult,
   ReadingLessonCMSInput,
   ReadingQuestionInput,
 } from '../cms/readingValidation';
@@ -63,30 +65,66 @@ function sanitizeSearchQuery(query: string): string {
 }
 
 /**
- * Check if a Reading lesson has existing student question history in question_attempts
- * Safety default: If query errors, returns hasHistory = true to block material overwrite safely!
+ * Check if a Reading lesson has ANY learning history in:
+ * 1. question_attempts (content_type = 'reading', content_id = lessonId)
+ * 2. quiz_attempts (content_type = 'reading', content_id = lessonId)
+ * 3. user_progress (content_type = 'reading', content_id = lessonId)
+ *
+ * Safety default: If ANY query fails, returns status: 'ERROR', hasHistory: true.
  */
-export async function hasReadingLessonHistory(
+export async function hasReadingLessonLearningHistory(
   lessonId: string
+): Promise<HistoryCheckResult> {
+  try {
+    const [qAttRes, quizAttRes, progRes] = await Promise.all([
+      supabase.from('question_attempts').select('id').eq('content_type', 'reading').eq('content_id', lessonId).limit(1),
+      supabase.from('quiz_attempts').select('id').eq('content_type', 'reading').eq('content_id', lessonId).limit(1),
+      supabase.from('user_progress').select('id').eq('content_type', 'reading').eq('content_id', lessonId).limit(1),
+    ]);
+
+    const results = [
+      { dataCount: qAttRes.data ? qAttRes.data.length : 0, error: qAttRes.error },
+      { dataCount: quizAttRes.data ? quizAttRes.data.length : 0, error: quizAttRes.error },
+      { dataCount: progRes.data ? progRes.data.length : 0, error: progRes.error },
+    ];
+
+    return combineHistoryQueryResults(results);
+  } catch (err: any) {
+    console.error('[ORI CMS] Exception checking reading lesson learning history:', err);
+    return {
+      hasHistory: true,
+      status: 'ERROR',
+      error: 'Không thể kiểm tra lịch sử học viên lúc này. Thay đổi này chưa được thực hiện để bảo vệ dữ liệu tiến độ.',
+    };
+  }
+}
+
+// Export alias for backward compatibility
+export const hasReadingLessonHistory = hasReadingLessonLearningHistory;
+
+/**
+ * Check if a specific question UUID has historical question_attempts
+ * Safety default: If query errors, returns hasHistory = true!
+ */
+export async function hasQuestionHistory(
+  questionId: string
 ): Promise<{ hasHistory: boolean; error: string | null }> {
   try {
     const { data, error } = await supabase
       .from('question_attempts')
       .select('id')
-      .eq('content_type', 'reading')
-      .eq('content_id', lessonId)
+      .or(`question_id.eq.${questionId},question_key.eq.${questionId}`)
       .limit(1);
 
     if (error) {
-      console.error('[ORI CMS] Error checking reading lesson history:', error.message);
-      // Safety default: unknown history = block material change safely
-      return { hasHistory: true, error: 'Không thể xác minh lịch sử học viên.' };
+      console.error('[ORI CMS] Error checking question history:', error.message);
+      return { hasHistory: true, error: 'Không thể xác minh lịch sử câu hỏi.' };
     }
 
     return { hasHistory: (data && data.length > 0) || false, error: null };
   } catch (err: any) {
-    console.error('[ORI CMS] Exception checking reading lesson history:', err);
-    return { hasHistory: true, error: 'Lỗi không xác định khi xác minh lịch sử.' };
+    console.error('[ORI CMS] Exception checking question history:', err);
+    return { hasHistory: true, error: 'Lỗi khi kiểm tra lịch sử câu hỏi.' };
   }
 }
 
@@ -351,8 +389,12 @@ export async function saveReadingQuestion(
         .eq('id', input.id)
         .maybeSingle();
 
-      if (origQ && isLessonPublished && shouldRotateLearningQuestionIdentity(origQ as any, input)) {
-        return executeSafeQuestionReplacement({
+      if (origQ && shouldRotateLearningQuestionIdentity(origQ as any, input)) {
+        const qHist = await hasQuestionHistory(input.id);
+        const mustRotate = qHist.hasHistory || isLessonPublished || Boolean(qHist.error);
+
+        if (mustRotate) {
+          return executeSafeQuestionReplacement({
           insertInactiveNew: async () => {
             const { data: newQ, error: insErr } = await supabase
               .from('lesson_questions')
@@ -396,6 +438,7 @@ export async function saveReadingQuestion(
             return { error: recErr };
           },
         });
+        }
       }
 
       // Non-material edit or unpublished lesson -> update in-place
