@@ -34,6 +34,7 @@ import { AdminListeningLessonsPage } from './pages/AdminListeningLessonsPage';
 import { AdminListeningLessonEditPage } from './pages/AdminListeningLessonEditPage';
 import { AdminReadingLessonsPage } from './pages/AdminReadingLessonsPage';
 import { AdminReadingLessonEditPage } from './pages/AdminReadingLessonEditPage';
+import { AdminContentImportPage } from './pages/AdminContentImportPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -101,6 +102,9 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/reading" element={<AdminReadingLessonsPage />} />
                 <Route path="/admin/content/reading/new" element={<AdminReadingLessonEditPage />} />
                 <Route path="/admin/content/reading/:lessonId/edit" element={<AdminReadingLessonEditPage />} />
+
+                {/* Phase 3.5 Bulk Content Import Center Route */}
+                <Route path="/admin/content/import" element={<AdminContentImportPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

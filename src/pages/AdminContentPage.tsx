@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Headphones, FileText, Layers, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, BookOpen, Headphones, FileText, Layers, ShieldCheck, Upload } from 'lucide-react';
 
 export const AdminContentPage: React.FC = () => {
   return (
@@ -144,6 +144,36 @@ export const AdminContentPage: React.FC = () => {
 
           <span className="inline-flex items-center gap-1 text-xs font-extrabold text-blue-600 pt-2">
             Quản Lý Reading ➔
+          </span>
+        </NavLink>
+
+        {/* Active Module: Bulk Import Center */}
+        <NavLink
+          to="/admin/content/import"
+          className="bg-white p-6 rounded-3xl border border-ori-100 hover:border-ori-500 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between space-y-4 col-span-1 sm:col-span-2"
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-ori-50 text-ori-600 flex items-center justify-center font-extrabold">
+                <Upload className="w-6 h-6" />
+              </div>
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase rounded-full">
+                ACTIVE CMS
+              </span>
+            </div>
+
+            <div>
+              <h2 className="font-extrabold text-slate-900 text-lg group-hover:text-ori-600 transition-colors">
+                Nhập Nội Dung Hàng Loạt (Bulk Content Import Center)
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                Nhập Vocabulary, Grammar, Listening và Reading hàng loạt từ file CSV hoặc JSON. Tự động lưu ở dạng Bản Nháp.
+              </p>
+            </div>
+          </div>
+
+          <span className="inline-flex items-center gap-1 text-xs font-extrabold text-ori-600 pt-2">
+            Truy Cập Trung Tâm Nhập Nội Dung ➔
           </span>
         </NavLink>
       </div>
