@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Bookmark, Volume2, Trash2, BookOpen, RotateCw, ArrowLeft } from 'lucide-react';
+import { Bookmark, Volume2, Trash2, BookOpen, RotateCw, ArrowLeft, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { VocabularyItem } from '../lib/supabase/types';
 import { supabase } from '../lib/supabase/client';
@@ -14,11 +14,17 @@ export const SavedWordsPage: React.FC = () => {
   const [savedItems, setSavedItems] = useState<VocabularyItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [flippedMap, setFlippedMap] = useState<Record<string, boolean>>({});
+  
+  // Robust unsave state tracking & error handling
+  const [pendingUnsaveId, setPendingUnsaveId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadSavedWords = async () => {
     if (!user?.id) return;
 
     setLoading(true);
+    setErrorMessage(null);
+
     const { data: savedRows, error: savedErr } = await supabase
       .from('saved_words')
       .select('vocabulary_id')
@@ -39,6 +45,8 @@ export const SavedWordsPage: React.FC = () => {
 
     if (!itemErr && items) {
       setSavedItems(items as VocabularyItem[]);
+    } else if (itemErr) {
+      setErrorMessage('Không thể tải từ vựng đã lưu từ máy chủ.');
     }
     setLoading(false);
   };
@@ -49,8 +57,28 @@ export const SavedWordsPage: React.FC = () => {
 
   const handleUnsave = async (itemId: string) => {
     if (!user?.id) return;
-    await toggleSaveWord(user.id, itemId);
-    setSavedItems((prev) => prev.filter((item) => item.id !== itemId));
+    
+    // Prevent double-click mutation while request is pending
+    if (pendingUnsaveId === itemId) return;
+
+    setPendingUnsaveId(itemId);
+    setErrorMessage(null);
+
+    const res = await toggleSaveWord(user.id, itemId);
+
+    setPendingUnsaveId(null);
+
+    if (res.success && !res.isSaved) {
+      // Only remove from local UI after successful database deletion
+      setSavedItems((prev) => prev.filter((item) => item.id !== itemId));
+    } else {
+      // Keep word visible and show user-friendly error on failure
+      setErrorMessage(
+        res.error
+          ? `Bỏ lưu từ thất bại: ${res.error}`
+          : 'Không thể xóa từ khỏi Sổ tay từ khó. Vui lòng thử lại.'
+      );
+    }
   };
 
   const playAudio = (wordText: string) => {
@@ -87,6 +115,21 @@ export const SavedWordsPage: React.FC = () => {
         subtitle="Danh sách các từ vựng bạn đã bookmark để ôn lại mọi lúc."
       />
 
+      {errorMessage && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-xs font-bold text-rose-800 underline shrink-0 hover:text-rose-900"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <LoadingState message="Đang tải danh sách từ vựng đã lưu từ Supabase..." />
       ) : savedItems.length === 0 ? (
@@ -108,6 +151,7 @@ export const SavedWordsPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {savedItems.map((item) => {
             const isFlipped = !!flippedMap[item.id];
+            const isPending = pendingUnsaveId === item.id;
 
             return (
               <div
@@ -115,7 +159,7 @@ export const SavedWordsPage: React.FC = () => {
                 onClick={() => toggleFlip(item.id)}
                 className={`bg-white rounded-2xl p-5 border-2 cursor-pointer transition-all duration-300 flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md ${
                   isFlipped ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200 hover:border-ori-400'
-                }`}
+                } ${isPending ? 'opacity-50 pointer-events-none' : ''}`}
               >
                 {!isFlipped ? (
                   <div className="space-y-3">
@@ -128,10 +172,15 @@ export const SavedWordsPage: React.FC = () => {
                           e.stopPropagation();
                           handleUnsave(item.id);
                         }}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        disabled={isPending}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40"
                         title="Bỏ lưu khỏi sổ tay"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {isPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
 
@@ -166,10 +215,15 @@ export const SavedWordsPage: React.FC = () => {
                           e.stopPropagation();
                           handleUnsave(item.id);
                         }}
-                        className="p-1 text-slate-400 hover:text-rose-600"
+                        disabled={isPending}
+                        className="p-1 text-slate-400 hover:text-rose-600 disabled:opacity-40"
                         title="Bỏ lưu khỏi sổ tay"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {isPending ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </div>
 

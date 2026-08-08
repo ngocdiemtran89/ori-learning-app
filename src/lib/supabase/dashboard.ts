@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { getDueVocabularyItems } from './vocabulary';
+import { calculateStudyStreak } from '../srs/streak';
 
 export interface LatestQuizAttempt {
   content_type: string;
@@ -51,40 +52,40 @@ export async function getStudentDashboardMetrics(userId: string): Promise<Dashbo
 
   const latestQuizAttempt = attemptData as LatestQuizAttempt | null;
 
-  // 4. Calculate Streak Days (Continuous daily study activity)
-  const { data: reviews } = await supabase
-    .from('vocabulary_reviews')
-    .select('last_reviewed_at')
-    .eq('user_id', userId)
-    .order('last_reviewed_at', { ascending: false });
+  // 4. Combine activity timestamps from BOTH vocabulary_reviews AND quiz_attempts (bounded history)
+  const [{ data: reviews }, { data: attempts }] = await Promise.all([
+    supabase
+      .from('vocabulary_reviews')
+      .select('last_reviewed_at')
+      .eq('user_id', userId)
+      .not('last_reviewed_at', 'is', null)
+      .order('last_reviewed_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('quiz_attempts')
+      .select('created_at')
+      .eq('user_id', userId)
+      .not('created_at', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ]);
 
-  let streakDays = 0;
-  if (reviews && reviews.length > 0) {
-    const datesSet = new Set(
-      reviews
-        .filter((r) => r.last_reviewed_at)
-        .map((r) => new Date(r.last_reviewed_at).toISOString().split('T')[0])
-    );
+  const activityTimestamps: string[] = [];
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const yesterdayDate = new Date();
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
-
-    // Check if active today or yesterday to maintain streak
-    if (datesSet.has(todayStr) || datesSet.has(yesterdayStr)) {
-      let checkDate = datesSet.has(todayStr) ? new Date() : yesterdayDate;
-      while (true) {
-        const dateStr = checkDate.toISOString().split('T')[0];
-        if (datesSet.has(dateStr)) {
-          streakDays++;
-          checkDate.setDate(checkDate.getDate() - 1);
-        } else {
-          break;
-        }
-      }
+  if (reviews) {
+    for (const r of reviews) {
+      if (r.last_reviewed_at) activityTimestamps.push(r.last_reviewed_at);
     }
   }
+
+  if (attempts) {
+    for (const a of attempts) {
+      if (a.created_at) activityTimestamps.push(a.created_at);
+    }
+  }
+
+  // Calculate pure streak in Asia/Ho_Chi_Minh timezone
+  const streakDays = calculateStudyStreak(activityTimestamps, new Date());
 
   // 5. Deterministic Phase 1 Recommendation (No AI API)
   let recommendedAction = {

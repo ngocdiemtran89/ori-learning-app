@@ -78,14 +78,16 @@ export const VocabularyDeckPage: React.FC = () => {
 
   const handleToggleSave = async () => {
     if (!user?.id || !currentItem) return;
-    const nowSaved = await toggleSaveWord(user.id, currentItem.id);
-    const newSet = new Set(savedSet);
-    if (nowSaved) {
-      newSet.add(currentItem.id);
-    } else {
-      newSet.delete(currentItem.id);
+    const res = await toggleSaveWord(user.id, currentItem.id);
+    if (res.success) {
+      const newSet = new Set(savedSet);
+      if (res.isSaved) {
+        newSet.add(currentItem.id);
+      } else {
+        newSet.delete(currentItem.id);
+      }
+      setSavedSet(newSet);
     }
-    setSavedSet(newSet);
   };
 
   const handleRating = async (rating: ReviewRating) => {

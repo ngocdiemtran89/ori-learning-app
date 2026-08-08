@@ -109,10 +109,19 @@ export async function getSavedWordIds(userId: string): Promise<Set<string>> {
   return new Set((data || []).map((row) => row.vocabulary_id));
 }
 
+export interface ToggleSaveResult {
+  success: boolean;
+  isSaved: boolean;
+  error: string | null;
+}
+
 /**
  * Toggle save / unsave a word in saved_words
  */
-export async function toggleSaveWord(userId: string, vocabularyId: string): Promise<boolean> {
+export async function toggleSaveWord(
+  userId: string,
+  vocabularyId: string
+): Promise<ToggleSaveResult> {
   // Check if already saved
   const { data: existing } = await supabase
     .from('saved_words')
@@ -131,8 +140,9 @@ export async function toggleSaveWord(userId: string, vocabularyId: string): Prom
 
     if (delErr) {
       console.error('[ORI Vocab] Error unsaving word:', delErr.message);
+      return { success: false, isSaved: true, error: delErr.message };
     }
-    return false; // Now unsaved
+    return { success: true, isSaved: false, error: null }; // Now unsaved
   } else {
     // Insert
     const { error: insErr } = await supabase.from('saved_words').insert({
@@ -142,8 +152,9 @@ export async function toggleSaveWord(userId: string, vocabularyId: string): Prom
 
     if (insErr) {
       console.error('[ORI Vocab] Error saving word:', insErr.message);
+      return { success: false, isSaved: false, error: insErr.message };
     }
-    return true; // Now saved
+    return { success: true, isSaved: true, error: null }; // Now saved
   }
 }
 

@@ -60,11 +60,13 @@ export const DashboardPage: React.FC = () => {
         />
 
         {metrics?.streakDays !== undefined && (
-          <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200 text-orange-700 rounded-2xl shadow-sm shrink-0">
-            <Flame className="w-5 h-5 text-orange-500 fill-orange-500 animate-bounce" />
+          <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200 text-orange-800 rounded-2xl shadow-sm shrink-0">
+            <Flame className={`w-5 h-5 ${metrics.streakDays > 0 ? 'text-orange-500 fill-orange-500 animate-bounce' : 'text-slate-400'}`} />
             <div className="flex flex-col">
-              <span className="font-extrabold text-sm leading-tight">{metrics.streakDays} ngày</span>
-              <span className="text-[10px] font-bold text-orange-600 uppercase">Chuỗi học liên tục</span>
+              <span className="font-extrabold text-sm leading-tight">
+                {metrics.streakDays > 0 ? `🔥 ${metrics.streakDays} ngày học liên tục` : 'Chưa bắt đầu chuỗi học'}
+              </span>
+              <span className="text-[10px] font-bold text-orange-600 uppercase">Chuỗi học tập</span>
             </div>
           </div>
         )}
