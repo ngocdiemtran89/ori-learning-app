@@ -87,28 +87,35 @@ export const AdminContentPage: React.FC = () => {
           </span>
         </NavLink>
 
-        {/* Coming Soon: Listening */}
-        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 opacity-70 flex flex-col justify-between space-y-4">
+        {/* Active Module: Listening */}
+        <NavLink
+          to="/admin/content/listening"
+          className="bg-white p-6 rounded-3xl border border-purple-100 hover:border-purple-500 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between space-y-4"
+        >
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="w-12 h-12 rounded-2xl bg-slate-200 text-slate-500 flex items-center justify-center font-extrabold">
+              <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-extrabold">
                 <Headphones className="w-6 h-6" />
               </div>
-              <span className="px-3 py-1 bg-slate-200 text-slate-600 text-[10px] font-extrabold uppercase rounded-full">
-                SẮP TRIỂN KHAI
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase rounded-full">
+                ACTIVE CMS
               </span>
             </div>
 
             <div>
-              <h2 className="font-extrabold text-slate-700 text-lg">
+              <h2 className="font-extrabold text-slate-900 text-lg group-hover:text-purple-600 transition-colors">
                 Quản Lý Luyện Nghe (Listening CMS)
               </h2>
-              <p className="text-xs text-slate-400 font-medium mt-1 leading-relaxed">
-                Quản lý file âm thanh, bài tập TOEIC Part 1 - Part 4 và transcript.
+              <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                Quản lý file âm thanh, bài tập TOEIC Part 1 - Part 4, hình ảnh minh họa và transcript.
               </p>
             </div>
           </div>
-        </div>
+
+          <span className="inline-flex items-center gap-1 text-xs font-extrabold text-purple-600 pt-2">
+            Quản Lý Listening ➔
+          </span>
+        </NavLink>
 
         {/* Coming Soon: Reading */}
         <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 opacity-70 flex flex-col justify-between space-y-4">

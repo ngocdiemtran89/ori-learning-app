@@ -121,7 +121,11 @@ create table if not exists public.lesson_questions (
   options jsonb not null,
   correct_answer text not null,
   explanation text,
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  is_active boolean not null default true,
+  skill_tag text,
+  topic text,
+  image_url text
 );
 
 create table if not exists public.user_progress (
@@ -251,10 +255,11 @@ for select to authenticated
 using (
   public.is_admin()
   or (
-    public.has_active_access()
+    is_active = true
+    and public.has_active_access()
     and exists (
       select 1 from public.learning_lessons l
-      where l.id = lesson_questions.lesson_id and l.is_published
+      where l.id = lesson_questions.lesson_id and l.is_published = true
     )
   )
 );
@@ -358,13 +363,27 @@ for update to authenticated
 using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "admin_lessons_all" on public.learning_lessons;
-create policy "admin_lessons_all" on public.learning_lessons
-for all to authenticated
+drop policy if exists "admin_lessons_insert" on public.learning_lessons;
+drop policy if exists "admin_lessons_update" on public.learning_lessons;
+
+create policy "admin_lessons_insert" on public.learning_lessons
+for insert to authenticated
+with check (public.is_admin());
+
+create policy "admin_lessons_update" on public.learning_lessons
+for update to authenticated
 using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "admin_questions_all" on public.lesson_questions;
-create policy "admin_questions_all" on public.lesson_questions
-for all to authenticated
+drop policy if exists "admin_questions_insert" on public.lesson_questions;
+drop policy if exists "admin_questions_update" on public.lesson_questions;
+
+create policy "admin_questions_insert" on public.lesson_questions
+for insert to authenticated
+with check (public.is_admin());
+
+create policy "admin_questions_update" on public.lesson_questions
+for update to authenticated
 using (public.is_admin()) with check (public.is_admin());
 
 -- Phase 2.2 Question Attempts

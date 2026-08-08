@@ -30,6 +30,8 @@ import { AdminVocabularyItemsPage } from './pages/AdminVocabularyItemsPage';
 import { AdminVocabularyItemEditPage } from './pages/AdminVocabularyItemEditPage';
 import { AdminGrammarLessonsPage } from './pages/AdminGrammarLessonsPage';
 import { AdminGrammarLessonEditPage } from './pages/AdminGrammarLessonEditPage';
+import { AdminListeningLessonsPage } from './pages/AdminListeningLessonsPage';
+import { AdminListeningLessonEditPage } from './pages/AdminListeningLessonEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -87,6 +89,11 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/grammar" element={<AdminGrammarLessonsPage />} />
                 <Route path="/admin/content/grammar/new" element={<AdminGrammarLessonEditPage />} />
                 <Route path="/admin/content/grammar/:lessonId/edit" element={<AdminGrammarLessonEditPage />} />
+
+                {/* Phase 3.3 Listening CMS Routes */}
+                <Route path="/admin/content/listening" element={<AdminListeningLessonsPage />} />
+                <Route path="/admin/content/listening/new" element={<AdminListeningLessonEditPage />} />
+                <Route path="/admin/content/listening/:lessonId/edit" element={<AdminListeningLessonEditPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

@@ -9,6 +9,10 @@ export interface LessonQuestion {
   correct_answer: string;
   explanation: string | null;
   sort_order: number;
+  is_active?: boolean;
+  skill_tag?: string | null;
+  topic?: string | null;
+  image_url?: string | null;
 }
 
 /**
