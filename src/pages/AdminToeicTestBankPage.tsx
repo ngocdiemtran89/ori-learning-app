@@ -68,12 +68,12 @@ export const AdminToeicTestBankPage: React.FC = () => {
   const handleDeleteDraft = async (testId: string, testTitle: string) => {
     if (window.confirm(`Bạn có chắc muốn xóa vĩnh viễn đề nháp này?\n\nĐề thi: ${testTitle}`)) {
       setDeleteLoading(testId);
+      setError(null);
       const res = await deleteDraftToeicTest(testId);
       setDeleteLoading(null);
-      if (res.error) {
-        alert(res.error);
+      if (!res.success) {
+        setError(`Không thể xóa đề nháp: ${res.error || 'Lỗi không xác định'}`);
       } else {
-        alert('Đã xóa thành công.');
         loadTests();
       }
     }

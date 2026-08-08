@@ -274,12 +274,18 @@ export async function deleteDraftToeicTest(testId: string): Promise<{ success: b
       p_test_id: testId
     });
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log('deleteDraftToeicTest testId:', testId);
+      console.log('deleteDraftToeicTest RPC data:', data);
+      console.log('deleteDraftToeicTest RPC error:', error);
+    }
+
     if (error) {
       return { success: false, error: `Lỗi Database: ${error.message}` };
     }
 
-    if (data && data.success === false) {
-      return { success: false, error: data.error || 'Lỗi không xác định từ Database.' };
+    if (!data || data.success !== true) {
+      return { success: false, error: data?.error || 'Lỗi không xác định từ Database.' };
     }
 
     return { success: true };
