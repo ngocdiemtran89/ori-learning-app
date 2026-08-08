@@ -211,4 +211,46 @@ describe('Phase 2.4 — Learning Weakness Analysis Engine', () => {
     expect(result.focusAreas[0].dimension).toBe('skill');
     expect(result.focusAreas[0].key).toBe('Present Simple');
   });
+
+  it('CASE M: Specific skill vs TOEIC Part preference -> Tier 1 Skill preferred over Tier 2 TOEIC Part even if Part mastery is slightly lower', () => {
+    const attempts: QuestionAttemptForAnalysis[] = [];
+    // Skill: 45% (5 questions)
+    for (let i = 1; i <= 5; i++) {
+      attempts.push({ question_key: `s_${i}`, content_type: 'grammar', skill_tag: 'Present Simple', is_correct: i <= 2, created_at: '2026-08-08T01:00:00Z' });
+    }
+    // TOEIC Part: 40% (5 questions)
+    for (let i = 1; i <= 5; i++) {
+      attempts.push({ question_key: `p_${i}`, content_type: 'reading', toeic_part: 'part5', is_correct: i <= 2, created_at: '2026-08-08T01:00:00Z' });
+    }
+
+    const result = analyzeLearningPerformance(attempts);
+
+    expect(result.focusAreas.length).toBeGreaterThanOrEqual(2);
+    expect(result.focusAreas[0].dimension).toBe('skill');
+    expect(result.focusAreas[1].dimension).toBe('toeic_part');
+  });
+
+  it('CASE N: Only TOEIC Part and Topic eligible -> Tier 2 TOEIC Part preferred before Tier 3 Topic', () => {
+    const attempts: QuestionAttemptForAnalysis[] = [];
+    for (let i = 1; i <= 5; i++) {
+      attempts.push({ question_key: `p_${i}`, content_type: 'reading', toeic_part: 'part5', topic: 'Office', is_correct: i <= 2, created_at: '2026-08-08T01:00:00Z' });
+    }
+
+    const result = analyzeLearningPerformance(attempts);
+
+    expect(result.focusAreas.length).toBeGreaterThan(0);
+    expect(result.focusAreas[0].dimension).toBe('toeic_part');
+  });
+
+  it('CASE O: No specific categories eligible, module eligible -> Tier 4 Module fallback', () => {
+    const attempts: QuestionAttemptForAnalysis[] = [];
+    for (let i = 1; i <= 5; i++) {
+      attempts.push({ question_key: `m_${i}`, content_type: 'grammar', is_correct: false, created_at: '2026-08-08T01:00:00Z' });
+    }
+
+    const result = analyzeLearningPerformance(attempts);
+
+    expect(result.focusAreas.length).toBe(1);
+    expect(result.focusAreas[0].dimension).toBe('module');
+  });
 });

@@ -272,8 +272,22 @@ export function analyzeLearningPerformance(
     });
   }
 
-  // Sort candidate focus areas: lowest masteryPercent first, then highest unresolvedCount, then uniqueQuestionCount
+  // Sort candidate focus areas with strict Tiered Specificity Preference:
+  // Tier 1: skill, Tier 2: toeic_part, Tier 3: topic, Tier 4: module
+  // Within the same tier: lowest masteryPercent -> higher unresolvedCount -> higher uniqueQuestionCount
+  const dimensionTier: Record<AnalysisDimension, number> = {
+    skill: 1,
+    toeic_part: 2,
+    topic: 3,
+    module: 4,
+  };
+
   candidatePool.sort((a, b) => {
+    const tierA = dimensionTier[a.dimension] || 9;
+    const tierB = dimensionTier[b.dimension] || 9;
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
     if (a.masteryPercent !== b.masteryPercent) {
       return a.masteryPercent - b.masteryPercent;
     }

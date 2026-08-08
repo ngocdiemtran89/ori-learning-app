@@ -8,6 +8,8 @@ import {
   PublishedLessonInfo,
   UserProgressLesson,
 } from '../learning/dailyPlan';
+import { analyzeLearningPerformance } from '../learning/weaknessAnalysis';
+import { buildLearningRecommendations, LearningRecommendations } from '../learning/recommendationEngine';
 
 export interface LatestQuizAttempt {
   content_type: string;
@@ -24,6 +26,7 @@ export interface DashboardMetrics {
   streakDays: number;
   latestQuizAttempt: LatestQuizAttempt | null;
   dailyPlan: DailyStudyPlan;
+  recommendations: LearningRecommendations;
   fetchError?: string | null;
   recommendedAction: {
     title: string;
@@ -43,9 +46,6 @@ export async function getStudentDashboardMetrics(
   const todayStartISO = getVietnamTodayStartISO();
   let fetchErrorMsg: string | null = null;
 
-  // 1. Concurrent fetching of lightweight metadata using CORRECT schema fields:
-  // - completed_at for lessons completed today
-  // - last_seen_at for in-progress lesson ordering
   const [
     dueItems,
     vocabReviewedToday,
@@ -83,7 +83,7 @@ export async function getStudentDashboardMetrics(
       .maybeSingle(),
     supabase
       .from('question_attempts')
-      .select('question_key, content_type, is_correct, created_at')
+      .select('question_key, content_type, is_correct, skill_tag, toeic_part, topic, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: true }),
     supabase
@@ -98,7 +98,6 @@ export async function getStudentDashboardMetrics(
       .order('sort_order', { ascending: true }),
   ]);
 
-  // Log any Supabase query errors for developers
   if (completedRes.error) console.error('[ORI Dashboard] Error fetching completed user_progress:', completedRes.error.message);
   if (completedTodayRes.error) console.error('[ORI Dashboard] Error fetching completedToday user_progress:', completedTodayRes.error.message);
   if (inProgressRes.error) console.error('[ORI Dashboard] Error fetching inProgress user_progress:', inProgressRes.error.message);
@@ -115,41 +114,47 @@ export async function getStudentDashboardMetrics(
   const completedLessonsCount = completedRes.data?.length || 0;
   const latestQuizAttempt = (attemptRes.data as LatestQuizAttempt | null) || null;
 
-  // 2. Process Unresolved Mistakes
-  const unresolvedMistakeSummary = calculateUnresolvedMistakes(
-    (questionAttemptsRes.data as Array<{ question_key: string; content_type: string; is_correct: boolean; created_at: string }>) || []
-  );
+  const rawQuestionAttempts = (questionAttemptsRes.data as Array<{ question_key: string; content_type: string; is_correct: boolean; skill_tag?: string; toeic_part?: string; topic?: string; created_at: string }>) || [];
 
-  // 3. Process Available Lessons Metadata
+  // Process Unresolved Mistakes
+  const unresolvedMistakeSummary = calculateUnresolvedMistakes(rawQuestionAttempts);
+
+  // Process Published Lessons Metadata
   const availableLessons: PublishedLessonInfo[] = [];
+  const publishedGrammarLessons: PublishedLessonInfo[] = [];
+  const publishedLearningLessons: PublishedLessonInfo[] = [];
 
   if (grammarMetaRes.data) {
     grammarMetaRes.data.forEach((g) => {
-      availableLessons.push({
+      const item: PublishedLessonInfo = {
         id: g.id,
         kind: 'grammar',
         title: g.title,
         slug: g.slug,
         level: g.level || 'foundation',
         sort_order: g.sort_order,
-      });
+      };
+      availableLessons.push(item);
+      publishedGrammarLessons.push(item);
     });
   }
 
   if (learningMetaRes.data) {
     learningMetaRes.data.forEach((l) => {
-      availableLessons.push({
+      const item: PublishedLessonInfo = {
         id: l.id,
         kind: l.kind as 'listening' | 'reading',
         title: l.title,
         slug: l.slug,
         level: l.level || 'foundation',
         sort_order: l.sort_order,
-      });
+      };
+      availableLessons.push(item);
+      publishedLearningLessons.push(item);
     });
   }
 
-  // 4. Resolve In-Progress Lesson details using last_seen_at
+  // Resolve In-Progress Lesson details
   let inProgressLesson: UserProgressLesson | null = null;
   if (inProgressRes.data) {
     const matched = availableLessons.find((l) => l.id === inProgressRes.data!.content_id);
@@ -165,11 +170,26 @@ export async function getStudentDashboardMetrics(
     }
   }
 
+  const completedLessonIds = new Set<string>(
+    (completedRes.data || []).map((r) => r.content_id)
+  );
+
   const completedLessonIdsToday = new Set<string>(
     (completedTodayRes.data || []).map((r) => r.content_id)
   );
 
-  // 5. Build Pure Daily Study Plan
+  // Process Weakness Analysis & Recommendations
+  const analysis = analyzeLearningPerformance(rawQuestionAttempts);
+  const recommendations = buildLearningRecommendations({
+    analysis,
+    studentLevel,
+    publishedGrammarLessons,
+    publishedLearningLessons,
+    inProgressLessonId: inProgressLesson?.content_id,
+    recentlyCompletedLessonIds: completedLessonIds,
+  });
+
+  // Build Pure Daily Study Plan with primary recommendation slot
   const dailyPlan = buildDailyStudyPlan({
     vocabularyDueCount: dueWordsCount,
     vocabularyReviewedTodayCount: vocabReviewedToday,
@@ -179,9 +199,10 @@ export async function getStudentDashboardMetrics(
     availableLessons,
     completedLessonIdsToday,
     studentLevel,
+    primaryRecommendation: recommendations.primaryRecommendation,
   });
 
-  // 6. Streak calculation
+  // Streak calculation
   const cutoffDateISO = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
 
   const [{ data: reviews }, { data: attempts }] = await Promise.all([
@@ -215,7 +236,7 @@ export async function getStudentDashboardMetrics(
 
   const streakDays = calculateStudyStreak(activityTimestamps, new Date());
 
-  // 7. Recommended Action
+  // Recommended Action
   let recommendedAction = {
     title: 'Luyện Từ Vựng Flashcards',
     subtitle: 'Bắt đầu học các bộ từ vựng cốt lõi chuẩn đề thi TOEIC.',
@@ -239,6 +260,7 @@ export async function getStudentDashboardMetrics(
     streakDays,
     latestQuizAttempt,
     dailyPlan,
+    recommendations,
     fetchError: fetchErrorMsg,
     recommendedAction,
   };

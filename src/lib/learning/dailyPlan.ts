@@ -1,15 +1,21 @@
 /**
- * Pure Daily Study Plan Engine for ORI Learning (Phase 2.3B)
- * Deterministic, Zero-AI, derives daily study plan from student learning history.
+ * Pure Daily Study Plan Engine for ORI Learning (Phase 2.3B / 2.5)
+ * Deterministic, Zero-AI, derives daily study plan from student learning history & recommendations.
  */
+
+import type { LearningRecommendation } from './recommendationEngine';
 
 export type DailyPlanItemType =
   | 'vocabulary_review'
   | 'mistake_review'
   | 'continue_lesson'
+  | 'grammar_lesson'
+  | 'listening_lesson'
+  | 'reading_lesson'
   | 'grammar'
   | 'listening'
-  | 'reading';
+  | 'reading'
+  | 'general_practice';
 
 export interface DailyPlanItem {
   id: string;
@@ -54,6 +60,7 @@ export interface PublishedLessonInfo {
   slug: string;
   level: string;
   sort_order: number;
+  toeic_part?: string | null;
 }
 
 export interface DailyPlanInput {
@@ -65,6 +72,7 @@ export interface DailyPlanInput {
   availableLessons?: PublishedLessonInfo[];
   completedLessonIdsToday?: Set<string>;
   studentLevel?: string;
+  primaryRecommendation?: LearningRecommendation | null;
 }
 
 /**
@@ -232,72 +240,103 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
     });
   }
 
-  // RULE 4 — BALANCED PRACTICE / NEW STUDENT INITIAL PLAN
-  if (items.length < maxItems && input.availableLessons && input.availableLessons.length > 0) {
-    const kinds: Array<'grammar' | 'listening' | 'reading'> = ['grammar', 'listening', 'reading'];
-    const usedKinds = new Set<string>();
-    const usedLessonIds = new Set<string>();
+  // RULE 4 — PERSONALIZED PRACTICE / BALANCED PRACTICE
+  if (items.length < maxItems && (input.availableLessons || input.primaryRecommendation)) {
+    const currentTotal = items.filter((i) => !i.completed).reduce((s, i) => s + i.estimatedMinutes, 0);
+    const remainingAvailable = 30 - currentTotal;
 
-    items.forEach((it) => {
-      if (it.type === 'continue_lesson' && input.inProgressLesson) {
-        usedKinds.add(input.inProgressLesson.content_type);
-        usedLessonIds.add(input.inProgressLesson.content_id);
-      }
-    });
+    let addedPersonalized = false;
 
-    const recent = input.recentActivityTypes || [];
-    kinds.sort((a, b) => {
-      const idxA = recent.indexOf(a);
-      const idxB = recent.indexOf(b);
-      const posA = idxA === -1 ? 999 : idxA;
-      const posB = idxB === -1 ? 999 : idxB;
-      return posB - posA;
-    });
+    // Try personalized recommendation first if valid and not a duplicate
+    if (input.primaryRecommendation && remainingAvailable >= 5) {
+      const rec = input.primaryRecommendation;
+      const recRoute = rec.route.toLowerCase();
+      const recLessonId = rec.sourceLessonId || '';
 
-    for (const kind of kinds) {
-      if (items.length >= maxItems) break;
-
-      const currentTotal = items.filter((i) => !i.completed).reduce((s, i) => s + i.estimatedMinutes, 0);
-      if (currentTotal >= 30) break; // Hard stop at 30 minutes!
-
-      const remainingAvailable = 30 - currentTotal;
-      if (remainingAvailable < 5) break; // Do not add a practice task if less than 5 mins remain!
-
-      // Filter published lessons strictly matching student level rules
-      const matchingLessons = input.availableLessons.filter((l) => {
-        const matchesKind = l.kind === kind;
-        const isAllowed = isLessonAllowedForStudent(level, l.level);
-        return matchesKind && isAllowed && !usedLessonIds.has(l.id);
+      const isDuplicate = items.some((it) => {
+        const itRoute = it.route.toLowerCase();
+        const matchesRoute = itRoute === recRoute;
+        const matchesLessonId = recLessonId && it.id.includes(recLessonId);
+        return matchesRoute || matchesLessonId;
       });
 
-      // Sort matching lessons: exact level match first, then sort_order
-      matchingLessons.sort((a, b) => {
-        const aExact = (a.level || 'foundation').toLowerCase() === level ? 0 : 1;
-        const bExact = (b.level || 'foundation').toLowerCase() === level ? 0 : 1;
-        if (aExact !== bExact) return aExact - bExact;
-        return a.sort_order - b.sort_order;
-      });
-
-      const selected = matchingLessons[0];
-
-      if (selected) {
-        usedLessonIds.add(selected.id);
-        usedKinds.add(kind);
-
-        const isCompleted = completedToday.has(selected.id);
-        const typeTitle = kind === 'grammar' ? 'Ngữ pháp' : kind === 'listening' ? 'Luyện nghe' : 'Luyện đọc';
-        const estMin = Math.min(7, remainingAvailable);
-
+      if (!isDuplicate) {
         items.push({
-          id: `plan-practice-${selected.id}`,
-          type: kind,
-          title: `Luyện tập ${typeTitle}: ${selected.title}`,
-          description: `Rèn luyện kỹ năng ${typeTitle} theo trình độ ${level.toUpperCase()}`,
-          route: `/${kind}/${selected.slug || selected.id}`,
-          estimatedMinutes: estMin,
+          id: `plan-personalized-${recLessonId || rec.id}`,
+          type: rec.type,
+          title: `Gợi ý: ${rec.title}`,
+          description: rec.description,
+          route: rec.route,
+          estimatedMinutes: Math.min(rec.estimatedMinutes, remainingAvailable),
           priority: 4,
-          completed: isCompleted,
+          completed: recLessonId ? completedToday.has(recLessonId) : false,
         });
+        addedPersonalized = true;
+      }
+    }
+
+    // Fallback to standard balanced practice if no personalized task was added
+    if (!addedPersonalized && input.availableLessons && input.availableLessons.length > 0) {
+      const kinds: Array<'grammar' | 'listening' | 'reading'> = ['grammar', 'listening', 'reading'];
+      const usedLessonIds = new Set<string>();
+
+      items.forEach((it) => {
+        if (it.type === 'continue_lesson' && input.inProgressLesson) {
+          usedLessonIds.add(input.inProgressLesson.content_id);
+        }
+      });
+
+      const recent = input.recentActivityTypes || [];
+      kinds.sort((a, b) => {
+        const idxA = recent.indexOf(a);
+        const idxB = recent.indexOf(b);
+        const posA = idxA === -1 ? 999 : idxA;
+        const posB = idxB === -1 ? 999 : idxB;
+        return posB - posA;
+      });
+
+      for (const kind of kinds) {
+        if (items.length >= maxItems) break;
+
+        const loopTotal = items.filter((i) => !i.completed).reduce((s, i) => s + i.estimatedMinutes, 0);
+        if (loopTotal >= 30) break;
+
+        const loopCap = 30 - loopTotal;
+        if (loopCap < 5) break;
+
+        const matchingLessons = input.availableLessons.filter((l) => {
+          const matchesKind = l.kind === kind;
+          const isAllowed = isLessonAllowedForStudent(level, l.level);
+          return matchesKind && isAllowed && !usedLessonIds.has(l.id);
+        });
+
+        matchingLessons.sort((a, b) => {
+          const aExact = (a.level || 'foundation').toLowerCase() === level ? 0 : 1;
+          const bExact = (b.level || 'foundation').toLowerCase() === level ? 0 : 1;
+          if (aExact !== bExact) return aExact - bExact;
+          return a.sort_order - b.sort_order;
+        });
+
+        const selected = matchingLessons[0];
+
+        if (selected) {
+          usedLessonIds.add(selected.id);
+
+          const isCompleted = completedToday.has(selected.id);
+          const typeTitle = kind === 'grammar' ? 'Ngữ pháp' : kind === 'listening' ? 'Luyện nghe' : 'Luyện đọc';
+          const estMin = Math.min(7, loopCap);
+
+          items.push({
+            id: `plan-practice-${selected.id}`,
+            type: kind,
+            title: `Luyện tập ${typeTitle}: ${selected.title}`,
+            description: `Rèn luyện kỹ năng ${typeTitle} theo trình độ ${level.toUpperCase()}`,
+            route: `/${kind}/${selected.slug || selected.id}`,
+            estimatedMinutes: estMin,
+            priority: 4,
+            completed: isCompleted,
+          });
+        }
       }
     }
   }
