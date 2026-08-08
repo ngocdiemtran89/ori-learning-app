@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ArrowLeft, Users, Search, Edit2, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Users, Search, Edit2, ShieldCheck, CheckCircle2, BarChart2 } from 'lucide-react';
 import { Profile } from '../lib/supabase/types';
 import { getAllStudentProfiles } from '../lib/supabase/admin';
 import { LoadingState } from '../components/ui/LoadingState';
@@ -145,7 +145,14 @@ export const AdminStudentsPage: React.FC = () => {
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right flex items-center justify-end gap-2">
+                        <NavLink
+                          to={`/admin/students/${st.id}/progress`}
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                        >
+                          <BarChart2 className="w-3.5 h-3.5" /> Tiến độ
+                        </NavLink>
+
                         <button
                           onClick={() => setSelectedStudent(st)}
                           className="px-3 py-1.5 bg-slate-100 hover:bg-ori-50 text-slate-700 hover:text-ori-600 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors"

@@ -28,7 +28,7 @@ export const AdminPage: React.FC = () => {
               Quản Lý Học Viên (Students)
             </h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Xem danh sách học viên, chỉnh level, cập nhật ngày bắt đầu và gia hạn ngày hết hạn.
+              Xem danh sách học viên, theo dõi tiến độ học tập, chỉnh level và gia hạn ngày hết hạn.
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />

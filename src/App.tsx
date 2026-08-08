@@ -22,6 +22,7 @@ import { AccountPage } from './pages/AccountPage';
 import { ExpiredPage } from './pages/ExpiredPage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminStudentsPage } from './pages/AdminStudentsPage';
+import { AdminStudentProgressPage } from './pages/AdminStudentProgressPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -64,6 +65,7 @@ export const App: React.FC = () => {
               <Route element={<RequireAdmin />}>
                 <Route path="/admin" element={<AdminPage />} />
                 <Route path="/admin/students" element={<AdminStudentsPage />} />
+                <Route path="/admin/students/:studentId/progress" element={<AdminStudentProgressPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />
