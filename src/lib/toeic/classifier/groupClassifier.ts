@@ -1,7 +1,7 @@
 import { ParsedQuestion, ParsedGroup } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
-export function classifyGroups(questions: ParsedQuestion[]): ParsedGroup[] {
+export function classifyGroups(questions: ParsedQuestion[], explicitRanges: Array<{start: number, end: number, instruction: string, passage: string}> = []): ParsedGroup[] {
   const groups: ParsedGroup[] = [];
   let tempKeyCounter = 1;
 
@@ -91,22 +91,47 @@ export function classifyGroups(questions: ParsedQuestion[]): ParsedGroup[] {
 
   // Part 6: Text Completion (Quad grouping 131-134...)
   const p6Qs = questions.filter(q => q.part === 'part6').sort((a,b) => a.question_number - b.question_number);
-  for (let i = 0; i < p6Qs.length; i += 4) {
-    const chunk = p6Qs.slice(i, i + 4);
-    const key = getNewKey('part6');
-    groups.push({
-      group_temp_key: key,
-      part: 'part6',
-      group_type: 'text_completion',
-      title: `Questions ${chunk[0].question_number}-${chunk[chunk.length-1].question_number}`,
-      instruction: null,
-      passage: null, // Will be flagged for review later if empty
-      transcript: null,
-      audio_url: null,
-      image_url: null,
-      documents: []
-    });
-    chunk.forEach(q => q.group_temp_key = key);
+  let i6 = 0;
+  while (i6 < p6Qs.length) {
+    const q = p6Qs[i6];
+    const range = explicitRanges.find(r => q.question_number >= r.start && q.question_number <= r.end);
+    
+    if (range) {
+      const chunk = p6Qs.filter(x => x.question_number >= range.start && x.question_number <= range.end);
+      const key = getNewKey('part6');
+      groups.push({
+        group_temp_key: key,
+        part: 'part6',
+        group_type: 'text_completion',
+        title: `Questions ${range.start}-${range.end}`,
+        instruction: range.instruction,
+        passage: range.passage || null,
+        transcript: null,
+        audio_url: null,
+        image_url: null,
+        documents: []
+      });
+      chunk.forEach(c => c.group_temp_key = key);
+      i6 += chunk.length;
+    } else {
+      // Fallback: 4 questions per group
+      const chunk = p6Qs.slice(i6, i6 + 4);
+      const key = getNewKey('part6');
+      groups.push({
+        group_temp_key: key,
+        part: 'part6',
+        group_type: 'text_completion',
+        title: `Questions ${chunk[0].question_number}-${chunk[chunk.length-1].question_number}`,
+        instruction: null,
+        passage: null,
+        transcript: null,
+        audio_url: null,
+        image_url: null,
+        documents: []
+      });
+      chunk.forEach(c => c.group_temp_key = key);
+      i6 += chunk.length;
+    }
   }
 
   // Part 7: Reading Comprehension
@@ -118,21 +143,55 @@ export function classifyGroups(questions: ParsedQuestion[]): ParsedGroup[] {
   
   const p7Qs = questions.filter(q => q.part === 'part7').sort((a,b) => a.question_number - b.question_number);
   
-  if (p7Qs.length > 0) {
-    const key = getNewKey('part7');
-    groups.push({
-      group_temp_key: key,
-      part: 'part7',
-      group_type: 'reading_set',
-      title: `Part 7 (Cần review nhóm)`,
-      instruction: 'REVIEW: Hệ thống chưa tự động nhận diện ranh giới đoạn văn. Vui lòng gộp/tách nhóm thủ công.',
-      passage: null,
-      transcript: null,
-      audio_url: null,
-      image_url: null,
-      documents: []
-    });
-    p7Qs.forEach(q => q.group_temp_key = key);
+  let i7 = 0;
+  while (i7 < p7Qs.length) {
+    const q = p7Qs[i7];
+    const range = explicitRanges.find(r => q.question_number >= r.start && q.question_number <= r.end);
+    
+    if (range) {
+      const chunk = p7Qs.filter(x => x.question_number >= range.start && x.question_number <= range.end);
+      const key = getNewKey('part7');
+      groups.push({
+        group_temp_key: key,
+        part: 'part7',
+        group_type: 'reading_set',
+        title: `Questions ${range.start}-${range.end}`,
+        instruction: range.instruction,
+        passage: range.passage || null,
+        transcript: null,
+        audio_url: null,
+        image_url: null,
+        documents: []
+      });
+      chunk.forEach(c => c.group_temp_key = key);
+      i7 += chunk.length;
+    } else {
+      // Missing explicit range! Fallback: gather all sequential questions without explicit ranges
+      const chunk = [q];
+      let j = i7 + 1;
+      while(j < p7Qs.length) {
+        const nextQ = p7Qs[j];
+        if (explicitRanges.some(r => nextQ.question_number >= r.start && nextQ.question_number <= r.end)) break;
+        chunk.push(nextQ);
+        j++;
+      }
+      
+      const key = getNewKey('part7');
+      groups.push({
+        group_temp_key: key,
+        part: 'part7',
+        group_type: 'reading_set',
+        title: `Part 7 (Cần review nhóm)`,
+        instruction: 'REVIEW: Hệ thống chưa tự động nhận diện ranh giới đoạn văn. Vui lòng gộp/tách nhóm thủ công.',
+        passage: null,
+        transcript: null,
+        audio_url: null,
+        image_url: null,
+        documents: []
+      });
+      chunk.forEach(c => c.group_temp_key = key);
+      i7 += chunk.length;
+    }
   }
 
   return groups;

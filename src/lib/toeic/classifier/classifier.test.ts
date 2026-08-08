@@ -176,4 +176,60 @@ Questions 147-149 refer to the following email.
     expect(draft.issues.some(i => i.question_number === 101 && i.message.includes('Heading'))).toBe(false);
     expect(draft.issues.some(i => i.question_number === 147 && i.message.includes('Heading'))).toBe(false);
   });
+
+  it('CASE: parse explicit Part 7 range with passage', () => {
+    const rawTest = `
+PART 7
+
+Questions 147-149 refer to the following email.
+
+To: All Employees
+From: Human Resources
+Subject: Training Session
+
+A customer-service training session will be held next Monday at 9:00 A.M.
+in Conference Room B. Employees should arrive ten minutes early and bring
+their employee identification cards.
+
+147. When will the training session take place?
+(A) This Friday
+(B) Next Monday
+(C) Next Tuesday
+(D) Next month
+
+148. Where will the session be held?
+(A) Conference Room A
+(B) Conference Room B
+(C) The cafeteria
+(D) The main lobby
+
+149. What should employees bring?
+(A) A laptop
+(B) A printed schedule
+(C) An identification card
+(D) A training manual
+    `;
+
+    const draft = parseRawToeicTest(rawTest, { title: 'Test', slug: 't', test_code: 't', description: '', test_type: 'full' });
+    
+    expect(draft.questions.length).toBe(3);
+    expect(draft.groups.length).toBe(1);
+    
+    const group = draft.groups[0];
+    expect(group.group_type).toBe('reading_set');
+    expect(group.title).toBe('Questions 147-149');
+    expect(group.instruction).toBe('Questions 147-149 refer to the following email.');
+    expect(group.passage).toContain('To: All Employees');
+    expect(group.passage).toContain('bring\ntheir employee identification cards.');
+    
+    expect(draft.questions[0].question_number).toBe(147);
+    expect(draft.questions[1].question_number).toBe(148);
+    expect(draft.questions[2].question_number).toBe(149);
+    
+    expect(draft.questions[0].group_temp_key).toBe(group.group_temp_key);
+    expect(draft.questions[1].group_temp_key).toBe(group.group_temp_key);
+    expect(draft.questions[2].group_temp_key).toBe(group.group_temp_key);
+  });
 });
+
+

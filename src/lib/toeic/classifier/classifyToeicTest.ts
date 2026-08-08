@@ -19,6 +19,12 @@ export function parseRawToeicTest(
   const blocks = normalizedText.split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
   
   let currentHeading = '';
+  let pendingInstruction = '';
+  let pendingPassage = '';
+  let pendingRangeStart = 0;
+  let pendingRangeEnd = 0;
+  
+  const explicitRanges: Array<{start: number, end: number, instruction: string, passage: string}> = [];
 
   const parsePartNumber = (val: string): string | null => {
     const v = val.toUpperCase();
@@ -43,14 +49,29 @@ export function parseRawToeicTest(
       continue;
     }
 
-    // Ignore explicit Part 7 boundary instructions like "Questions 147-149 refer to the following..."
-    // so they are not accidentally parsed as a question if the regex is too loose.
-    if (block.match(/^Questions?\s+\d+\s*-\s*\d+\s+refer/i)) {
+    // Extract explicit Part 6/7 boundary instructions and passage
+    const instructionMatch = block.match(/^(Questions?\s+(\d+)\s*-\s*(\d+)\s+refer[^\n]*)(?:\n(.*))?$/is);
+    if (instructionMatch) {
+       if (pendingRangeStart) {
+          explicitRanges.push({ start: pendingRangeStart, end: pendingRangeEnd, instruction: pendingInstruction, passage: pendingPassage.trim() });
+       }
+       pendingInstruction = instructionMatch[1].trim();
+       pendingRangeStart = parseInt(instructionMatch[2], 10);
+       pendingRangeEnd = parseInt(instructionMatch[3], 10);
+       pendingPassage = instructionMatch[4] ? instructionMatch[4].trim() : '';
        continue;
     }
 
     const qData = parseQuestionBlock(block);
     if (qData) {
+      if (pendingRangeStart) {
+          explicitRanges.push({ start: pendingRangeStart, end: pendingRangeEnd, instruction: pendingInstruction, passage: pendingPassage.trim() });
+          pendingRangeStart = 0;
+          pendingRangeEnd = 0;
+          pendingInstruction = '';
+          pendingPassage = '';
+      }
+      
       const { questionNumber, questionText, options } = qData;
       
       const expectedPart = expectedPartForQuestionNumber(questionNumber);
@@ -107,7 +128,16 @@ export function parseRawToeicTest(
         audio_url: null,
         image_url: null
       });
+    } else {
+      // It's not a heading, not an instruction, and not a question. It must be passage text!
+      if (pendingRangeStart) {
+         pendingPassage += (pendingPassage ? '\n\n' : '') + block;
+      }
     }
+  }
+
+  if (pendingRangeStart) {
+     explicitRanges.push({ start: pendingRangeStart, end: pendingRangeEnd, instruction: pendingInstruction, passage: pendingPassage.trim() });
   }
 
   // 2. Parse answer key
@@ -124,7 +154,7 @@ export function parseRawToeicTest(
   }
 
   // 3. We do group classification
-  const groups = classifyGroups(questions);
+  const groups = classifyGroups(questions, explicitRanges);
 
   // 4. Add group issues
   groups.forEach(g => {
