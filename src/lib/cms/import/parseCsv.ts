@@ -94,11 +94,7 @@ export function parseCsvContent(csvContent: string): ParsedCsvResult {
     for (let c = 0; c < headers.length; c++) {
       const headerName = headers[c];
       if (headerName) {
-        let val = (cells[c] || '').trim();
-        // Sanitize formula risks (=, +, -, @ leading chars)
-        if (/^[=+\-@]/.test(val)) {
-          val = val.slice(1).trim();
-        }
+        const val = (cells[c] || '').trim();
         rowObj[headerName] = val;
       }
     }

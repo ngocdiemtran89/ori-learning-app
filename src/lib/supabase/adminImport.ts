@@ -24,17 +24,11 @@ export async function preflightDatabaseDuplicates(
     if (contentType === 'vocabulary') {
       if (!targetDeckId) return records;
 
-      const words = records
-        .filter((r) => r.status !== 'ERROR' && r.data.word)
-        .map((r) => r.data.word.trim().toLowerCase());
-
-      if (words.length === 0) return records;
-
+      // Query existing words for the selected deck to perform 100% reliable case & whitespace normalized comparison
       const { data: existing, error } = await supabase
         .from('vocabulary_items')
         .select('word')
-        .eq('deck_id', targetDeckId)
-        .in('word', words);
+        .eq('deck_id', targetDeckId);
 
       if (!error && existing && existing.length > 0) {
         const existingWordSet = new Set(existing.map((item) => item.word.trim().toLowerCase()));
@@ -224,7 +218,7 @@ export async function executeImportPlan(
       }
     }
   } else {
-    // Listening / Reading Atomic RPC Insert
+    // Listening / Reading Atomic RPC Insert (STRICT: NO SEQUENTIAL FALLBACK)
     for (let i = 0; i < selectedRecords.length; i++) {
       const r = selectedRecords[i];
       const lessonPayload = {
@@ -257,33 +251,13 @@ export async function executeImportPlan(
       });
 
       if (error) {
-        // Fallback: If RPC fails or is pending migration, fallback to sequential inserts
-        console.warn('[ORI CMS] Atomic RPC unavailable or failed. Falling back to sequential inserts:', error.message);
-        
-        const { data: fallbackLesson, error: lErr } = await supabase
-          .from('learning_lessons')
-          .insert({
-            ...lessonPayload,
-            is_published: false,
-          })
-          .select('*')
-          .single();
-
-        if (lErr || !fallbackLesson) {
-          failedCount++;
-          errors.push({ rowIndex: r.rowIndex, error: lErr?.message || 'Không thể tạo bài học.' });
-        } else {
-          if (questionsPayload.length > 0) {
-            const qInsertPayload = questionsPayload.map((q: any) => ({
-              lesson_id: fallbackLesson.id,
-              ...q,
-              is_active: true,
-            }));
-            await supabase.from('lesson_questions').insert(qInsertPayload);
-          }
-          successCount++;
-          details.push(fallbackLesson);
-        }
+        // FAIL CLOSED: No non-atomic sequential fallback!
+        failedCount++;
+        const isRpcMissing = error.message.includes('function') || error.code === 'PGRST202';
+        const userMsg = isRpcMissing
+          ? 'Chức năng nhập Listening/Reading chưa sẵn sàng trên hệ thống. Vui lòng hoàn tất cấu hình database trước khi nhập.'
+          : error.message;
+        errors.push({ rowIndex: r.rowIndex, error: userMsg });
       } else {
         successCount++;
         if (data) details.push(data);

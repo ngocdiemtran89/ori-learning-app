@@ -46,7 +46,16 @@ begin
 
   v_title := trim(coalesce(lesson_payload->>'title', ''));
   v_level := lower(trim(coalesce(lesson_payload->>'level', 'foundation')));
-  v_toeic_part := coalesce(lesson_payload->>'toeic_part', null);
+  v_toeic_part := lower(trim(coalesce(lesson_payload->>'toeic_part', '')));
+
+  -- Validate TOEIC part against kind
+  if v_kind = 'listening' and v_toeic_part not in ('part1', 'part2', 'part3', 'part4') then
+    raise exception 'Invalid TOEIC Part % for Listening lesson.', v_toeic_part;
+  end if;
+  if v_kind = 'reading' and v_toeic_part not in ('part5', 'part6', 'part7') then
+    raise exception 'Invalid TOEIC Part % for Reading lesson.', v_toeic_part;
+  end if;
+
   v_passage := coalesce(lesson_payload->>'passage', null);
   v_transcript := coalesce(lesson_payload->>'transcript', null);
   v_audio_url := coalesce(lesson_payload->>'audio_url', null);

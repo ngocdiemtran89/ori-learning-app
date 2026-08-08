@@ -170,4 +170,14 @@ describe('Phase 3.5 — Bulk Content Import Center Validation Tests', () => {
     };
     expect(validateLessonImportRecord(readingPart2, 4, 'reading').status).toBe('ERROR');
   });
+
+  it('Phase 3.5B — Preservation of Educational Text (- + =)', () => {
+    const csvStr = `word,ipa,part_of_speech,meaning_vi,example_en,example_vi
+"- Please contact reception.",/ipa/,noun,"- Vui lòng liên hệ tân lễ.","+ VAT applies","=SUM(A1:A2)"`;
+
+    const parsed = parseCsvContent(csvStr);
+    expect(parsed.rows[0].word).toBe('- Please contact reception.');
+    expect(parsed.rows[0].example_en).toBe('+ VAT applies');
+    expect(parsed.rows[0].example_vi).toBe('=SUM(A1:A2)');
+  });
 });
