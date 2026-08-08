@@ -127,3 +127,8 @@ begin
   );
 end;
 $$;
+
+-- Explicit least-privilege RPC execution permissions
+revoke execute on function public.admin_create_learning_lesson_with_questions(jsonb, jsonb) from public;
+revoke execute on function public.admin_create_learning_lesson_with_questions(jsonb, jsonb) from anon;
+grant execute on function public.admin_create_learning_lesson_with_questions(jsonb, jsonb) to authenticated;
