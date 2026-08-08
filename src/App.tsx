@@ -35,6 +35,8 @@ import { AdminListeningLessonEditPage } from './pages/AdminListeningLessonEditPa
 import { AdminReadingLessonsPage } from './pages/AdminReadingLessonsPage';
 import { AdminReadingLessonEditPage } from './pages/AdminReadingLessonEditPage';
 import { AdminContentImportPage } from './pages/AdminContentImportPage';
+import { AdminToeicTestBankPage } from './pages/AdminToeicTestBankPage';
+import { AdminToeicTestEditPage } from './pages/AdminToeicTestEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -105,6 +107,11 @@ export const App: React.FC = () => {
 
                 {/* Phase 3.5 Bulk Content Import Center Route */}
                 <Route path="/admin/content/import" element={<AdminContentImportPage />} />
+
+                {/* Phase 3.5C TOEIC Test Bank Routes */}
+                <Route path="/admin/content/test-bank" element={<AdminToeicTestBankPage />} />
+                <Route path="/admin/content/test-bank/new" element={<AdminToeicTestEditPage />} />
+                <Route path="/admin/content/test-bank/:testId/edit" element={<AdminToeicTestEditPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

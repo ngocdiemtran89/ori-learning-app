@@ -176,6 +176,36 @@ export const AdminContentPage: React.FC = () => {
             Truy Cập Trung Tâm Nhập Nội Dung ➔
           </span>
         </NavLink>
+
+        {/* Active Module: TOEIC Test Bank Foundation */}
+        <NavLink
+          to="/admin/content/test-bank"
+          className="bg-white p-6 rounded-3xl border border-ori-100 hover:border-ori-500 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between space-y-4 col-span-1 sm:col-span-2"
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-extrabold">
+                <BookOpen className="w-6 h-6" />
+              </div>
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase rounded-full">
+                ACTIVE CMS
+              </span>
+            </div>
+
+            <div>
+              <h2 className="font-extrabold text-slate-900 text-lg group-hover:text-amber-600 transition-colors">
+                Ngân Hàng Đề TOEIC (TOEIC Test Bank Foundation)
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                Quản lý đề TOEIC đầy đủ theo Part 1–7, nhóm audio, passage, documents và câu hỏi relational chuẩn 200 câu.
+              </p>
+            </div>
+          </div>
+
+          <span className="inline-flex items-center gap-1 text-xs font-extrabold text-amber-600 pt-2">
+            Quản Lý Ngân Hàng Đề ➔
+          </span>
+        </NavLink>
       </div>
     </div>
   );
