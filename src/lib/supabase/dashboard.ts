@@ -93,7 +93,7 @@ export async function getStudentDashboardMetrics(
       .order('sort_order', { ascending: true }),
     supabase
       .from('learning_lessons')
-      .select('id, kind, title, slug, level, sort_order')
+      .select('id, kind, title, slug, level, sort_order, toeic_part')
       .eq('is_published', true)
       .order('sort_order', { ascending: true }),
   ]);
@@ -148,6 +148,7 @@ export async function getStudentDashboardMetrics(
         slug: l.slug,
         level: l.level || 'foundation',
         sort_order: l.sort_order,
+        toeic_part: l.toeic_part,
       };
       availableLessons.push(item);
       publishedLearningLessons.push(item);

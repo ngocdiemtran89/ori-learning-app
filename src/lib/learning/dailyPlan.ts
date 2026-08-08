@@ -28,6 +28,7 @@ export interface DailyPlanItem {
   completed: boolean;
   currentCount?: number;
   targetCount?: number;
+  sourceLessonId?: string;
 }
 
 export interface DailyStudyPlan {
@@ -237,6 +238,7 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
       estimatedMinutes: 8,
       priority: 3,
       completed: isCompleted,
+      sourceLessonId: l.content_id,
     });
   }
 
@@ -256,11 +258,20 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
       const isDuplicate = items.some((it) => {
         const itRoute = it.route.toLowerCase();
         const matchesRoute = itRoute === recRoute;
-        const matchesLessonId = recLessonId && it.id.includes(recLessonId);
+        const matchesLessonId = recLessonId && (it.sourceLessonId === recLessonId || it.id.includes(recLessonId));
         return matchesRoute || matchesLessonId;
       });
 
       if (!isDuplicate) {
+        let isCompleted = false;
+        if (recLessonId) {
+          isCompleted = completedToday.has(recLessonId);
+        } else if (rec.route === '/mistakes') {
+          isCompleted = input.unresolvedMistakeSummary.totalUnresolved === 0;
+        } else if (rec.type === 'vocabulary_review') {
+          isCompleted = input.vocabularyDueCount === 0 && input.vocabularyReviewedTodayCount > 0;
+        }
+
         items.push({
           id: `plan-personalized-${recLessonId || rec.id}`,
           type: rec.type,
@@ -269,7 +280,8 @@ export function buildDailyStudyPlan(input: DailyPlanInput): DailyStudyPlan {
           route: rec.route,
           estimatedMinutes: Math.min(rec.estimatedMinutes, remainingAvailable),
           priority: 4,
-          completed: recLessonId ? completedToday.has(recLessonId) : false,
+          completed: isCompleted,
+          sourceLessonId: recLessonId || undefined,
         });
         addedPersonalized = true;
       }
