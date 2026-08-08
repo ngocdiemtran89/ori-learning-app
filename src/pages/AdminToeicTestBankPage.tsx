@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Plus,
@@ -7,6 +7,7 @@ import {
   BookOpen,
   Eye,
   Edit,
+  Trash2,
 } from 'lucide-react';
 import { LoadingState } from '../components/ui/LoadingState';
 import {
@@ -14,13 +15,16 @@ import {
   setToeicTestPublished,
   getToeicTestGroups,
   getToeicTestQuestions,
+  deleteDraftToeicTest,
   ToeicTestRow,
 } from '../lib/supabase/adminTestBank';
 import { ToeicTestPreviewModal } from '../components/admin/ToeicTestPreviewModal';
 
 export const AdminToeicTestBankPage: React.FC = () => {
+  const navigate = useNavigate();
   const [tests, setTests] = useState<ToeicTestRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Filters & Pagination
@@ -60,6 +64,20 @@ export const AdminToeicTestBankPage: React.FC = () => {
     }
     setLoading(false);
   }
+
+  const handleDeleteDraft = async (testId: string, testTitle: string) => {
+    if (window.confirm(`Bạn có chắc muốn xóa vĩnh viễn đề nháp này?\n\nĐề thi: ${testTitle}`)) {
+      setDeleteLoading(testId);
+      const res = await deleteDraftToeicTest(testId);
+      setDeleteLoading(null);
+      if (res.error) {
+        alert(res.error);
+      } else {
+        alert('Đã xóa thành công.');
+        loadTests();
+      }
+    }
+  };
 
   const handleTogglePublish = async (test: ToeicTestRow) => {
     const nextPublished = !test.is_published;
@@ -254,12 +272,32 @@ export const AdminToeicTestBankPage: React.FC = () => {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
+                            onClick={() => navigate(`/admin/content/test-bank/${test.id}`)}
+                            className="flex-1 py-2 text-center bg-slate-100 hover:bg-ori-50 text-slate-700 hover:text-ori-600 font-extrabold rounded-xl transition-colors text-sm"
+                          >
+                            {test.is_published ? 'Xem Chi Tiết' : 'Tiếp Tục Biên Tập'}
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => handleOpenPreview(test)}
                             className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors"
                             title="Xem trước"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+
+                          {!test.is_published && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDraft(test.id, test.title)}
+                              disabled={deleteLoading === test.id}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors disabled:opacity-50"
+                              title="Xóa bản nháp"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
 
                           <button
                             type="button"

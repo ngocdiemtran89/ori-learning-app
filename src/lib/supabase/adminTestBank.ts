@@ -261,9 +261,33 @@ export async function setToeicTestPublished(
     }
     return { success: true, error: null };
   } catch (err: any) {
-    return { success: false, error: 'Lỗi khi cập nhật trạng thái xuất bản.' };
+    return { success: false, error: 'Lỗi khi cập nhật trạng thái test bank.' };
   }
 }
+
+/**
+ * Delete a draft TOEIC test (Phase 3.5D)
+ */
+export async function deleteDraftToeicTest(testId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_delete_draft_toeic_test', {
+      p_test_id: testId
+    });
+
+    if (error) {
+      return { success: false, error: `Lỗi Database: ${error.message}` };
+    }
+
+    if (data && data.success === false) {
+      return { success: false, error: data.error || 'Lỗi không xác định từ Database.' };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi hệ thống khi xóa đề nháp.' };
+  }
+}
+
 
 /**
  * Fetch all groups for a TOEIC test

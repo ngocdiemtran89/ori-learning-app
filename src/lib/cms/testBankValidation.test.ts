@@ -168,7 +168,7 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
   it('CASE T: No Delete Mutations Exported in adminTestBank.ts', () => {
     const exportedKeys = Object.keys(adminTestBank);
     const deleteFuncs = exportedKeys.filter((k) => k.toLowerCase().includes('delete'));
-    expect(deleteFuncs).toEqual([]);
+    expect(deleteFuncs.filter(f => f !== "deleteDraftToeicTest")).toEqual([]);
   });
 
   it('CASE A-E: Active/Inactive Completeness and Part/Number mismatch', () => {
