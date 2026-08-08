@@ -26,13 +26,13 @@ begin
   end if;
 
   -- 2. Payload Shape Validation
-  if jsonb_typeof(test_payload) != 'object' then
+  if jsonb_typeof(test_payload) is distinct from 'object' then
     raise exception 'test_payload must be a JSON object';
   end if;
-  if jsonb_typeof(groups_payload) != 'array' then
+  if jsonb_typeof(groups_payload) is distinct from 'array' then
     raise exception 'groups_payload must be a JSON array';
   end if;
-  if jsonb_typeof(questions_payload) != 'array' then
+  if jsonb_typeof(questions_payload) is distinct from 'array' then
     raise exception 'questions_payload must be a JSON array';
   end if;
 
@@ -73,7 +73,7 @@ begin
   if jsonb_typeof(groups_payload) = 'array' then
     for v_group in select * from jsonb_array_elements(groups_payload)
     loop
-      v_temp_key := v_group->>'group_temp_key';
+      v_temp_key := trim(v_group->>'group_temp_key');
       if v_temp_key is null or trim(v_temp_key) = '' then
         raise exception 'group_temp_key must be non-empty';
       end if;
@@ -127,14 +127,14 @@ begin
       if (v_question->>'part') is null then
         raise exception 'part is required';
       end if;
-      if jsonb_typeof(v_question->'options') != 'array' then
+      if jsonb_typeof(v_question->'options') is distinct from 'array' then
         raise exception 'options must be a JSON array';
       end if;
       if (v_question->>'correct_answer') is null then
         raise exception 'correct_answer is required';
       end if;
 
-      v_temp_key := v_question->>'group_temp_key';
+      v_temp_key := trim(v_question->>'group_temp_key');
       v_group_uuid := null;
       
       if v_temp_key is not null then
