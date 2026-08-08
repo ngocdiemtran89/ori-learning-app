@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { ShieldCheck, Users, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Users, Layers, ArrowRight } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
   return (
@@ -11,7 +11,7 @@ export const AdminPage: React.FC = () => {
           Bảng Quản Trị Hệ Thống (Admin Panel)
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Quản lý tài khoản học viên, gia hạn ngày học và cấp quyền truy cập các module.
+          Quản lý tài khoản học viên, gia hạn ngày học, quản lý nội dung và các module học tập.
         </p>
       </div>
 
@@ -32,6 +32,24 @@ export const AdminPage: React.FC = () => {
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />
+        </NavLink>
+
+        <NavLink
+          to="/admin/content"
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-indigo-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
+        >
+          <div className="space-y-2">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <Layers className="w-5 h-5" />
+            </div>
+            <h3 className="font-extrabold text-slate-900 text-base group-hover:text-indigo-600 transition-colors">
+              Quản Lý Nội Dung (CMS)
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Tạo, chỉnh sửa và xuất bản nội dung học tập ORI (Từ vựng, Ngữ pháp, Listening, Reading).
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
         </NavLink>
       </div>
     </div>

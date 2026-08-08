@@ -23,6 +23,11 @@ import { ExpiredPage } from './pages/ExpiredPage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminStudentsPage } from './pages/AdminStudentsPage';
 import { AdminStudentProgressPage } from './pages/AdminStudentProgressPage';
+import { AdminContentPage } from './pages/AdminContentPage';
+import { AdminVocabularyDecksPage } from './pages/AdminVocabularyDecksPage';
+import { AdminVocabularyDeckEditPage } from './pages/AdminVocabularyDeckEditPage';
+import { AdminVocabularyItemsPage } from './pages/AdminVocabularyItemsPage';
+import { AdminVocabularyItemEditPage } from './pages/AdminVocabularyItemEditPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -66,6 +71,15 @@ export const App: React.FC = () => {
                 <Route path="/admin" element={<AdminPage />} />
                 <Route path="/admin/students" element={<AdminStudentsPage />} />
                 <Route path="/admin/students/:studentId/progress" element={<AdminStudentProgressPage />} />
+                
+                {/* Phase 3.1 Vocabulary CMS Routes */}
+                <Route path="/admin/content" element={<AdminContentPage />} />
+                <Route path="/admin/content/vocabulary" element={<AdminVocabularyDecksPage />} />
+                <Route path="/admin/content/vocabulary/decks/new" element={<AdminVocabularyDeckEditPage />} />
+                <Route path="/admin/content/vocabulary/decks/:deckId/edit" element={<AdminVocabularyDeckEditPage />} />
+                <Route path="/admin/content/vocabulary/decks/:deckId" element={<AdminVocabularyItemsPage />} />
+                <Route path="/admin/content/vocabulary/decks/:deckId/words/new" element={<AdminVocabularyItemEditPage />} />
+                <Route path="/admin/content/vocabulary/words/:wordId/edit" element={<AdminVocabularyItemEditPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />
