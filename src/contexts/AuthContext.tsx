@@ -124,7 +124,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (authErr) {
-        return { error: authErr.message };
+        console.error('[ORI Auth Error]', authErr.message);
+        const rawMsg = authErr.message.toLowerCase();
+        if (
+          rawMsg.includes('failed to fetch') ||
+          rawMsg.includes('fetcherror') ||
+          rawMsg.includes('networkerror') ||
+          rawMsg.includes('load failed')
+        ) {
+          return {
+            error: 'Không thể kết nối đến hệ thống. Vui lòng thử lại hoặc liên hệ Giáo vụ ORI.',
+          };
+        }
+        if (
+          rawMsg.includes('invalid login credentials') ||
+          rawMsg.includes('invalid credentials') ||
+          rawMsg.includes('invalid email or password')
+        ) {
+          return { error: 'Email hoặc mật khẩu chưa đúng.' };
+        }
+        return {
+          error: 'Không thể kết nối đến hệ thống. Vui lòng thử lại hoặc liên hệ Giáo vụ ORI.',
+        };
       }
 
       if (data.user) {
@@ -133,7 +154,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { error: null };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Đăng nhập không thành công';
-      return { error: msg };
+      console.error('[ORI Auth Exception]', msg);
+      if (
+        msg.includes('Failed to fetch') ||
+        msg.includes('configuration error') ||
+        msg.includes('FetchError')
+      ) {
+        return {
+          error: 'Không thể kết nối đến hệ thống. Vui lòng thử lại hoặc liên hệ Giáo vụ ORI.',
+        };
+      }
+      return {
+        error: 'Không thể kết nối đến hệ thống. Vui lòng thử lại hoặc liên hệ Giáo vụ ORI.',
+      };
     }
   };
 
