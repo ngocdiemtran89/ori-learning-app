@@ -163,7 +163,7 @@ export function shouldRotateTestQuestionIdentity(
  */
 export function validateToeicTestForPublish(
   test: ToeicTestInput,
-  _groups: ToeicTestGroupInput[],
+  groups: ToeicTestGroupInput[],
   questions: ToeicTestQuestionInput[]
 ): { isValid: boolean; errors: string[]; missingNumbers: number[] } {
   const errors: string[] = [];
@@ -190,6 +190,33 @@ export function validateToeicTestForPublish(
     const qVal = validateToeicTestQuestion(q);
     if (!qVal.isValid) {
       qVal.errors.forEach((e) => errors.push(`Câu #${q.question_number}: ${e}`));
+    }
+    
+    // Group part consistency & Media validation
+    if (q.group_id) {
+      const g = groups.find(grp => grp.id === q.group_id);
+      if (g) {
+        if (normalizeToeicPart(g.part) !== normalizeToeicPart(q.part)) {
+          errors.push(`Câu #${q.question_number}: Part của câu hỏi (${q.part}) không khớp với Part của nhóm (${g.part}).`);
+        }
+      }
+    }
+
+    const normPart = normalizeToeicPart(q.part);
+    const g = q.group_id ? groups.find(grp => grp.id === q.group_id) : null;
+    
+    if (normPart === 'part1') {
+      if (!q.image_url && (!g || !g.image_url)) {
+        errors.push(`Câu #${q.question_number} (Part 1): Thiếu hình ảnh (cần có ở cấp độ câu hỏi hoặc nhóm).`);
+      }
+    } else if (normPart === 'part2') {
+      if (!q.audio_url && (!g || !g.audio_url)) {
+        errors.push(`Câu #${q.question_number} (Part 2): Thiếu audio (cần có ở cấp độ câu hỏi hoặc nhóm).`);
+      }
+    } else if (normPart === 'part3' || normPart === 'part4') {
+      if (!g || !g.audio_url) {
+        errors.push(`Câu #${q.question_number} (${normPart.toUpperCase()}): Nhóm cha bắt buộc phải có audio.`);
+      }
     }
   });
 

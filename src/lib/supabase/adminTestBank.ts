@@ -250,7 +250,7 @@ export async function setToeicTestPublished(
   is_published: boolean
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const status = is_published ? 'published' : 'draft';
+    const status = is_published ? 'published' : 'ready';
     const { error } = await supabase
       .from('toeic_tests')
       .update({ is_published, status, updated_at: new Date().toISOString() })
@@ -413,6 +413,24 @@ export async function saveToeicTestQuestion(
       updated_at: new Date().toISOString(),
     };
 
+    if (input.is_active !== false) {
+      let query = supabase
+        .from('toeic_test_questions')
+        .select('id')
+        .eq('test_id', testId)
+        .eq('question_number', input.question_number)
+        .eq('is_active', true);
+      
+      if (input.id) {
+        query = query.neq('id', input.id);
+      }
+      const { data: existingNum } = await query.maybeSingle();
+
+      if (existingNum) {
+        return { data: null, error: `Số thứ tự câu hỏi #${input.question_number} đang hoạt động đã tồn tại trong đề thi này.` };
+      }
+    }
+
     if (input.id) {
       const { data, error } = await supabase
         .from('toeic_test_questions')
@@ -423,18 +441,6 @@ export async function saveToeicTestQuestion(
 
       if (error) return { data: null, error: 'Không thể cập nhật câu hỏi.' };
       return { data, error: null };
-    }
-
-    // Check duplicate question_number
-    const { data: existingNum } = await supabase
-      .from('toeic_test_questions')
-      .select('id')
-      .eq('test_id', testId)
-      .eq('question_number', input.question_number)
-      .maybeSingle();
-
-    if (existingNum) {
-      return { data: null, error: `Số thứ tự câu hỏi #${input.question_number} đã tồn tại trong đề thi này.` };
     }
 
     const { data, error } = await supabase
@@ -458,6 +464,22 @@ export async function setToeicTestQuestionActive(
   is_active: boolean
 ): Promise<{ success: boolean; error: string | null }> {
   try {
+    if (is_active) {
+      const { data: q } = await supabase.from('toeic_test_questions').select('test_id, question_number').eq('id', questionId).single();
+      if (q) {
+        const { data: existing } = await supabase.from('toeic_test_questions')
+          .select('id')
+          .eq('test_id', q.test_id)
+          .eq('question_number', q.question_number)
+          .eq('is_active', true)
+          .neq('id', questionId)
+          .maybeSingle();
+        if (existing) {
+          return { success: false, error: 'Đề đã có một câu đang hoạt động với số câu này.' };
+        }
+      }
+    }
+
     const { error } = await supabase
       .from('toeic_test_questions')
       .update({ is_active, updated_at: new Date().toISOString() })

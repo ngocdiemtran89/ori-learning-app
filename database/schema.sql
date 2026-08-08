@@ -655,9 +655,10 @@ create table if not exists public.toeic_test_questions (
   sort_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint toeic_test_questions_number_unique unique (test_id, question_number)
+  updated_at timestamptz not null default now()
 );
+
+create unique index if not exists idx_toeic_test_questions_active_num on public.toeic_test_questions(test_id, question_number) where is_active = true;
 
 create index if not exists idx_toeic_test_questions_test on public.toeic_test_questions(test_id);
 create index if not exists idx_toeic_test_questions_group on public.toeic_test_questions(group_id);
@@ -674,6 +675,7 @@ using (
   (
     is_active = true and
     exists (select 1 from public.toeic_tests t where t.id = test_id and t.is_published = true) and
+    (group_id is null or exists (select 1 from public.toeic_test_groups g where g.id = group_id and g.is_active = true)) and
     public.has_active_access()
   )
 );

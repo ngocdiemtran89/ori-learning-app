@@ -119,18 +119,29 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
 
     // Construct full 200 questions -> Complete (P)
     const fullQs: any[] = [];
+    const fullGroups: any[] = [
+      { id: 'g3', part: 'part3', audio_url: 'audio3.mp3' },
+      { id: 'g4', part: 'part4', audio_url: 'audio4.mp3' }
+    ];
     for (let i = 1; i <= 200; i++) {
       const part = expectedPartForQuestionNumber(i)!;
       const opts = part === 'part2' ? ['(A) Opt 1', '(B) Opt 2', '(C) Opt 3'] : ['(A) Opt 1', '(B) Opt 2', '(C) Opt 3', '(D) Opt 4'];
+      let extra: any = {};
+      if (part === 'part1') extra.image_url = 'img.jpg';
+      if (part === 'part2') extra.audio_url = 'audio.mp3';
+      if (part === 'part3') extra.group_id = 'g3';
+      if (part === 'part4') extra.group_id = 'g4';
+      
       fullQs.push({
         question_number: i,
         part,
         options: opts,
         correct_answer: opts[0],
+        ...extra
       });
     }
 
-    const pubComplete = validateToeicTestForPublish(test, [], fullQs);
+    const pubComplete = validateToeicTestForPublish(test, fullGroups, fullQs);
     expect(pubComplete.isValid).toBe(true);
     expect(pubComplete.missingNumbers.length).toBe(0);
   });
@@ -158,5 +169,72 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
     const exportedKeys = Object.keys(adminTestBank);
     const deleteFuncs = exportedKeys.filter((k) => k.toLowerCase().includes('delete'));
     expect(deleteFuncs).toEqual([]);
+  });
+
+  it('CASE A-E: Active/Inactive Completeness and Part/Number mismatch', () => {
+    const test = { title: 'TOEIC Full 1', slug: 'toeic-full-1', test_type: 'full' as const };
+    
+    // Inactive question doesn't count toward completeness
+    const questions = [
+      { question_number: 1, part: 'part1', options: ['A', 'B', 'C', 'D'], correct_answer: 'A', is_active: false },
+      { question_number: 1, part: 'part1', options: ['A', 'B', 'C', 'D'], correct_answer: 'B', is_active: true }
+    ];
+    // This should result in exactly 1 active question, missing 199.
+    const pubVal = validateToeicTestForPublish(test, [], questions);
+    expect(pubVal.missingNumbers.includes(1)).toBe(false);
+    expect(pubVal.missingNumbers.length).toBe(199);
+    
+    // Question Number/Part mismatch
+    const badPartQs = [
+      { question_number: 1, part: 'part5', options: ['A', 'B', 'C', 'D'], correct_answer: 'A', is_active: true }
+    ];
+    const pubBadPart = validateToeicTestForPublish(test, [], badPartQs);
+    expect(pubBadPart.isValid).toBe(false);
+    expect(pubBadPart.errors.some((e) => e.includes('không thuộc dải câu hỏi quy định'))).toBe(true);
+  });
+
+  it('CASE F, H-K: Group/Question Part Consistency & Media Validation', () => {
+    const test = { title: 'TOEIC Full 1', slug: 'toeic-full-1', test_type: 'full' as const };
+    const groups = [
+      { id: 'g1', part: 'part2', group_type: 'question_response', audio_url: 'audio.mp3' },
+      { id: 'g2', part: 'part1', group_type: 'photo' }
+    ];
+    
+    // Part mismatch between question and group
+    const qMismatch = [
+      { question_number: 7, part: 'part5', group_id: 'g1', options: ['A', 'B', 'C'], correct_answer: 'A' }
+    ];
+    const valMismatch = validateToeicTestForPublish(test, groups, qMismatch);
+    expect(valMismatch.isValid).toBe(false);
+    expect(valMismatch.errors.some(e => e.includes('không khớp với Part của nhóm'))).toBe(true);
+
+    // Part 2 group-level audio accepted (g1 has audio_url)
+    const qP2GroupAudio = [
+      { question_number: 8, part: 'part2', group_id: 'g1', options: ['A', 'B', 'C'], correct_answer: 'A' }
+    ];
+    const valP2GAudio = validateToeicTestForPublish(test, groups, qP2GroupAudio);
+    // Should fail full test completeness, but not media validation
+    expect(valP2GAudio.errors.some(e => e.includes('Thiếu audio'))).toBe(false);
+
+    // Part 2 question-level audio accepted
+    const qP2QAudio = [
+      { question_number: 9, part: 'part2', options: ['A', 'B', 'C'], correct_answer: 'A', audio_url: 'q9.mp3' }
+    ];
+    const valP2QAudio = validateToeicTestForPublish(test, groups, qP2QAudio);
+    expect(valP2QAudio.errors.some(e => e.includes('Thiếu audio'))).toBe(false);
+
+    // Part 2 neither fails
+    const qP2NoAudio = [
+      { question_number: 10, part: 'part2', options: ['A', 'B', 'C'], correct_answer: 'A' }
+    ];
+    const valP2NoAudio = validateToeicTestForPublish(test, groups, qP2NoAudio);
+    expect(valP2NoAudio.errors.some(e => e.includes('Thiếu audio'))).toBe(true);
+
+    // Part 1 missing image fails
+    const qP1NoImage = [
+      { question_number: 1, part: 'part1', group_id: 'g2', options: ['A', 'B', 'C', 'D'], correct_answer: 'A' }
+    ];
+    const valP1NoImage = validateToeicTestForPublish(test, groups, qP1NoImage);
+    expect(valP1NoImage.errors.some(e => e.includes('Thiếu hình ảnh'))).toBe(true);
   });
 });
