@@ -188,9 +188,39 @@ export async function recordVocabularyReview(
   });
 
   if (error) {
-    console.error('[ORI Vocab] Error saving review state:', error.message);
+    console.error('[ORI Vocab] Error recording review:', error.message);
     return null;
   }
 
   return nextState;
+}
+
+/**
+ * Get ISO timestamp string for midnight start of today in Asia/Ho_Chi_Minh
+ */
+export function getVietnamTodayStartISO(): string {
+  const now = new Date();
+  const vnFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const dateStr = vnFormatter.format(now); // "YYYY-MM-DD"
+  return new Date(`${dateStr}T00:00:00+07:00`).toISOString();
+}
+
+/**
+ * Fetch count of vocabulary items reviewed today (Vietnam time)
+ */
+export async function getVocabularyReviewedTodayCount(userId: string): Promise<number> {
+  const todayStartISO = getVietnamTodayStartISO();
+  const { data, error } = await supabase
+    .from('vocabulary_reviews')
+    .select('vocabulary_id')
+    .eq('user_id', userId)
+    .gte('last_reviewed_at', todayStartISO);
+
+  if (error || !data) return 0;
+  return data.length;
 }

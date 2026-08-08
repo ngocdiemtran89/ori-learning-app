@@ -4,16 +4,14 @@ import {
   BookOpen,
   FileText,
   Headphones,
-  BookCheck,
   ArrowRight,
   Clock,
   CheckCircle2,
-  Play,
   RotateCcw,
   Award,
-  Sparkles,
   Flame,
-  Bookmark,
+  CalendarCheck,
+  Circle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
@@ -26,18 +24,18 @@ export const DashboardPage: React.FC = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  const studentName = profile?.full_name || user?.email?.split('@')[0] || 'Học viên ORI';
+  const studentLevel = profile?.level || 'foundation';
+
   useEffect(() => {
     async function loadMetrics() {
       if (!user?.id) return;
-      const data = await getStudentDashboardMetrics(user.id);
+      const data = await getStudentDashboardMetrics(user.id, studentLevel);
       setMetrics(data);
       setLoading(false);
     }
     loadMetrics();
-  }, [user]);
-
-  const studentName = profile?.full_name || user?.email?.split('@')[0] || 'Học viên ORI';
-  const studentLevel = profile?.level || 'foundation';
+  }, [user, studentLevel]);
 
   // Calculate days remaining
   const now = new Date();
@@ -50,8 +48,15 @@ export const DashboardPage: React.FC = () => {
     ? expiresAt.toLocaleDateString('vi-VN', { year: 'numeric', month: '2-digit', day: '2-digit' })
     : 'Chưa có thông tin';
 
+  const dailyPlan = metrics?.dailyPlan;
+  const isAllCompleted = dailyPlan && dailyPlan.totalItems > 0 && dailyPlan.completedItems === dailyPlan.totalItems;
+  const progressPercent = dailyPlan && dailyPlan.totalItems > 0
+    ? Math.round((dailyPlan.completedItems / dailyPlan.totalItems) * 100)
+    : 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Top Header & Streak Badge */}
       <div className="flex items-center justify-between">
         <PageHeader
           title={`Chào mừng học viên ${studentName}!`}
@@ -73,12 +78,111 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {loading ? (
-        <LoadingState message="Đang cập nhật tiến độ học tập thực tế từ Supabase..." />
+        <LoadingState message="Đang cập nhật lộ trình Kế hoạch học tập hàng ngày từ Supabase..." />
       ) : (
         <>
-          {/* 4 Required Real Dashboard Metric Cards */}
+          {/* SECTION: KẾ HOẠCH HÔM NAY (Phase 2.3 Daily Study Plan) */}
+          <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl space-y-6 border border-slate-700/50">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-700/60 pb-5">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 text-xs font-bold rounded-full border border-indigo-500/30">
+                  <CalendarCheck className="w-4 h-4 text-indigo-400" />
+                  <span>KẾ HOẠCH HÔM NAY (DAILY STUDY PLAN)</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-extrabold text-white">Hôm nay bạn nên học gì?</h2>
+              </div>
+
+              {dailyPlan && (
+                <div className="flex flex-col sm:items-end">
+                  <div className="text-sm font-extrabold text-indigo-300">
+                    {isAllCompleted
+                      ? '🎉 Tất cả bài học hôm nay đã hoàn thành!'
+                      : `${dailyPlan.completedItems} / ${dailyPlan.totalItems} hoàn thành • Khoảng ${dailyPlan.totalEstimatedMinutes} phút còn lại`}
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="w-full sm:w-48 h-2.5 bg-slate-700 rounded-full mt-2 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 transition-all duration-500 rounded-full"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Daily Plan Items Grid */}
+            {!dailyPlan || dailyPlan.items.length === 0 ? (
+              <div className="p-6 bg-slate-800/60 rounded-2xl text-center text-slate-300 text-xs font-semibold">
+                Không có bài học nào cần thiết hôm nay. Hãy nghỉ ngơi hoặc ôn lại từ vựng cũ nhé!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {dailyPlan.items.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-2xl p-5 border transition-all duration-200 flex flex-col justify-between space-y-4 ${
+                      item.completed
+                        ? 'bg-emerald-950/20 border-emerald-500/30 opacity-80'
+                        : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/80 hover:border-indigo-500/50 shadow-md'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-slate-700/80 text-slate-300 text-xs font-extrabold flex items-center justify-center">
+                            {idx + 1}
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-extrabold uppercase">
+                            {item.type.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-indigo-400" /> ~{item.estimatedMinutes} phút
+                        </span>
+                      </div>
+
+                      <div className="pt-1">
+                        <h3 className={`text-base font-extrabold ${item.completed ? 'line-through text-slate-300' : 'text-white'}`}>
+                          {item.title}
+                        </h3>
+                        {item.description && (
+                          <p className="text-xs text-slate-400 font-semibold mt-0.5 leading-relaxed">
+                            {item.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-between border-t border-slate-700/40">
+                      {item.completed ? (
+                        <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 text-xs font-extrabold rounded-xl inline-flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>✓ Hoàn thành</span>
+                        </span>
+                      ) : (
+                        <>
+                          <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                            <Circle className="w-3 h-3 text-indigo-400 fill-indigo-400/20" /> Chưa làm
+                          </span>
+                          <NavLink
+                            to={item.route}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 inline-flex items-center gap-1.5 transition-all hover:scale-[1.02]"
+                          >
+                            <span>{item.type === 'continue_lesson' ? '[ TIẾP TỤC ]' : '[ HỌC NGAY ]'}</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </NavLink>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 4 Standard Real Dashboard Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Card 1: Từ cần ôn hôm nay */}
             <StatCard
               title="Từ cần ôn hôm nay"
               value={`${metrics?.dueWordsCount ?? 0} từ`}
@@ -87,155 +191,121 @@ export const DashboardPage: React.FC = () => {
               variant="sky"
             />
 
-            {/* Card 2: Điểm bài tập mới nhất */}
             <StatCard
-              title="Điểm mới nhất"
-              value={metrics?.latestQuizAttempt ? `${metrics.latestQuizAttempt.score}đ` : 'Chưa làm'}
+              title="Điểm bài tập mới nhất"
+              value={metrics?.latestQuizAttempt ? `${metrics.latestQuizAttempt.score} điểm` : 'Chưa làm'}
               subtext={
                 metrics?.latestQuizAttempt
                   ? `${metrics.latestQuizAttempt.correct_count}/${metrics.latestQuizAttempt.total_count} câu đúng`
-                  : 'Hãy chọn 1 bài để thử sức'
+                  : 'Hãy làm bài tập để ghi điểm'
               }
               icon={Award}
+              variant="amber"
+            />
+
+            <StatCard
+              title="Bài học đã hoàn thành"
+              value={`${metrics?.completedLessonsCount ?? 0} bài`}
+              subtext="Tiến độ học tập tích lũy"
+              icon={CheckCircle2}
               variant="emerald"
             />
 
-            {/* Card 3: Bài tập đã hoàn thành */}
             <StatCard
-              title="Bài tập đã hoàn thành"
-              value={`${metrics?.completedLessonsCount ?? 0} bài`}
-              subtext="Đã lưu vào cơ sở dữ liệu"
-              icon={CheckCircle2}
-              variant="purple"
-            />
-
-            {/* Card 4: Tài khoản còn hiệu lực đến */}
-            <StatCard
-              title="Tài khoản hiệu lực đến"
-              value={formattedExpiryDate}
-              subtext={`Còn ${daysRemaining} ngày học`}
+              title="Thời hạn tài khoản"
+              value={`${daysRemaining} ngày`}
+              subtext={`Hết hạn: ${formattedExpiryDate}`}
               icon={Clock}
-              variant="amber"
+              variant={daysRemaining > 7 ? 'purple' : 'amber'}
             />
           </div>
 
-          {/* Deterministic "Học Tiếp" Recommendation Card */}
-          {metrics?.recommendedAction && (
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                  <Play className="w-5 h-5 text-ori-600 fill-current" /> Gợi Ý Bài Học Tiếp Theo
-                </h2>
-                <span className="text-xs text-slate-400 font-semibold flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-ori-600" /> Tiến độ tối ưu
-                </span>
-              </div>
+          {/* Core Module Navigation Cards */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-ori-600" /> Các Module Học Tập
+            </h2>
 
-              <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <span className="px-2 py-0.5 rounded bg-ori-600 text-white text-[10px] font-bold uppercase">
-                    {metrics.recommendedAction.badge}
-                  </span>
-                  <h3 className="font-bold text-slate-900 text-sm">{metrics.recommendedAction.title}</h3>
-                  <p className="text-xs text-slate-500">{metrics.recommendedAction.subtitle}</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Card 1: Vocabulary */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="w-12 h-12 bg-sky-50 rounded-2xl flex items-center justify-center text-sky-600">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900">Từ Vựng (Vocab)</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                      Học từ vựng theo thuật toán lặp lại ngắt quãng SRS, Flashcards kèm phát âm và hình ảnh.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                   <NavLink
-                    to="/notebook"
-                    className="px-3 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 flex items-center gap-1.5 transition-colors"
+                    to="/vocabulary"
+                    className="w-full py-3 bg-sky-50 hover:bg-sky-100 text-sky-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
                   >
-                    <Bookmark className="w-4 h-4 fill-amber-500" />
-                    <span>Sổ Tay Từ Khó</span>
-                  </NavLink>
-
-                  <NavLink
-                    to={metrics.recommendedAction.path}
-                    className="px-4 py-2.5 bg-ori-600 hover:bg-ori-700 text-white font-bold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] shrink-0"
-                  >
-                    <span>Học ngay</span>
+                    <span>Vào Học Từ Vựng</span>
                     <ArrowRight className="w-4 h-4" />
                   </NavLink>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* 4 Learning Modules Links Grid */}
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900 mb-3">4 Module Học Tập Chính</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <NavLink
-                to="/vocabulary"
-                className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-ori-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-sky-50 text-ori-600 flex items-center justify-center">
-                    <BookOpen className="w-5 h-5" />
+              {/* Card 2: Grammar */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                    <FileText className="w-6 h-6" />
                   </div>
-                  <h3 className="font-extrabold text-slate-900 text-base group-hover:text-ori-600 transition-colors">
-                    1. Vocabulary (Từ vựng)
-                  </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Học từ vựng Flashcard lặp lại ngắt quãng SRS theo chủ đề TOEIC.
-                  </p>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900">Ngữ Pháp (Grammar)</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                      Chuyên đề ngữ pháp trọng tâm TOEIC, lý thuyết cô đọng kèm bài tập chấm điểm tự động.
+                    </p>
+                  </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />
-              </NavLink>
 
-              <NavLink
-                to="/grammar"
-                className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-indigo-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <h3 className="font-extrabold text-slate-900 text-base group-hover:text-ori-600 transition-colors">
-                    2. Grammar (Ngữ pháp)
-                  </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Các chuyên đề ngữ pháp Part 5 & 6 có bài tập thực hành chấm điểm tự động.
-                  </p>
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <NavLink
+                    to="/grammar"
+                    className="w-full py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <span>Vào Học Ngữ Pháp</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </NavLink>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />
-              </NavLink>
+              </div>
 
-              <NavLink
-                to="/listening"
-                className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-purple-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                    <Headphones className="w-5 h-5" />
+              {/* Card 3: Listening & Reading */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
+                    <Headphones className="w-6 h-6" />
                   </div>
-                  <h3 className="font-extrabold text-slate-900 text-base group-hover:text-ori-600 transition-colors">
-                    3. Listening (Luyện nghe)
-                  </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Luyện nghe Part 1 - Part 4 kèm Audio & Transcript giải thích đáp án.
-                  </p>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-slate-900">Luyện Nghe & Đọc</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
+                      Bài luyện Listening & Reading chia theo TOEIC Part, câu hỏi kèm giải thích đáp án chi tiết.
+                    </p>
+                  </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />
-              </NavLink>
 
-              <NavLink
-                to="/reading"
-                className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                    <BookCheck className="w-5 h-5" />
-                  </div>
-                  <h3 className="font-extrabold text-slate-900 text-base group-hover:text-ori-600 transition-colors">
-                    4. Reading (Luyện đọc)
-                  </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Luyện đọc hiểu Part 7 đoạn đơn & đoạn đôi với kỹ thuật làm bài Skimming.
-                  </p>
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
+                  <NavLink
+                    to="/listening"
+                    className="py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <span>Listening</span>
+                  </NavLink>
+                  <NavLink
+                    to="/reading"
+                    className="py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <span>Reading</span>
+                  </NavLink>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-ori-600 group-hover:translate-x-1 transition-all" />
-              </NavLink>
+              </div>
             </div>
           </div>
         </>
