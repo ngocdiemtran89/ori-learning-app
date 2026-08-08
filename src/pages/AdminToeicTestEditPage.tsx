@@ -279,7 +279,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
 
   // Calculate completeness summary
   const partSummary = getPartSummary(questions);
-  const activeQuestionsCount = new Set(questions.filter((q) => q.is_active !== false).map((q) => q.question_number)).size;
+  const activeQuestionsCount = new Set(questions.filter((q) => q.is_active === true).map((q) => q.question_number)).size;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">

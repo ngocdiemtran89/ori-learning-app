@@ -39,10 +39,26 @@ describe('Phase 3.5D - Full 200-Question Validation', () => {
     const payload = buildToeicTestRpcPayload(draft);
     expect(payload.questionsPayload.length).toBe(200);
 
+    const questionNumbers = new Set<number>();
+
+    payload.questionsPayload.forEach(q => {
+      // unique question_number
+      expect(questionNumbers.has(q.question_number)).toBe(false);
+      questionNumbers.add(q.question_number);
+
+      // valid correct_answer
+      expect(q.correct_answer).toBe('A');
+
+      // correct option count
+      const expectedCount = (q.question_number >= 7 && q.question_number <= 31) ? 3 : 4;
+      expect(q.options.length).toBe(expectedCount);
+
+      // every option non-empty
+      expect(q.options.every(o => typeof o === 'string' && o.length > 0)).toBe(true);
+    });
+
     const q150 = payload.questionsPayload.find(q => q.question_number === 150);
     expect(q150).toBeDefined();
-    expect(q150?.options.length).toBe(4);
-    expect(q150?.options.every(o => o.length > 0)).toBe(true);
     
     const q151 = payload.questionsPayload.find(q => q.question_number === 151);
     expect(q151).toBeDefined();

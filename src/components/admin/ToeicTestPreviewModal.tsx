@@ -22,10 +22,10 @@ export const ToeicTestPreviewModal: React.FC<ToeicTestPreviewModalProps> = ({
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
 
   const partQuestions = questions
-    .filter((q) => q.is_active !== false && q.part === activePart)
+    .filter((q) => q.is_active === true && q.part === activePart)
     .sort((a, b) => a.question_number - b.question_number);
 
-  const partGroups = groups.filter((g) => g.is_active !== false && g.part === activePart);
+  const partGroups = groups.filter((g) => g.is_active === true && g.part === activePart);
 
   const handleSelectAnswer = (qNum: number, opt: string) => {
     if (isSubmitted) return;
@@ -56,7 +56,7 @@ export const ToeicTestPreviewModal: React.FC<ToeicTestPreviewModalProps> = ({
         {/* Part Tabs */}
         <div className="bg-slate-100 p-2 flex items-center gap-1 border-b border-slate-200 overflow-x-auto shrink-0">
           {CANONICAL_TOEIC_PARTS.map((pKey) => {
-            const count = questions.filter((q) => q.is_active !== false && q.part === pKey).length;
+            const count = questions.filter((q) => q.is_active === true && q.part === pKey).length;
             const isSelected = activePart === pKey;
             return (
               <button
