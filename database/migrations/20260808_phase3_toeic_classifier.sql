@@ -18,19 +18,36 @@ declare
   v_group_uuid uuid;
   v_temp_key text;
   v_group_mapping jsonb := '{}'::jsonb;
+  v_group_parts jsonb := '{}'::jsonb;
 begin
   -- 1. Security Check
   if not public.is_admin() then
     raise exception 'Unauthorized: Only admins can import TOEIC tests';
   end if;
 
-  -- 2. Extract Slug and Pre-flight Check
+  -- 2. Payload Shape Validation
+  if jsonb_typeof(test_payload) != 'object' then
+    raise exception 'test_payload must be a JSON object';
+  end if;
+  if jsonb_typeof(groups_payload) != 'array' then
+    raise exception 'groups_payload must be a JSON array';
+  end if;
+  if jsonb_typeof(questions_payload) != 'array' then
+    raise exception 'questions_payload must be a JSON array';
+  end if;
+
+  -- 3. Extract Slug and Pre-flight Check
   v_slug := test_payload->>'slug';
+  if v_slug is null or trim(v_slug) = '' then
+    raise exception 'slug must be a non-empty string';
+  end if;
+  v_slug := trim(v_slug);
+
   if exists (select 1 from public.toeic_tests where slug = v_slug) then
     raise exception 'Conflict: A test with slug "%" already exists', v_slug;
   end if;
 
-  -- 3. Insert Test
+  -- 4. Insert Test
   -- Force status = 'draft' and is_published = false to ensure safety
   insert into public.toeic_tests (
     title,
@@ -52,11 +69,18 @@ begin
     coalesce((test_payload->>'sort_order')::integer, 0)
   ) returning id into v_test_id;
 
-  -- 4. Insert Groups and Build Temp-Key Mapping
+  -- 5. Insert Groups and Build Temp-Key Mapping
   if jsonb_typeof(groups_payload) = 'array' then
     for v_group in select * from jsonb_array_elements(groups_payload)
     loop
       v_temp_key := v_group->>'group_temp_key';
+      if v_temp_key is null or trim(v_temp_key) = '' then
+        raise exception 'group_temp_key must be non-empty';
+      end if;
+
+      if v_group_mapping ? v_temp_key then
+        raise exception 'Duplicate group_temp_key: %', v_temp_key;
+      end if;
       
       insert into public.toeic_test_groups (
         test_id,
@@ -88,14 +112,28 @@ begin
 
       if v_temp_key is not null then
         v_group_mapping := jsonb_set(v_group_mapping, array[v_temp_key], to_jsonb(v_group_uuid));
+        v_group_parts := jsonb_set(v_group_parts, array[v_temp_key], to_jsonb(v_group->>'part'));
       end if;
     end loop;
   end if;
 
-  -- 5. Insert Questions
+  -- 6. Insert Questions
   if jsonb_typeof(questions_payload) = 'array' then
     for v_question in select * from jsonb_array_elements(questions_payload)
     loop
+      if (v_question->>'question_number') is null then
+        raise exception 'question_number is required';
+      end if;
+      if (v_question->>'part') is null then
+        raise exception 'part is required';
+      end if;
+      if jsonb_typeof(v_question->'options') != 'array' then
+        raise exception 'options must be a JSON array';
+      end if;
+      if (v_question->>'correct_answer') is null then
+        raise exception 'correct_answer is required';
+      end if;
+
       v_temp_key := v_question->>'group_temp_key';
       v_group_uuid := null;
       
@@ -103,6 +141,10 @@ begin
         v_group_uuid := (v_group_mapping->>v_temp_key)::uuid;
         if v_group_uuid is null then
            raise exception 'Invalid group_temp_key referenced: %', v_temp_key;
+        end if;
+        if (v_question->>'part') != (v_group_parts->>v_temp_key) then
+           raise exception 'Question part (%) does not match group part (%) for group_temp_key: %',
+             v_question->>'part', v_group_parts->>v_temp_key, v_temp_key;
         end if;
       end if;
 
