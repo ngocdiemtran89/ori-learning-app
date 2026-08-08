@@ -1,0 +1,23 @@
+[
+  {
+    "word": "appointment",
+    "ipa": "/əˈpɔɪntmənt/",
+    "part_of_speech": "noun",
+    "meaning_vi": "cuộc hẹn; lịch hẹn",
+    "example_en": "I have an appointment with the manager.",
+    "example_vi": "Tôi có lịch hẹn với quản lý.",
+    "level": "foundation",
+    "topic": "office",
+    "toeic_parts": [
+      "part3",
+      "part5",
+      "part7"
+    ],
+    "collocations": [
+      "make an appointment",
+      "schedule an appointment",
+      "cancel an appointment"
+    ],
+    "common_mistake": "Không dùng “do an appointment”."
+  }
+]
