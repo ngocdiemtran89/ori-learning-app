@@ -666,7 +666,7 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     onClick={() => setShowPartContentModal(true)}
                     className="px-3.5 py-2 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
                   >
-                    <span>📥 Import Nội Dung {activePart.toUpperCase()}</span>
+                    <span>📥 IMPORT {activePart.toUpperCase()} — SONG NGỮ</span>
                   </button>
 
                   {activePart !== 'part5' && (

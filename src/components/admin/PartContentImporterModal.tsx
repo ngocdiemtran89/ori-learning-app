@@ -1,5 +1,5 @@
 // ============================================================
-// Phase P3.5J: Admin Bulk Import TOEIC Questions By Part Modal
+// Phase P3.5J Revised: Admin Bulk Import TOEIC Questions By Part Modal (Bilingual EN + VI)
 // Supports AUTO, PDF, TXT/Paste, JSON, CSV & Markdown formats
 // ============================================================
 
@@ -14,6 +14,7 @@ import {
   Sparkles,
   BookOpen,
   Save,
+  Globe,
 } from 'lucide-react';
 import { importToeicPartContent } from '../../lib/supabase/adminTestBank';
 import { extractPdfTextItems } from '../../lib/cms/pdfUtils';
@@ -49,7 +50,7 @@ export class PartContentErrorBoundary extends React.Component<
               ⚠️
             </div>
             <h3 className="text-base font-extrabold text-slate-900">
-              Không thể mở công cụ Import Nội Dung Part
+              Không thể mở công cụ Import Nội Dung Part Song Ngữ
             </h3>
             <p className="text-xs text-slate-500">
               {this.state.error?.message || 'Đã xảy ra lỗi giao diện khi tải bộ import nội dung.'}
@@ -100,6 +101,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
   const partInfo = TOEIC_FULL_TEST_STRUCTURE[normPart];
 
   const [activeTab, setActiveTab] = useState<ImportSourceTab>('auto');
+  const [importMode, setImportMode] = useState<'full' | 'partial'>('full');
   const [inputText, setInputText] = useState<string>('');
   const [fileName, setFileName] = useState<string | null>(null);
   const [isReadingFile, setIsReadingFile] = useState<boolean>(false);
@@ -158,7 +160,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
   // Save changes via atomic RPC
   const handleSaveImport = async () => {
     if (isPublished) {
-      alert('Unpublish đề trước khi cập nhật nội dung câu hỏi.');
+      alert('Đề đang được xuất bản. Unpublish trước khi cập nhật nội dung song ngữ.');
       return;
     }
 
@@ -186,7 +188,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
     if (!res.success) {
       setServerError(res.error || 'Đã xảy ra lỗi khi lưu dữ liệu Part.');
     } else {
-      setSuccessMsg(`Đã cập nhật thành công ${res.questions_updated || 0} câu hỏi, tạo mới ${res.questions_inserted || 0} câu hỏi, cập nhật ${res.groups_updated || 0} nhóm bài.`);
+      setSuccessMsg(`Đã cập nhật thành công ${res.questions_updated || 0} câu hỏi, tạo mới ${res.questions_inserted || 0} câu hỏi, cập nhật ${res.groups_updated || 0} nhóm bài song ngữ.`);
       onUpdated();
       setTimeout(() => {
         onClose();
@@ -197,16 +199,16 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full flex flex-col max-h-[90vh] overflow-hidden border border-slate-200">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border border-slate-200">
         {/* MODAL HEADER */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 text-xs font-black bg-ori-600 text-white rounded-md uppercase">
-                {normPart.toUpperCase()}
+              <span className="px-2.5 py-0.5 text-xs font-black bg-ori-600 text-white rounded-md uppercase flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5" /> {normPart.toUpperCase()}
               </span>
               <h2 className="text-base font-extrabold text-slate-900">
-                Import Nội Dung {partInfo.nameVi}
+                Import Nội Dung {partInfo.nameVi} — SONG NGỮ (EN + VI)
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -223,8 +225,8 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
           </button>
         </div>
 
-        {/* SOURCE SELECTION TABS */}
-        <div className="p-4 border-b border-slate-100 bg-white flex items-center justify-between flex-wrap gap-2">
+        {/* SOURCE SELECTION TABS & MODE SELECTOR */}
+        <div className="p-4 border-b border-slate-100 bg-white flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
               type="button"
@@ -264,7 +266,24 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setImportMode('full')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${importMode === 'full' ? 'bg-white shadow-xs text-ori-700 font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                ● Song Ngữ Đầy Đủ
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportMode('partial')}
+                className={`px-2.5 py-1 rounded-lg transition-all ${importMode === 'partial' ? 'bg-white shadow-xs text-ori-700 font-extrabold' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                ○ Cập Nhật Một Phần
+              </button>
+            </div>
+
             <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -272,7 +291,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
                 onChange={(e) => setImportAnswers(e.target.checked)}
                 className="w-4 h-4 text-ori-600 rounded border-slate-300 focus:ring-ori-500"
               />
-              <span>Ghi đè Answer Key (đáp án đúng)</span>
+              <span>Cập nhật Answer Key</span>
             </label>
           </div>
         </div>
@@ -282,13 +301,13 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
           {isPublished && (
             <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold rounded-2xl flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Đề thi đang ở trạng thái xuất bản (Published). Bạn có thể xem trước nội dung bên dưới nhưng cần Unpublish trước khi lưu.</span>
+              <span>Đề đang được xuất bản. Bạn có thể xem trước nội dung bên dưới nhưng cần Unpublish trước khi cập nhật nội dung song ngữ.</span>
             </div>
           )}
 
           {hasExistingAnswers && !importAnswers && (
             <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs font-medium rounded-xl">
-              ℹ️ Đề hiện đã có Answer Key. Mặc định hệ thống giữ nguyên đáp án đúng để tránh ghi đè nhầm.
+              ℹ️ Đề hiện đã có Answer Key. Mặc định hệ thống giữ nguyên đáp án đúng để tránh ghi đè nhầm. Tích chọn "Cập nhật Answer Key" nếu muốn cập nhật từ file này.
             </div>
           )}
 
@@ -300,7 +319,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
               </div>
               <div>
                 <label className="cursor-pointer text-xs font-extrabold text-purple-700 hover:underline">
-                  Bấm vào đây để chọn tệp PDF đề thi {normPart.toUpperCase()}
+                  Bấm vào đây để chọn tệp PDF đề thi {normPart.toUpperCase()} Song Ngữ
                   <input
                     type="file"
                     accept=".pdf"
@@ -326,18 +345,14 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
           {/* TEXT AREA INPUT */}
           <div className="space-y-2">
             <label className="text-xs font-extrabold text-slate-700 flex items-center justify-between">
-              <span>Nội dung nguồn ({normPart.toUpperCase()})</span>
+              <span>Nội dung nguồn Song Ngữ ({normPart.toUpperCase()})</span>
               <span className="text-[11px] text-slate-400 font-normal">Hỗ trợ Markdown, TXT, JSON, CÂU 32-34...</span>
             </label>
             <textarea
               rows={6}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={`Dán nội dung ${normPart.toUpperCase()} tại đây...\n\nVí dụ:\n${
-                normPart === 'part5'
-                  ? 'QUESTION 101\nThe manager _____ the report yesterday.\n(A) submit\n(B) submitted\n(C) submitting\n(D) submission\nANSWER: B'
-                  : `CÂU ${partInfo.startNumber}–${partInfo.startNumber + 2}\nQUESTION ${partInfo.startNumber}\n...\n(A) ...\n(B) ...\n(C) ...\n(D) ...`
-              }`}
+              placeholder={`Dán nội dung ${normPart.toUpperCase()} Song Ngữ tại đây...\n\nVí dụ:\nCÂU ${partInfo.startNumber}–${partInfo.startNumber + 2}\nSCRIPT TIẾNG ANH\nW: ...\nM: ...\nBẢN DỊCH TIẾNG VIỆT\nNữ: ...\nNam: ...\n\nCÂU ${partInfo.startNumber}\nQUESTION EN\nWhat are the speakers discussing?\nQUESTION VI\nHai người đang thảo luận về điều gì?\n(A) A new food product\nVI: Một sản phẩm thực phẩm mới\n(B) A restaurant opening\nVI: Việc khai trương nhà hàng\n(C) A marketing campaign\nVI: Một chiến dịch tiếp thị\n(D) A price increase\nVI: Việc tăng giá`}
               className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-800 focus:outline-none focus:border-ori-600 leading-relaxed"
             />
           </div>
@@ -348,29 +363,37 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-xs font-extrabold uppercase text-slate-700 tracking-wide flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4 text-ori-600" />
-                  KẾT QUẢ PHÂN TÍCH (PREVIEW)
+                  KẾT QUẢ PHÂN TÍCH SONG NGỮ (PREVIEW)
                 </h3>
                 <span className="text-xs font-bold text-slate-500">
                   Định dạng nhận diện: <strong className="text-slate-900 uppercase">{parseResult.detectedFormat}</strong>
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center text-xs">
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Nhóm câu</span>
-                  <span className="text-base font-black text-slate-800">{parseResult.metrics.groupCount}</span>
+                  <span className="text-sm font-black text-slate-800">{parseResult.metrics.groupCount}</span>
                 </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Số câu nhận diện</span>
-                  <span className="text-base font-black text-ori-600">{parseResult.metrics.questionCount}</span>
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Câu EN</span>
+                  <span className="text-sm font-black text-ori-600">{parseResult.metrics.hasQuestionEnCount} / {parseResult.metrics.questionCount}</span>
                 </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Có đáp án đúng</span>
-                  <span className="text-base font-black text-emerald-600">{parseResult.metrics.hasAnswersCount}</span>
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Câu VI</span>
+                  <span className="text-sm font-black text-indigo-600">{parseResult.metrics.hasQuestionViCount} / {parseResult.metrics.questionCount}</span>
                 </div>
-                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Sai lệch dải Part</span>
-                  <span className={`text-base font-black ${parseResult.outOfPartErrors.length > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Đáp án VI</span>
+                  <span className="text-sm font-black text-purple-600">{parseResult.metrics.hasOptionsViCount} / {parseResult.metrics.questionCount}</span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Thoại EN/VI</span>
+                  <span className="text-sm font-black text-emerald-600">{parseResult.metrics.hasTranscriptEnCount} / {parseResult.metrics.hasTranscriptViCount}</span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Lỗi Part</span>
+                  <span className={`text-sm font-black ${parseResult.outOfPartErrors.length > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
                     {parseResult.outOfPartErrors.length}
                   </span>
                 </div>
@@ -394,11 +417,11 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
             </div>
           )}
 
-          {/* DETECTED GROUPS & QUESTIONS PREVIEW LIST */}
+          {/* DETECTED BILINGUAL GROUPS & QUESTIONS PREVIEW LIST */}
           {parseResult.questions.length > 0 && (
             <div className="space-y-4">
               <h4 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
-                DANH SÁCH CÂU HỎI NHẬN DIỆN ({parseResult.questions.length} CÂU)
+                DANH SÁCH CÂU HỎI SONG NGỮ ({parseResult.questions.length} CÂU)
               </h4>
 
               <div className="space-y-3">
@@ -409,7 +432,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
                   return (
                     <div
                       key={q.question_number}
-                      className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2.5 text-xs"
+                      className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-3 text-xs"
                     >
                       <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
                         <div className="flex items-center gap-2">
@@ -432,27 +455,45 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
                         )}
                       </div>
 
-                      {q.question_text && (
-                        <p className="font-bold text-slate-800 leading-snug break-words">
-                          {q.question_text}
-                        </p>
-                      )}
+                      {/* QUESTION EN & VI */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-ori-600 block mb-0.5">QUESTION EN</span>
+                          <p className="font-bold text-slate-900 leading-snug">{q.question_text || '(Chưa có nội dung EN)'}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-indigo-600 block mb-0.5">BẢN DỊCH VI</span>
+                          <p className="font-medium text-slate-700 italic leading-snug">{q.translation_vi || '(Chưa có bản dịch VI)'}</p>
+                        </div>
+                      </div>
 
+                      {/* OPTIONS EN & VI */}
                       {q.options && q.options.length > 0 && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                          {q.options.map((opt) => (
-                            <div
-                              key={opt.label}
-                              className={`p-2 rounded-xl border text-[11px] font-medium flex items-center gap-2 ${
-                                q.correct_answer === opt.label
-                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-bold'
-                                  : 'bg-slate-50 border-slate-200 text-slate-700'
-                              }`}
-                            >
-                              <span className="font-extrabold w-4 text-center shrink-0">({opt.label})</span>
-                              <span className="break-words min-w-0 flex-1">{opt.text}</span>
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          {q.options.map((opt, idx) => {
+                            const optVi = q.options_vi && q.options_vi[idx] ? q.options_vi[idx] : null;
+
+                            return (
+                              <div
+                                key={opt.label}
+                                className={`p-2.5 rounded-xl border text-[11px] font-medium space-y-1 ${
+                                  q.correct_answer === opt.label
+                                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950 font-bold'
+                                    : 'bg-white border-slate-200 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-start gap-1.5">
+                                  <span className="font-black text-slate-900 shrink-0">({opt.label})</span>
+                                  <span className="break-words min-w-0 flex-1">{opt.text}</span>
+                                </div>
+                                {optVi && (
+                                  <div className="pl-4 text-indigo-700 font-normal italic text-[10.5px]">
+                                    → {optVi}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -494,13 +535,13 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
           >
             {saving ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" /> Đang Lưu Dữ Liệu...
+                <Loader2 className="w-4 h-4 animate-spin" /> Đang Lưu Nội Dung Song Ngữ...
               </>
             ) : isPublished ? (
               'ĐÃ XUẤT BẢN - CHỈ XEM NỘI DUNG'
             ) : (
               <>
-                <Save className="w-4 h-4" /> Lưu Nội Dung {normPart.toUpperCase()} ({parseResult.questions.length} câu)
+                <Save className="w-4 h-4" /> Lưu Nội Dung Song Ngữ {normPart.toUpperCase()} ({parseResult.questions.length} câu)
               </>
             )}
           </button>
