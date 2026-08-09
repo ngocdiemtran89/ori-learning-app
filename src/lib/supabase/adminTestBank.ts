@@ -851,3 +851,30 @@ export async function importBilingualContent(
     return { success: false, error: err.message || 'Lỗi khi import bản dịch.' };
   }
 }
+
+/**
+ * P3.5H: Import / Update Answer Key for an existing TOEIC test
+ */
+export async function importToeicAnswerKey(
+  testId: string,
+  answers: Array<{ question_number: number; correct_answer: string }>,
+  mode: 'full' | 'partial' = 'full'
+): Promise<{ success: boolean; total_received?: number; updated_count?: number; unchanged_count?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_import_toeic_answer_key', {
+      p_test_id: testId,
+      p_answers: answers,
+      p_mode: mode
+    });
+
+    if (error) return { success: false, error: error.message };
+    return {
+      success: true,
+      total_received: data?.total_received || 0,
+      updated_count: data?.updated_count || 0,
+      unchanged_count: data?.unchanged_count || 0
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi khi cập nhật Answer Key.' };
+  }
+}

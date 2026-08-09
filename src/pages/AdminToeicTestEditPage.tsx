@@ -30,11 +30,15 @@ import {
 } from '../lib/toeic/testStructure';
 import { Image as ImageIcon } from 'lucide-react';
 import { MediaManagerTab } from '../components/admin/MediaManagerTab';
+import { AnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 
 export const AdminToeicTestEditPage: React.FC = () => {
   const { testId } = useParams<{ testId?: string }>();
   const navigate = useNavigate();
   const isEditing = Boolean(testId);
+
+  // Answer Key Importer Modal State
+  const [showAnswerKeyModal, setShowAnswerKeyModal] = useState<boolean>(false);
 
   // Header State
   const [title, setTitle] = useState<string>('');
@@ -520,6 +524,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
                   <ImageIcon className="w-4 h-4" />
                   <span>Media Manager</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAnswerKeyModal(true)}
+                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                >
+                  <span>📋 Import Answer Key</span>
+                </button>
               </div>
 
               {/* Media Manager Tab */}
@@ -965,6 +977,18 @@ export const AdminToeicTestEditPage: React.FC = () => {
           </div>
           )}
         </>
+      )}
+
+      {isEditing && testId && (
+        <AnswerKeyImporterModal
+          isOpen={showAnswerKeyModal}
+          onClose={() => setShowAnswerKeyModal(false)}
+          testId={testId}
+          testTitle={title}
+          isPublished={isPublished}
+          existingQuestions={questions}
+          onUpdated={loadTestDetails}
+        />
       )}
     </div>
   );
