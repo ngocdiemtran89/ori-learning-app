@@ -361,7 +361,28 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                   </div>
                 </div>
 
-                {/* QUESTION TEXT (SANITISED OR SPOKEN STATEMENT FOR P1/P2 POST SUBMIT) */}
+                {/* PART 1 PHOTOGRAPH DISPLAY */}
+                {currentQuestion.part === 'part1' && (
+                  <div className="flex flex-col items-center my-3 space-y-2">
+                    {mediaContext.imageUrl ? (
+                      <img
+                        src={mediaContext.imageUrl}
+                        alt={`Bức ảnh cho câu ${currentQuestion.question_number}`}
+                        className="max-h-80 max-w-full rounded-2xl border border-slate-200 shadow-sm object-contain bg-slate-50"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling;
+                          if (fallback) fallback.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`p-4 bg-slate-50 text-slate-500 text-xs font-medium rounded-xl border border-slate-200 text-center w-full ${mediaContext.imageUrl ? 'hidden' : ''}`}>
+                      Chưa có hình ảnh cho câu này.
+                    </div>
+                  </div>
+                )}
+
+                {/* QUESTION TEXT */}
                 {currentQuestion.question_text && (
                   <p className="text-sm font-bold text-slate-800 leading-relaxed">
                     {currentQuestion.question_text}
@@ -375,42 +396,48 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                     { label: 'B', text: 'Option B' },
                     { label: 'C', text: 'Option C' },
                     { label: 'D', text: 'Option D' },
-                  ]).map(opt => {
+                  ]).map((opt, idx) => {
                     const isSelected = currentQuestion.student_answer === opt.label;
                     const isCorrect = currentQuestion.correct_answer === opt.label;
 
                     let optionBg = 'bg-slate-50 border-slate-200 text-slate-700';
                     let badge = null;
 
-                    if (isCorrect) {
+                    if (isCorrect && isSelected) {
                       optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
                       badge = (
-                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                          ✓ Đáp án đúng • Bạn đã chọn
+                        </span>
+                      );
+                    } else if (isCorrect) {
+                      optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
+                      badge = (
+                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
                           ✓ Đáp án đúng
                         </span>
                       );
-                    } else if (isSelected && !isCorrect) {
+                    } else if (isSelected) {
                       optionBg = 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold';
                       badge = (
-                        <span className="text-xs font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md whitespace-nowrap">
                           ✕ Bạn chọn
                         </span>
                       );
-                    } else if (isSelected) {
-                      badge = (
-                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
-                          ✓ Bạn chọn
-                        </span>
-                      );
                     }
+
+                    // Inline Vietnamese option translation
+                    const optVi = Array.isArray(currentQuestion.options_vi)
+                      ? currentQuestion.options_vi[idx]
+                      : null;
 
                     return (
                       <div
                         key={opt.label}
                         className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${optionBg}`}
                       >
-                        <div className="flex items-center gap-3">
-                          <span className={`w-7 h-7 rounded-lg font-black text-xs flex items-center justify-center border ${
+                        <div className="flex items-start gap-3">
+                          <span className={`w-7 h-7 shrink-0 rounded-lg font-black text-xs flex items-center justify-center border mt-0.5 ${
                             isCorrect
                               ? 'bg-emerald-600 text-white border-emerald-600'
                               : isSelected
@@ -419,7 +446,14 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                           }`}>
                             {opt.label}
                           </span>
-                          <span className="text-sm font-medium">{opt.text}</span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-semibold leading-snug">{opt.text}</span>
+                            {optVi && typeof optVi === 'string' && optVi.trim().length > 0 && (
+                              <span className="text-xs text-slate-500 italic leading-snug">
+                                {optVi}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {badge}
                       </div>
@@ -427,8 +461,8 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                   })}
                 </div>
 
-                {/* SCRIPT BLOCK (FOR LISTENING PART 1-4 REVEALED POST-SUBMIT) */}
-                {isListeningPart && (
+                {/* SCRIPT BLOCK (FOR LISTENING PART 2-4 REVEALED POST-SUBMIT) */}
+                {isListeningPart && currentQuestion.part !== 'part1' && (
                   <div className="pt-4 border-t border-slate-100 space-y-3">
                     <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 uppercase tracking-wide">
                       <Volume2 className="w-4 h-4 text-ori-600" />
@@ -455,8 +489,8 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                   </div>
                 )}
 
-                {/* VIETNAMESE TRANSLATION (IF AVAILABLE) */}
-                {currentQuestion.translation_vi && (
+                {/* VIETNAMESE TRANSLATION (IF AVAILABLE FOR P2-P7) */}
+                {currentQuestion.translation_vi && currentQuestion.part !== 'part1' && (
                   <div className="pt-4 border-t border-slate-100 space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700 uppercase">
                       <BookOpen className="w-4 h-4 text-ori-600" />
