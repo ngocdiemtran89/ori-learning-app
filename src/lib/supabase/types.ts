@@ -41,6 +41,7 @@ export interface VocabularyItem {
   common_mistake: string | null;
   audio_url: string | null;
   is_published: boolean;
+  system_namespace?: string | null;
   sort_order: number;
   created_at: string;
 }

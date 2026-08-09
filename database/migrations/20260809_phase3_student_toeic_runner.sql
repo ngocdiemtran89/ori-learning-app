@@ -528,11 +528,15 @@ alter table public.toeic_test_groups
   add column if not exists documents_vi jsonb;
 
 -- ============================================================
--- 15b. SAVED WORDS — SOURCE METADATA COLUMNS & CONSTRAINTS
+-- 15b. SAVED WORDS & SYSTEM VOCABULARY — METADATA & SCOPED INDEX
 --      Per-user TOEIC context stored on saved_words, not global vocab.
---      Existing rows: new fields are NULL.
---      FKs use ON DELETE SET NULL to preserve learner history.
+--      System namespace column on vocabulary_items for isolated deduplication.
+--      Curated rows: system_namespace = NULL (unconstrained).
+--      TOEIC practice rows: system_namespace = 'toeic_practice'.
 -- ============================================================
+alter table public.vocabulary_items
+  add column if not exists system_namespace text null;
+
 alter table public.saved_words
   add column if not exists source_type text,
   add column if not exists source_test_id uuid references public.toeic_tests(id) on delete set null,
@@ -559,10 +563,13 @@ begin
   end if;
 end $$;
 
--- Partial unique index for race-safe normalized vocabulary deduplication in TOEIC system deck
+-- Drop previous un-scoped unique index if created
+drop index if exists public.idx_toeic_practice_normalized_word;
+
+-- Scoped unique index ONLY for system vocabulary — curated rows (system_namespace IS NULL) are unaffected
 create unique index if not exists idx_toeic_practice_normalized_word
-  on public.vocabulary_items (deck_id, lower(trim(word)))
-  where deck_id is not null;
+  on public.vocabulary_items (system_namespace, lower(trim(word)))
+  where system_namespace = 'toeic_practice';
 
 -- ============================================================
 -- 16. UPDATE: get_student_toeic_test_content (mode-aware translation)
@@ -711,7 +718,7 @@ $$;
 -- 17. RPC: save_toeic_word
 --     Reuses existing vocabulary_items + saved_words system.
 --     Race-safe system deck creation (slug ON CONFLICT DO NOTHING).
---     Race-safe normalized word deduplication (unique_violation handling).
+--     Race-safe normalized word deduplication in system_namespace = 'toeic_practice'.
 --     Does NOT accept or overwrite student-supplied meaning_vi.
 --     Per-user TOEIC context stored on saved_words (source columns).
 -- ============================================================
@@ -786,16 +793,16 @@ begin
     where slug = 'toeic-practice';
   end if;
 
-  -- Race-safe global vocabulary item lookup & insertion (never overwrites curated fields)
+  -- Race-safe system vocabulary item lookup & insertion (scoped to system_namespace = 'toeic_practice')
   select id into v_vocab_id
   from public.vocabulary_items
-  where deck_id = v_deck_id and lower(trim(word)) = v_normalized_word
+  where system_namespace = 'toeic_practice' and lower(trim(word)) = v_normalized_word
   limit 1;
 
   if v_vocab_id is null then
     begin
       insert into public.vocabulary_items (
-        deck_id, word, meaning_vi, example_en, topic, toeic_parts, is_published
+        deck_id, word, meaning_vi, example_en, topic, toeic_parts, is_published, system_namespace
       ) values (
         v_deck_id,
         v_normalized_word,
@@ -803,13 +810,14 @@ begin
         '',
         'TOEIC',
         array['part' || v_attempt.part_number],
-        true
+        true,
+        'toeic_practice'
       )
       returning id into v_vocab_id;
     exception when unique_violation then
       select id into v_vocab_id
       from public.vocabulary_items
-      where deck_id = v_deck_id and lower(trim(word)) = v_normalized_word
+      where system_namespace = 'toeic_practice' and lower(trim(word)) = v_normalized_word
       limit 1;
     end;
   end if;
