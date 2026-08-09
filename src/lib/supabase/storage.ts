@@ -2,9 +2,9 @@ import { supabase } from './client';
 
 export const TOEIC_MEDIA_BUCKET = 'toeic-media';
 
-// 10MB for image, 100MB for audio
+// 10MB for image, 50MB for audio (Supabase Free plan; increase after plan upgrade)
 export const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
-export const MAX_AUDIO_SIZE_BYTES = 100 * 1024 * 1024;
+export const MAX_AUDIO_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const ALLOWED_AUDIO_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/x-m4a'];
@@ -38,7 +38,7 @@ export function validateMediaFile(file: File, type: 'image' | 'audio'): { isVali
       return { isValid: false, error: 'Phần mở rộng audio không hợp lệ (chỉ hỗ trợ .mp3, .m4a, .wav, .ogg).' };
     }
     if (file.size > MAX_AUDIO_SIZE_BYTES) {
-      return { isValid: false, error: 'Dung lượng audio vượt quá 100MB.' };
+      return { isValid: false, error: 'Dung lượng audio vượt quá 50MB.' };
     }
   }
   return { isValid: true };

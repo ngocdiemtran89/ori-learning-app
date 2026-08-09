@@ -4,16 +4,13 @@ values (
   'toeic-media', 
   'toeic-media', 
   false,
-  104857600, -- 100MB
+  52428800, -- 50MB (Supabase Free plan limit; increase after plan upgrade)
   array['image/jpeg', 'image/png', 'image/webp', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/ogg']
 )
 on conflict (id) do update set 
   public = false,
-  file_size_limit = 104857600,
+  file_size_limit = 52428800,
   allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/ogg'];
-
--- Ensure RLS is enabled for storage.objects
-alter table storage.objects enable row level security;
 
 -- Drop existing policies if they exist (for idempotency)
 drop policy if exists admin_media_insert on storage.objects;
