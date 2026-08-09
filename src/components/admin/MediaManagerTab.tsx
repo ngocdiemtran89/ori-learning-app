@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ImageIcon, Music, Upload, Trash2, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { ToeicTestGroupInput, ToeicTestQuestionInput } from '../../lib/cms/testBankValidation';
-import { getMediaCompleteness } from '../../lib/toeic/mediaCompleteness';
+import { getMediaCompleteness, sortGroupsByQuestionRange, getToeicGroupQuestionRange } from '../../lib/toeic/mediaCompleteness';
 import { uploadQuestionMedia, removeQuestionMedia, uploadGroupMedia, removeGroupMedia } from '../../lib/supabase/adminTestBank';
 import { getToeicMediaSignedUrl } from '../../lib/supabase/storage';
 
@@ -230,14 +230,24 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId: _testI
       </div>
 
       {/* Part 3 & 4 (Groups) */}
-      {['part3', 'part4'].map(part => (
+      {(['part3', 'part4'] as const).map(part => {
+        const partGroups = useMemo(() => 
+          sortGroupsByQuestionRange(
+            groups.filter(g => g.part === part && g.is_active !== false),
+            questions
+          ),
+          [groups, questions, part]
+        );
+        return (
         <div key={part} className="space-y-3">
-          <h4 className="text-sm font-extrabold text-slate-900 border-b pb-2">{part.toUpperCase()} Groups</h4>
+          <h4 className="text-sm font-extrabold text-slate-900 border-b pb-2">{part === 'part3' ? 'Part 3' : 'Part 4'} Groups</h4>
           <div className="grid grid-cols-1 gap-2">
-            {groups.filter(g => g.part === part && g.is_active !== false).map(g => (
+            {partGroups.map(g => {
+              const range = getToeicGroupQuestionRange(g.id!, questions);
+              return (
               <div key={g.id} className="p-3 bg-white border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-4">
                 <div className="font-bold text-sm min-w-[150px]">
-                  {g.title || 'Nhóm'} <span className="text-[10px] text-slate-500 block">ID: {g.id?.slice(0, 8)}</span>
+                  Questions {range.min === Infinity ? '—' : range.min === range.max ? `${range.min}` : `${range.min}–${range.max}`}
                 </div>
                 <div className="flex items-center gap-3 flex-1 min-w-[200px]">
                   <div className="w-40"><MediaPreview url={g.audio_url} type="audio" /></div>
@@ -254,10 +264,12 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId: _testI
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

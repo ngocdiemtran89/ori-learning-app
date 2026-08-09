@@ -4,7 +4,7 @@ import { ToeicTestGroupInput, ToeicTestQuestionInput } from '../cms/testBankVali
 export interface MediaMetric {
   ready: number;
   expected: number;
-  missing: (number | string)[]; // question_number or group_id
+  missing: (number | string)[]; // question_number or human-readable group label
 }
 
 export interface MediaCompleteness {
@@ -14,6 +14,51 @@ export interface MediaCompleteness {
   part3Audio: MediaMetric;
   part4Audio: MediaMetric;
   publishReady: boolean;
+}
+
+export interface GroupQuestionRange {
+  min: number;
+  max: number;
+  label: string;
+}
+
+/**
+ * Calculate the question number range for a group from its active child questions.
+ * Returns a human-readable label like "Q32–34" or "Q32" for single-question groups.
+ * Uses only active questions (is_active === true).
+ */
+export function getToeicGroupQuestionRange(
+  groupId: string,
+  questions: ToeicTestQuestionInput[]
+): GroupQuestionRange {
+  const activeChildNums = questions
+    .filter(q => q.group_id === groupId && q.is_active === true)
+    .map(q => q.question_number)
+    .sort((a, b) => a - b);
+
+  if (activeChildNums.length === 0) {
+    return { min: Infinity, max: Infinity, label: 'Group' };
+  }
+
+  const min = activeChildNums[0];
+  const max = activeChildNums[activeChildNums.length - 1];
+  const label = min === max ? `Q${min}` : `Q${min}–${max}`;
+
+  return { min, max, label };
+}
+
+/**
+ * Sort groups by the minimum active child question number (ascending).
+ */
+export function sortGroupsByQuestionRange(
+  groups: ToeicTestGroupInput[],
+  questions: ToeicTestQuestionInput[]
+): ToeicTestGroupInput[] {
+  return [...groups].sort((a, b) => {
+    const rangeA = getToeicGroupQuestionRange(a.id!, questions);
+    const rangeB = getToeicGroupQuestionRange(b.id!, questions);
+    return rangeA.min - rangeB.min;
+  });
 }
 
 export function getMediaCompleteness(
@@ -63,22 +108,24 @@ export function getMediaCompleteness(
     }
   });
 
-  // Process Groups (Part 3 & 4)
+  // Process Groups (Part 3 & 4) — push human-readable labels, not UUIDs
   activeGs.forEach(g => {
     const normPart = normalizeToeicPart(g.part);
+    const range = getToeicGroupQuestionRange(g.id!, questions);
+
     if (normPart === 'part3') {
       metrics.part3Audio.expected++;
       if (g.audio_url) {
         metrics.part3Audio.ready++;
       } else {
-        metrics.part3Audio.missing.push(g.id!);
+        metrics.part3Audio.missing.push(range.label);
       }
     } else if (normPart === 'part4') {
       metrics.part4Audio.expected++;
       if (g.audio_url) {
         metrics.part4Audio.ready++;
       } else {
-        metrics.part4Audio.missing.push(g.id!);
+        metrics.part4Audio.missing.push(range.label);
       }
     }
   });
