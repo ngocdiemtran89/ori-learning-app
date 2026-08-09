@@ -323,20 +323,32 @@ export const AdminToeicTestEditPage: React.FC = () => {
         <>
           {/* Header Form */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
               <h1 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-ori-600" />
                 {isEditing ? `Chỉnh Sửa Đề Thi: ${title}` : 'Tạo Đề Thi TOEIC Mới'}
               </h1>
 
-              <button
-                type="button"
-                onClick={handleSaveHeader}
-                disabled={saving}
-                className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
-              >
-                <Save className="w-4 h-4" /> {saving ? 'Đang Lưu...' : 'Lưu Thông Tin Đầu Đề'}
-              </button>
+              <div className="flex items-center gap-2">
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAnswerKeyModal(true)}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all"
+                  >
+                    <span>📋 Import Answer Key</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveHeader}
+                  disabled={saving}
+                  className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
+                >
+                  <Save className="w-4 h-4" /> {saving ? 'Đang Lưu...' : 'Lưu Thông Tin Đầu Đề'}
+                </button>
+              </div>
             </div>
 
             {formError && (
@@ -435,15 +447,25 @@ export const AdminToeicTestEditPage: React.FC = () => {
                   </p>
                 </div>
 
-                <span
-                  className={`px-3 py-1 text-xs font-extrabold rounded-full border ${
-                    activeQuestionsCount === 200
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-amber-50 text-amber-700 border-amber-200'
-                  }`}
-                >
-                  {activeQuestionsCount === 200 ? 'HOÀN THÀNH 200 CÂU' : `CHƯA HOÀN THÀNH (${activeQuestionsCount}/200)`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAnswerKeyModal(true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1 transition-all"
+                  >
+                    <span>📋 Import Answer Key</span>
+                  </button>
+
+                  <span
+                    className={`px-3 py-1 text-xs font-extrabold rounded-full border ${
+                      activeQuestionsCount === 200
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}
+                  >
+                    {activeQuestionsCount === 200 ? 'HOÀN THÀNH 200 CÂU' : `CHƯA HOÀN THÀNH (${activeQuestionsCount}/200)`}
+                  </span>
+                </div>
               </div>
 
               {/* Part Metrics Cards */}
@@ -480,55 +502,57 @@ export const AdminToeicTestEditPage: React.FC = () => {
           {/* Part Editor Area */}
           {isEditing && (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
-              {/* Part Tabs */}
-              <div className="flex items-center gap-1.5 border-b border-slate-100 pb-3 overflow-x-auto">
-                {CANONICAL_TOEIC_PARTS.map((pKey) => {
-                  const s = partSummary[pKey];
-                  const isSelected = activePart === pKey;
-                  return (
-                    <button
-                      key={pKey}
-                      type="button"
-                      onClick={() => setActivePart(pKey)}
-                      className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
-                        isSelected
-                          ? 'bg-ori-600 text-white shadow-md shadow-ori-600/20'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span>{TOEIC_FULL_TEST_STRUCTURE[pKey].nameVi}</span>
-                      <span
-                        className={`px-2 py-0.5 text-[10px] font-mono rounded-full ${
+              {/* Part Tabs & Actions Bar */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-1">
+                  {CANONICAL_TOEIC_PARTS.map((pKey) => {
+                    const s = partSummary[pKey];
+                    const isSelected = activePart === pKey;
+                    return (
+                      <button
+                        key={pKey}
+                        type="button"
+                        onClick={() => setActivePart(pKey)}
+                        className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
                           isSelected
-                            ? 'bg-white/20 text-white'
-                            : s.isComplete
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-200 text-slate-800'
+                            ? 'bg-ori-600 text-white shadow-md shadow-ori-600/20'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
-                        {s.count}/{s.expected}
-                      </span>
-                    </button>
-                  );
-                })}
+                        <span>{TOEIC_FULL_TEST_STRUCTURE[pKey].nameVi}</span>
+                        <span
+                          className={`px-2 py-0.5 text-[10px] font-mono rounded-full ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : s.isComplete
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-200 text-slate-800'
+                          }`}
+                        >
+                          {s.count}/{s.expected}
+                        </span>
+                      </button>
+                    );
+                  })}
 
-                <button
-                  type="button"
-                  onClick={() => setActivePart('media')}
-                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
-                    activePart === 'media'
-                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  <span>Media Manager</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setActivePart('media')}
+                    className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
+                      activePart === 'media'
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    <span>Media Manager</span>
+                  </button>
+                </div>
 
                 <button
                   type="button"
                   onClick={() => setShowAnswerKeyModal(true)}
-                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20 shrink-0"
                 >
                   <span>📋 Import Answer Key</span>
                 </button>
@@ -986,7 +1010,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
           testId={testId}
           testTitle={title}
           isPublished={isPublished}
-          existingQuestions={questions}
+          existingQuestions={questions ?? []}
           onUpdated={loadTestDetails}
         />
       )}
