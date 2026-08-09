@@ -6,6 +6,7 @@ import {
   FileText,
   Headphones,
   BookCheck,
+  ClipboardCheck,
   User as UserIcon,
   ShieldAlert,
   ShieldCheck,
@@ -34,6 +35,7 @@ export const AppShell: React.FC = () => {
     { label: 'Ngữ pháp (Grammar)', path: '/grammar', icon: FileText },
     { label: 'Luyện nghe (Listening)', path: '/listening', icon: Headphones },
     { label: 'Luyện đọc (Reading)', path: '/reading', icon: BookCheck },
+    { label: 'Thi thử TOEIC', path: '/tests', icon: ClipboardCheck },
     { label: 'Tài khoản', path: '/account', icon: UserIcon },
   ];
 

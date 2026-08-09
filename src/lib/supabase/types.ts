@@ -71,3 +71,81 @@ export interface LearningLesson {
   sort_order: number;
   created_at: string;
 }
+
+// ============================================================
+// P3.6A Student TOEIC Test Runner Types
+// ============================================================
+
+export type ToeicAttemptStatus = 'in_progress' | 'submitted' | 'abandoned';
+
+export interface ToeicTestAttempt {
+  id: string;
+  user_id: string;
+  test_id: string;
+  status: ToeicAttemptStatus;
+  started_at: string;
+  last_activity_at: string;
+  submitted_at: string | null;
+  current_question_number: number;
+  elapsed_seconds: number;
+  duration_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ToeicTestAttemptAnswer {
+  id: string;
+  attempt_id: string;
+  question_id: string;
+  selected_answer: string | null;
+  answered_at: string;
+}
+
+/** Safe student question — NEVER contains correct_answer or explanation */
+export interface StudentToeicQuestion {
+  id: string;
+  group_id: string | null;
+  question_number: number;
+  part: string;
+  question_text: string | null;
+  options: string[];
+  skill_tag: string | null;
+  topic: string | null;
+  audio_url: string | null;
+  image_url: string | null;
+}
+
+export interface StudentToeicGroup {
+  id: string;
+  part: string;
+  group_type: string;
+  title: string | null;
+  instruction: string | null;
+  passage: string | null;
+  documents: any[] | null;
+  audio_url: string | null;
+  image_url: string | null;
+}
+
+export interface StudentToeicTestMeta {
+  id: string;
+  title: string;
+  test_code: string | null;
+  description: string | null;
+  test_type: string;
+}
+
+export interface StudentToeicTestContent {
+  test: StudentToeicTestMeta;
+  groups: StudentToeicGroup[];
+  questions: StudentToeicQuestion[];
+}
+
+export interface PublishedToeicTest {
+  id: string;
+  title: string;
+  test_code: string | null;
+  description: string | null;
+  test_type: string;
+  is_published: boolean;
+}

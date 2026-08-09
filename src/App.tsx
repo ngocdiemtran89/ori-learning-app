@@ -38,6 +38,9 @@ import { AdminContentImportPage } from './pages/AdminContentImportPage';
 import { AdminToeicTestBankPage } from './pages/AdminToeicTestBankPage';
 import { AdminToeicTestEditPage } from './pages/AdminToeicTestEditPage';
 import { AdminToeicClassifierPage } from './pages/AdminToeicClassifierPage';
+import { ToeicTestLibraryPage } from './pages/ToeicTestLibraryPage';
+import { ToeicTestOverviewPage } from './pages/ToeicTestOverviewPage';
+import { ToeicTestRunnerPage } from './pages/ToeicTestRunnerPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -74,6 +77,11 @@ export const App: React.FC = () => {
 
                 <Route path="/reading" element={<ReadingPage />} />
                 <Route path="/reading/:lessonId" element={<ReadingLessonPage />} />
+
+                {/* P3.6A Student TOEIC Test Runner Routes */}
+                <Route path="/tests" element={<ToeicTestLibraryPage />} />
+                <Route path="/tests/:testId" element={<ToeicTestOverviewPage />} />
+                <Route path="/tests/:testId/take" element={<ToeicTestRunnerPage />} />
               </Route>
 
               {/* Admin Only Routes (Requires Admin Role & Active Account) */}
