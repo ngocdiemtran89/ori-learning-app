@@ -102,11 +102,13 @@ export async function fetchAllMyAttempts(
 /** Update attempt progress via controlled RPC (only permitted fields) */
 export async function updateAttemptProgress(
   attemptId: string,
-  currentQuestionNumber: number
+  currentQuestionNumber: number,
+  elapsedSeconds?: number,
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.rpc('update_toeic_attempt_progress', {
     p_attempt_id: attemptId,
     p_current_question_number: currentQuestionNumber,
+    p_elapsed_seconds: elapsedSeconds ?? null,
   });
 
   return { error: error?.message || null };
@@ -151,12 +153,14 @@ export async function fetchAttemptAnswers(attemptId: string): Promise<{ data: To
 export async function saveAnswer(
   attemptId: string,
   questionId: string,
-  selectedAnswer: string | null
+  selectedAnswer: string | null,
+  elapsedSeconds?: number,
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.rpc('save_toeic_answer', {
     p_attempt_id: attemptId,
     p_question_id: questionId,
     p_selected_answer: selectedAnswer,
+    p_elapsed_seconds: elapsedSeconds ?? null,
   });
 
   return { error: error?.message || null };
@@ -172,14 +176,12 @@ export async function saveToeicWord(
   questionId: string,
   word: string,
   contextSentence?: string,
-  meaningVi?: string,
 ): Promise<{ saved: boolean; word?: string; error?: string }> {
   const { data, error } = await supabase.rpc('save_toeic_word', {
     p_attempt_id: attemptId,
     p_question_id: questionId,
     p_word: word,
     p_context_sentence: contextSentence || null,
-    p_meaning_vi: meaningVi || null,
   });
 
   if (error) return { saved: false, error: error.message };

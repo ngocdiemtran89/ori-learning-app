@@ -343,12 +343,13 @@ $$;
 -- ============================================================
 
 -- ============================================================
--- 13. RPC: save_toeic_answer (scope-aware)
+-- 13. RPC: save_toeic_answer (scope-aware, non-decreasing elapsed_seconds)
 -- ============================================================
 create or replace function public.save_toeic_answer(
   p_attempt_id uuid,
   p_question_id uuid,
-  p_selected_answer text
+  p_selected_answer text,
+  p_elapsed_seconds integer default null
 )
 returns jsonb
 language plpgsql
@@ -360,13 +361,14 @@ declare
   v_attempt record;
   v_question record;
   v_test_published boolean;
+  v_new_elapsed integer;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
   if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
 
   -- Verify attempt ownership and status
-  select id, test_id, status, mode, part_number, started_at, duration_minutes
+  select id, test_id, status, mode, part_number, started_at, duration_minutes, elapsed_seconds
   into v_attempt
   from public.toeic_test_attempts
   where id = p_attempt_id and user_id = v_user_id and status = 'in_progress';
@@ -414,6 +416,16 @@ begin
     end if;
   end if;
 
+  -- Compute non-decreasing elapsed_seconds with anti-corruption cap
+  v_new_elapsed := v_attempt.elapsed_seconds;
+  if p_elapsed_seconds is not null and p_elapsed_seconds >= 0 then
+    if p_elapsed_seconds >= v_attempt.elapsed_seconds then
+      if (p_elapsed_seconds - v_attempt.elapsed_seconds) <= 86400 then
+        v_new_elapsed := p_elapsed_seconds;
+      end if;
+    end if;
+  end if;
+
   -- Upsert answer
   insert into public.toeic_test_attempt_answers (attempt_id, question_id, selected_answer, answered_at)
   values (p_attempt_id, p_question_id, p_selected_answer, now())
@@ -422,7 +434,8 @@ begin
     answered_at = excluded.answered_at, updated_at = now();
 
   update public.toeic_test_attempts
-  set last_activity_at = now(), updated_at = now()
+  set elapsed_seconds = v_new_elapsed,
+      last_activity_at = now(), updated_at = now()
   where id = p_attempt_id;
 
   return jsonb_build_object('saved', true);
@@ -434,7 +447,8 @@ $$;
 -- ============================================================
 create or replace function public.update_toeic_attempt_progress(
   p_attempt_id uuid,
-  p_current_question_number integer
+  p_current_question_number integer,
+  p_elapsed_seconds integer default null
 )
 returns jsonb
 language plpgsql
@@ -445,6 +459,7 @@ declare
   v_user_id uuid;
   v_attempt record;
   v_test_published boolean;
+  v_new_elapsed integer;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
@@ -454,7 +469,7 @@ begin
     raise exception 'Question number must be between 1 and 200';
   end if;
 
-  select id, test_id, mode, part_number, started_at, duration_minutes
+  select id, test_id, mode, part_number, started_at, duration_minutes, elapsed_seconds
   into v_attempt
   from public.toeic_test_attempts
   where id = p_attempt_id and user_id = v_user_id and status = 'in_progress';
@@ -478,12 +493,23 @@ begin
     end if;
   end if;
 
+  -- Compute non-decreasing elapsed_seconds with anti-corruption cap
+  v_new_elapsed := v_attempt.elapsed_seconds;
+  if p_elapsed_seconds is not null and p_elapsed_seconds >= 0 then
+    if p_elapsed_seconds >= v_attempt.elapsed_seconds then
+      if (p_elapsed_seconds - v_attempt.elapsed_seconds) <= 86400 then
+        v_new_elapsed := p_elapsed_seconds;
+      end if;
+    end if;
+  end if;
+
   update public.toeic_test_attempts
   set current_question_number = p_current_question_number,
+      elapsed_seconds = v_new_elapsed,
       last_activity_at = now(), updated_at = now()
   where id = p_attempt_id;
 
-  return jsonb_build_object('updated', true);
+  return jsonb_build_object('updated', true, 'elapsed_seconds', v_new_elapsed);
 end;
 $$;
 
@@ -502,7 +528,7 @@ alter table public.toeic_test_groups
   add column if not exists documents_vi jsonb;
 
 -- ============================================================
--- 15b. SAVED WORDS — SOURCE METADATA COLUMNS
+-- 15b. SAVED WORDS — SOURCE METADATA COLUMNS & CONSTRAINTS
 --      Per-user TOEIC context stored on saved_words, not global vocab.
 --      Existing rows: new fields are NULL.
 --      FKs use ON DELETE SET NULL to preserve learner history.
@@ -514,11 +540,36 @@ alter table public.saved_words
   add column if not exists source_part integer,
   add column if not exists context_text text;
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'check_saved_words_source_part'
+  ) then
+    alter table public.saved_words
+      add constraint check_saved_words_source_part
+      check (source_part is null or (source_part between 1 and 7));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint where conname = 'check_saved_words_context_length'
+  ) then
+    alter table public.saved_words
+      add constraint check_saved_words_context_length
+      check (context_text is null or char_length(context_text) <= 500);
+  end if;
+end $$;
+
+-- Partial unique index for race-safe normalized vocabulary deduplication in TOEIC system deck
+create unique index if not exists idx_toeic_practice_normalized_word
+  on public.vocabulary_items (deck_id, lower(trim(word)))
+  where deck_id is not null;
+
 -- ============================================================
 -- 16. UPDATE: get_student_toeic_test_content (mode-aware translation)
 --     FULL mode: NO translation fields
 --     PART mode: include translation fields
 --     NEVER returns correct_answer or explanation.
+--     STRICT PARAMETER VALIDATION
 -- ============================================================
 create or replace function public.get_student_toeic_test_content(
   p_test_id uuid,
@@ -542,6 +593,21 @@ begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
   if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
+
+  -- STRICT mode validation — no silent fallbacks
+  if p_mode not in ('full', 'part') then
+    raise exception 'Invalid mode (must be full or part)';
+  end if;
+
+  if p_mode = 'full' and p_part_number is not null then
+    raise exception 'Full mode must not specify part_number';
+  end if;
+
+  if p_mode = 'part' then
+    if p_part_number is null or p_part_number < 1 or p_part_number > 7 then
+      raise exception 'Part mode requires part_number between 1 and 7';
+    end if;
+  end if;
 
   v_include_translation := (p_mode = 'part');
 
@@ -644,16 +710,16 @@ $$;
 -- ============================================================
 -- 17. RPC: save_toeic_word
 --     Reuses existing vocabulary_items + saved_words system.
---     Creates/finds a hidden "TOEIC Practice" system deck.
---     Upserts GLOBAL word into vocabulary_items (no overwrite).
+--     Race-safe system deck creation (slug ON CONFLICT DO NOTHING).
+--     Race-safe normalized word deduplication (unique_violation handling).
+--     Does NOT accept or overwrite student-supplied meaning_vi.
 --     Per-user TOEIC context stored on saved_words (source columns).
 -- ============================================================
 create or replace function public.save_toeic_word(
   p_attempt_id uuid,
   p_question_id uuid,
   p_word text,
-  p_context_sentence text default null,
-  p_meaning_vi text default null
+  p_context_sentence text default null
 )
 returns jsonb
 language plpgsql
@@ -705,7 +771,7 @@ begin
     raise exception 'Question is outside the scope of this part attempt';
   end if;
 
-  -- Find or create hidden "TOEIC Practice" system deck (NOT published as a learning deck)
+  -- Race-safe system deck fetch/creation (NOT published as a public learning deck)
   select id into v_deck_id
   from public.vocabulary_decks
   where slug = 'toeic-practice';
@@ -713,30 +779,40 @@ begin
   if v_deck_id is null then
     insert into public.vocabulary_decks (slug, title, description, level, is_published)
     values ('toeic-practice', 'TOEIC Practice', 'Từ vựng lưu từ luyện TOEIC (hệ thống)', 'mixed', false)
-    returning id into v_deck_id;
+    on conflict (slug) do nothing;
+
+    select id into v_deck_id
+    from public.vocabulary_decks
+    where slug = 'toeic-practice';
   end if;
 
-  -- Find or create global vocabulary item (DO NOT overwrite existing curated fields)
+  -- Race-safe global vocabulary item lookup & insertion (never overwrites curated fields)
   select id into v_vocab_id
   from public.vocabulary_items
-  where deck_id = v_deck_id and lower(word) = v_normalized_word
+  where deck_id = v_deck_id and lower(trim(word)) = v_normalized_word
   limit 1;
 
   if v_vocab_id is null then
-    insert into public.vocabulary_items (
-      deck_id, word, meaning_vi, example_en, topic, toeic_parts, is_published
-    ) values (
-      v_deck_id,
-      v_normalized_word,
-      coalesce(p_meaning_vi, ''),
-      '',
-      'TOEIC',
-      array['part' || v_attempt.part_number],
-      true
-    )
-    returning id into v_vocab_id;
+    begin
+      insert into public.vocabulary_items (
+        deck_id, word, meaning_vi, example_en, topic, toeic_parts, is_published
+      ) values (
+        v_deck_id,
+        v_normalized_word,
+        '',
+        '',
+        'TOEIC',
+        array['part' || v_attempt.part_number],
+        true
+      )
+      returning id into v_vocab_id;
+    exception when unique_violation then
+      select id into v_vocab_id
+      from public.vocabulary_items
+      where deck_id = v_deck_id and lower(trim(word)) = v_normalized_word
+      limit 1;
+    end;
   end if;
-  -- If vocab already exists, do NOT overwrite curated meaning_vi, example_en, etc.
 
   -- Upsert saved_words with per-user TOEIC source context
   -- ON CONFLICT: update source context to most recent explicit save
@@ -774,19 +850,20 @@ revoke execute on function public.get_student_toeic_test_content(uuid, text, int
 revoke execute on function public.get_student_toeic_test_content(uuid, text, integer) from anon;
 grant execute on function public.get_student_toeic_test_content(uuid, text, integer) to authenticated;
 
-revoke execute on function public.save_toeic_answer(uuid, uuid, text) from public;
-revoke execute on function public.save_toeic_answer(uuid, uuid, text) from anon;
-grant execute on function public.save_toeic_answer(uuid, uuid, text) to authenticated;
+revoke execute on function public.save_toeic_answer(uuid, uuid, text, integer) from public;
+revoke execute on function public.save_toeic_answer(uuid, uuid, text, integer) from anon;
+grant execute on function public.save_toeic_answer(uuid, uuid, text, integer) to authenticated;
 
-revoke execute on function public.update_toeic_attempt_progress(uuid, integer) from public;
-revoke execute on function public.update_toeic_attempt_progress(uuid, integer) from anon;
-grant execute on function public.update_toeic_attempt_progress(uuid, integer) to authenticated;
+revoke execute on function public.update_toeic_attempt_progress(uuid, integer, integer) from public;
+revoke execute on function public.update_toeic_attempt_progress(uuid, integer, integer) from anon;
+grant execute on function public.update_toeic_attempt_progress(uuid, integer, integer) to authenticated;
 
 revoke execute on function public.can_access_toeic_media(text) from public;
 revoke execute on function public.can_access_toeic_media(text) from anon;
 grant execute on function public.can_access_toeic_media(text) to authenticated;
 
-revoke execute on function public.save_toeic_word(uuid, uuid, text, text, text) from public;
-revoke execute on function public.save_toeic_word(uuid, uuid, text, text, text) from anon;
-grant execute on function public.save_toeic_word(uuid, uuid, text, text, text) to authenticated;
+revoke execute on function public.save_toeic_word(uuid, uuid, text, text) from public;
+revoke execute on function public.save_toeic_word(uuid, uuid, text, text) from anon;
+grant execute on function public.save_toeic_word(uuid, uuid, text, text) to authenticated;
+
 

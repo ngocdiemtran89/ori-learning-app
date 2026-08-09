@@ -107,6 +107,14 @@ export const ToeicTestRunnerPage: React.FC = () => {
     return set;
   }, [answers, content]);
 
+  const [localElapsedSeconds, setLocalElapsedSeconds] = useState<number>(0);
+
+  useEffect(() => {
+    if (attempt) {
+      setLocalElapsedSeconds(attempt.elapsed_seconds || 0);
+    }
+  }, [attempt]);
+
   const mediaContext = useMemo(() => {
     if (!currentQuestion) return { audioUrl: null, imageUrl: null };
     let audioUrl = currentQuestion.audio_url;
@@ -121,15 +129,15 @@ export const ToeicTestRunnerPage: React.FC = () => {
   const handleSelectAnswer = useCallback(async (answer: string) => {
     if (!currentQuestion || !attempt || timeExpired) return;
     setAnswers(prev => new Map(prev).set(currentQuestion.id, answer));
-    const res = await saveAnswer(attempt.id, currentQuestion.id, answer);
+    const res = await saveAnswer(attempt.id, currentQuestion.id, answer, isPartMode ? localElapsedSeconds : undefined);
     if (res.error) console.error('Save answer error:', res.error);
-  }, [currentQuestion, attempt, timeExpired]);
+  }, [currentQuestion, attempt, timeExpired, isPartMode, localElapsedSeconds]);
 
   const handleNavigate = useCallback((questionNumber: number) => {
     if (questionNumber < scopeRange.start || questionNumber > scopeRange.end) return;
     setCurrentQ(questionNumber);
-    if (attempt) updateAttemptProgress(attempt.id, questionNumber);
-  }, [attempt, scopeRange]);
+    if (attempt) updateAttemptProgress(attempt.id, questionNumber, isPartMode ? localElapsedSeconds : undefined);
+  }, [attempt, scopeRange, isPartMode, localElapsedSeconds]);
 
   const handlePrev = useCallback(() => {
     if (currentQ > scopeRange.start) handleNavigate(currentQ - 1);
@@ -140,9 +148,9 @@ export const ToeicTestRunnerPage: React.FC = () => {
   }, [currentQ, handleNavigate, scopeRange.end]);
 
   const handleSaveAndExit = useCallback(async () => {
-    if (attempt) await updateAttemptProgress(attempt.id, currentQ);
+    if (attempt) await updateAttemptProgress(attempt.id, currentQ, isPartMode ? localElapsedSeconds : undefined);
     navigate(`/tests/${testId}`);
-  }, [attempt, currentQ, testId, navigate]);
+  }, [attempt, currentQ, testId, navigate, isPartMode, localElapsedSeconds]);
 
   const handleTimeExpired = useCallback(() => { setTimeExpired(true); }, []);
 
@@ -197,6 +205,8 @@ export const ToeicTestRunnerPage: React.FC = () => {
               durationMinutes={attempt.duration_minutes}
               onTimeExpired={handleTimeExpired}
               isStopwatch={isPartMode}
+              initialElapsedSeconds={attempt.elapsed_seconds || 0}
+              onElapsedTick={(sec) => setLocalElapsedSeconds(sec)}
             />
 
             <div className="hidden sm:block text-xs font-bold text-slate-500">

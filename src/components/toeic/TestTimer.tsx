@@ -7,6 +7,10 @@ interface TestTimerProps {
   onTimeExpired: () => void;
   /** If true, show elapsed stopwatch instead of countdown */
   isStopwatch?: boolean;
+  /** Initial elapsed seconds stored in DB (for stopwatch mode) */
+  initialElapsedSeconds?: number;
+  /** Callback fired on each tick in stopwatch mode with current elapsed seconds */
+  onElapsedTick?: (elapsedSeconds: number) => void;
 }
 
 export const TestTimer: React.FC<TestTimerProps> = ({
@@ -14,6 +18,8 @@ export const TestTimer: React.FC<TestTimerProps> = ({
   durationMinutes,
   onTimeExpired,
   isStopwatch = false,
+  initialElapsedSeconds = 0,
+  onElapsedTick,
 }) => {
   const calculateRemaining = useCallback(() => {
     if (durationMinutes == null) return 0;
@@ -23,19 +29,26 @@ export const TestTimer: React.FC<TestTimerProps> = ({
     return Math.max(0, Math.floor((end - now) / 1000));
   }, [startedAt, durationMinutes]);
 
-  const calculateElapsed = useCallback(() => {
-    const start = new Date(startedAt).getTime();
-    return Math.max(0, Math.floor((Date.now() - start) / 1000));
-  }, [startedAt]);
-
   const [seconds, setSeconds] = useState(
-    isStopwatch ? calculateElapsed() : calculateRemaining()
+    isStopwatch ? (initialElapsedSeconds || 0) : calculateRemaining()
   );
+
+  useEffect(() => {
+    if (isStopwatch) {
+      setSeconds(initialElapsedSeconds || 0);
+    } else {
+      setSeconds(calculateRemaining());
+    }
+  }, [initialElapsedSeconds, isStopwatch, calculateRemaining]);
 
   useEffect(() => {
     const timer = setInterval(() => {
       if (isStopwatch) {
-        setSeconds(calculateElapsed());
+        setSeconds((prev) => {
+          const next = prev + 1;
+          if (onElapsedTick) onElapsedTick(next);
+          return next;
+        });
       } else {
         const remaining = calculateRemaining();
         setSeconds(remaining);
@@ -47,7 +60,7 @@ export const TestTimer: React.FC<TestTimerProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [calculateRemaining, calculateElapsed, onTimeExpired, isStopwatch]);
+  }, [calculateRemaining, onTimeExpired, isStopwatch, onElapsedTick]);
 
   const displaySeconds = seconds;
   const hours = Math.floor(displaySeconds / 3600);
