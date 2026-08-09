@@ -316,19 +316,21 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(prev => !prev)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
-                  isSidebarOpen
-                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
-                    : 'bg-ori-600 text-white hover:bg-ori-700 shadow-xs'
-                }`}
-                title={isSidebarOpen ? 'Thu gọn danh sách câu' : 'Hiện danh sách câu'}
-              >
-                <ListFilter className="w-3.5 h-3.5" />
-                {isSidebarOpen ? 'Ẩn danh sách câu' : `Hiện danh sách câu (${questions.length})`}
-              </button>
+              {currentQuestion?.part !== 'part1' && (
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(prev => !prev)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                    isSidebarOpen
+                      ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                      : 'bg-ori-600 text-white hover:bg-ori-700 shadow-xs'
+                  }`}
+                  title={isSidebarOpen ? 'Thu gọn danh sách câu' : 'Hiện danh sách câu'}
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                  {isSidebarOpen ? 'Ẩn danh sách câu' : `Hiện danh sách câu (${questions.length})`}
+                </button>
+              )}
               <span className="text-xs font-bold text-slate-500 mr-2 hidden sm:inline">
                 Hiển thị {filteredQuestions.length} câu
               </span>
@@ -719,8 +721,8 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
           )}
         </main>
 
-        {/* QUESTION NAVIGATOR GRID WITH COLOR CODES */}
-        {isSidebarOpen && (
+        {/* QUESTION NAVIGATOR GRID WITH COLOR CODES (OMITTED FOR PART 1 REVIEW TO MAXIMIZE PHOTO + SCRIPT SPACE) */}
+        {currentQuestion?.part !== 'part1' && isSidebarOpen && (
           <aside className="hidden lg:block w-64 shrink-0 border-l border-slate-200 bg-white p-4 overflow-y-auto transition-all">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
