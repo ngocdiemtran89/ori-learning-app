@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { startOrResumeTest, fetchTestContent, fetchAttemptAnswers, saveAnswer, updateAttemptProgress, fetchMyAttempt } from '../lib/supabase/studentToeic';
-import type { StudentToeicTestContent, StudentToeicGroup, ToeicTestAttempt } from '../lib/supabase/types';
+import { TOEIC_FULL_TEST_STRUCTURE, type CanonicalToeicPart } from '../lib/toeic/testStructure';
+import type { StudentToeicTestContent, StudentToeicGroup, ToeicTestAttempt, ToeicAttemptMode } from '../lib/supabase/types';
 import { QuestionDisplay } from '../components/toeic/QuestionDisplay';
 import { QuestionNavigator } from '../components/toeic/QuestionNavigator';
 import { TestTimer } from '../components/toeic/TestTimer';
@@ -11,19 +12,34 @@ import { ListeningMedia } from '../components/toeic/ListeningMedia';
 
 export const ToeicTestRunnerPage: React.FC = () => {
   const { testId } = useParams<{ testId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  // Mode from URL
+  const mode = (searchParams.get('mode') || 'full') as ToeicAttemptMode;
+  const partNumber = searchParams.get('part') ? parseInt(searchParams.get('part')!, 10) : null;
+  const isPartMode = mode === 'part' && partNumber !== null;
+
+  // Scope boundaries
+  const scopeRange = useMemo(() => {
+    if (!isPartMode) return { start: 1, end: 200 };
+    const key = `part${partNumber}` as CanonicalToeicPart;
+    const range = TOEIC_FULL_TEST_STRUCTURE[key];
+    return range ? { start: range.startNumber, end: range.endNumber } : { start: 1, end: 200 };
+  }, [isPartMode, partNumber]);
+
+  const scopeTotal = scopeRange.end - scopeRange.start + 1;
 
   // Core state
   const [content, setContent] = useState<StudentToeicTestContent | null>(null);
   const [attempt, setAttempt] = useState<ToeicTestAttempt | null>(null);
-  const [answers, setAnswers] = useState<Map<string, string>>(new Map()); // questionId -> answer
-  const [currentQ, setCurrentQ] = useState(1);
+  const [answers, setAnswers] = useState<Map<string, string>>(new Map());
+  const [currentQ, setCurrentQ] = useState(scopeRange.start);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(true);
   const [timeExpired, setTimeExpired] = useState(false);
 
-  // Load test content and attempt
   useEffect(() => {
     if (!testId) return;
     let cancelled = false;
@@ -31,42 +47,28 @@ export const ToeicTestRunnerPage: React.FC = () => {
     const init = async () => {
       setLoading(true);
       try {
-        // 1. Start or resume attempt
-        const attemptRes = await startOrResumeTest(testId);
-        if (attemptRes.error) {
-          setError(attemptRes.error);
-          setLoading(false);
-          return;
-        }
+        const attemptRes = await startOrResumeTest(testId, mode, partNumber);
+        if (attemptRes.error) { setError(attemptRes.error); setLoading(false); return; }
 
-        // 2. Get attempt details
-        const myAttempt = await fetchMyAttempt(testId);
+        const myAttempt = await fetchMyAttempt(testId, mode, partNumber);
         if (cancelled) return;
         if (myAttempt.data) {
           setAttempt(myAttempt.data);
-          setCurrentQ(myAttempt.data.current_question_number || 1);
+          setCurrentQ(myAttempt.data.current_question_number || scopeRange.start);
         }
 
-        // 3. Get test content (secure — no correct_answer/explanation)
-        const contentRes = await fetchTestContent(testId);
+        const contentRes = await fetchTestContent(testId, mode, partNumber);
         if (cancelled) return;
-        if (contentRes.error) {
-          setError(contentRes.error);
-          setLoading(false);
-          return;
-        }
+        if (contentRes.error) { setError(contentRes.error); setLoading(false); return; }
         setContent(contentRes.data);
 
-        // 4. Hydrate saved answers
         if (myAttempt.data) {
           const answersRes = await fetchAttemptAnswers(myAttempt.data.id);
           if (cancelled) return;
           if (answersRes.data) {
             const map = new Map<string, string>();
             answersRes.data.forEach(a => {
-              if (a.selected_answer) {
-                map.set(a.question_id, a.selected_answer);
-              }
+              if (a.selected_answer) map.set(a.question_id, a.selected_answer);
             });
             setAnswers(map);
           }
@@ -79,26 +81,22 @@ export const ToeicTestRunnerPage: React.FC = () => {
 
     init();
     return () => { cancelled = true; };
-  }, [testId]);
+  }, [testId, mode, partNumber, scopeRange.start]);
 
-  // Questions sorted by question_number
   const sortedQuestions = useMemo(() => {
     if (!content) return [];
     return [...content.questions].sort((a, b) => a.question_number - b.question_number);
   }, [content]);
 
-  // Current question object
   const currentQuestion = useMemo(() => {
     return sortedQuestions.find(q => q.question_number === currentQ) || null;
   }, [sortedQuestions, currentQ]);
 
-  // Current group (for passage/audio context)
   const currentGroup = useMemo((): StudentToeicGroup | null => {
     if (!currentQuestion?.group_id || !content) return null;
     return content.groups.find(g => g.id === currentQuestion.group_id) || null;
   }, [currentQuestion, content]);
 
-  // Answered question numbers set
   const answeredNumbers = useMemo(() => {
     const set = new Set<number>();
     if (!content) return set;
@@ -109,71 +107,58 @@ export const ToeicTestRunnerPage: React.FC = () => {
     return set;
   }, [answers, content]);
 
-  // Determine media for current question context
   const mediaContext = useMemo(() => {
     if (!currentQuestion) return { audioUrl: null, imageUrl: null };
-
-    // Question-level media
     let audioUrl = currentQuestion.audio_url;
     let imageUrl = currentQuestion.image_url;
-
-    // Group-level fallback
     if (currentGroup) {
       if (!audioUrl && currentGroup.audio_url) audioUrl = currentGroup.audio_url;
       if (!imageUrl && currentGroup.image_url) imageUrl = currentGroup.image_url;
     }
-
     return { audioUrl, imageUrl };
   }, [currentQuestion, currentGroup]);
 
-  // Handle answer selection
   const handleSelectAnswer = useCallback(async (answer: string) => {
     if (!currentQuestion || !attempt || timeExpired) return;
-
-    // Optimistic update
     setAnswers(prev => new Map(prev).set(currentQuestion.id, answer));
-
-    // Persist
     const res = await saveAnswer(attempt.id, currentQuestion.id, answer);
-    if (res.error) {
-      console.error('Save answer error:', res.error);
-    }
+    if (res.error) console.error('Save answer error:', res.error);
   }, [currentQuestion, attempt, timeExpired]);
 
-  // Navigation
   const handleNavigate = useCallback((questionNumber: number) => {
+    if (questionNumber < scopeRange.start || questionNumber > scopeRange.end) return;
     setCurrentQ(questionNumber);
-    if (attempt) {
-      updateAttemptProgress(attempt.id, questionNumber);
-    }
-  }, [attempt]);
+    if (attempt) updateAttemptProgress(attempt.id, questionNumber);
+  }, [attempt, scopeRange]);
 
   const handlePrev = useCallback(() => {
-    if (currentQ > 1) handleNavigate(currentQ - 1);
-  }, [currentQ, handleNavigate]);
+    if (currentQ > scopeRange.start) handleNavigate(currentQ - 1);
+  }, [currentQ, handleNavigate, scopeRange.start]);
 
   const handleNext = useCallback(() => {
-    if (currentQ < 200) handleNavigate(currentQ + 1);
-  }, [currentQ, handleNavigate]);
+    if (currentQ < scopeRange.end) handleNavigate(currentQ + 1);
+  }, [currentQ, handleNavigate, scopeRange.end]);
 
-  // Save & Exit
   const handleSaveAndExit = useCallback(async () => {
-    if (attempt) {
-      await updateAttemptProgress(attempt.id, currentQ);
-    }
+    if (attempt) await updateAttemptProgress(attempt.id, currentQ);
     navigate(`/tests/${testId}`);
   }, [attempt, currentQ, testId, navigate]);
 
-  // Time expired
-  const handleTimeExpired = useCallback(() => {
-    setTimeExpired(true);
-  }, []);
+  const handleTimeExpired = useCallback(() => { setTimeExpired(true); }, []);
 
-  // Show whether current question needs passage/group context
   const showPassage = currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0));
   const showMedia = mediaContext.audioUrl || mediaContext.imageUrl;
 
-  // Loading
+  // Part title for header
+  const headerTitle = useMemo(() => {
+    if (!content) return '';
+    if (isPartMode && partNumber) {
+      const key = `part${partNumber}` as CanonicalToeicPart;
+      return `${content.test.title} — ${TOEIC_FULL_TEST_STRUCTURE[key]?.nameVi || `Part ${partNumber}`}`;
+    }
+    return content.test.title;
+  }, [content, isPartMode, partNumber]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -190,10 +175,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center max-w-md">
           <p className="text-red-600 font-bold">{error || 'Không thể tải đề thi'}</p>
-          <button
-            onClick={() => navigate('/tests')}
-            className="mt-4 text-ori-600 font-bold text-sm"
-          >
+          <button onClick={() => navigate('/tests')} className="mt-4 text-ori-600 font-bold text-sm">
             ← Quay lại danh sách
           </button>
         </div>
@@ -203,30 +185,27 @@ export const ToeicTestRunnerPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Bar */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-extrabold text-slate-900 truncate max-w-[200px] sm:max-w-none">
-              {content.test.title}
-            </h1>
-          </div>
+          <h1 className="text-sm font-extrabold text-slate-900 truncate max-w-[240px] sm:max-w-none">
+            {headerTitle}
+          </h1>
 
           <div className="flex items-center gap-3">
             <TestTimer
               startedAt={attempt.started_at}
               durationMinutes={attempt.duration_minutes}
               onTimeExpired={handleTimeExpired}
+              isStopwatch={isPartMode}
             />
 
             <div className="hidden sm:block text-xs font-bold text-slate-500">
-              {answeredNumbers.size}/200
+              {answeredNumbers.size}/{scopeTotal}
             </div>
 
             <button
               onClick={() => setNavOpen(!navOpen)}
               className="p-2 text-slate-500 hover:text-ori-600 hover:bg-slate-100 rounded-lg transition-colors"
-              title="Toggle navigator"
             >
               {navOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
             </button>
@@ -242,15 +221,12 @@ export const ToeicTestRunnerPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Time expired overlay */}
-      {timeExpired && (
+      {timeExpired && !isPartMode && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-sm text-center space-y-4">
             <div className="text-4xl">⏰</div>
             <h2 className="text-lg font-extrabold text-slate-900">Thời gian làm bài đã hết</h2>
-            <p className="text-sm text-slate-500">
-              Bài làm của bạn đã được lưu tự động.
-            </p>
+            <p className="text-sm text-slate-500">Bài làm của bạn đã được lưu tự động.</p>
             <button
               onClick={() => navigate(`/tests/${testId}`)}
               className="px-6 py-2.5 bg-ori-600 text-white font-extrabold rounded-xl hover:bg-ori-700 transition-colors"
@@ -261,39 +237,25 @@ export const ToeicTestRunnerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Main Content Area */}
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
-        {/* Question Area */}
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {currentQuestion ? (
             <div className="max-w-2xl mx-auto space-y-6">
-              {/* Part instruction context */}
-              {showPassage && currentGroup && (
-                <PassageDisplay group={currentGroup} />
-              )}
+              {showPassage && currentGroup && <PassageDisplay group={currentGroup} />}
+              {showMedia && <ListeningMedia audioUrl={mediaContext.audioUrl} imageUrl={mediaContext.imageUrl} />}
 
-              {/* Media (image for Part 1, audio for listening parts) */}
-              {showMedia && (
-                <ListeningMedia
-                  audioUrl={mediaContext.audioUrl}
-                  imageUrl={mediaContext.imageUrl}
-                />
-              )}
-
-              {/* Question */}
               <QuestionDisplay
                 question={currentQuestion}
                 selectedAnswer={answers.get(currentQuestion.id) || null}
                 onSelectAnswer={handleSelectAnswer}
-                disabled={timeExpired}
+                disabled={timeExpired && !isPartMode}
               />
 
-              {/* Navigation buttons */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={handlePrev}
-                  disabled={currentQ <= 1}
+                  disabled={currentQ <= scopeRange.start}
                   className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center gap-1 disabled:opacity-40 transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -301,13 +263,13 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 </button>
 
                 <span className="text-xs font-bold text-slate-400">
-                  {currentQ} / 200
+                  {currentQ} / {scopeRange.end}
                 </span>
 
                 <button
                   type="button"
                   onClick={handleNext}
-                  disabled={currentQ >= 200}
+                  disabled={currentQ >= scopeRange.end}
                   className="px-4 py-2 text-sm font-bold text-white bg-ori-600 hover:bg-ori-700 rounded-xl flex items-center gap-1 disabled:opacity-40 transition-colors"
                 >
                   Câu sau
@@ -322,14 +284,14 @@ export const ToeicTestRunnerPage: React.FC = () => {
           )}
         </main>
 
-        {/* Navigator Sidebar */}
         {navOpen && (
           <aside className="hidden lg:block w-72 border-l border-slate-200 bg-white p-4 overflow-y-auto">
             <QuestionNavigator
-              totalQuestions={200}
+              totalQuestions={scopeTotal}
               currentQuestion={currentQ}
               answeredQuestions={answeredNumbers}
               onNavigate={handleNavigate}
+              partFilter={isPartMode ? partNumber : null}
             />
           </aside>
         )}

@@ -77,12 +77,15 @@ export interface LearningLesson {
 // ============================================================
 
 export type ToeicAttemptStatus = 'in_progress' | 'submitted' | 'abandoned';
+export type ToeicAttemptMode = 'full' | 'part';
 
 export interface ToeicTestAttempt {
   id: string;
   user_id: string;
   test_id: string;
   status: ToeicAttemptStatus;
+  mode: ToeicAttemptMode;
+  part_number: number | null;
   started_at: string;
   last_activity_at: string;
   submitted_at: string | null;

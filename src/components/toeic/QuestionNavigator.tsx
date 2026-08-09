@@ -1,28 +1,41 @@
 import React from 'react';
-import { TOEIC_FULL_TEST_STRUCTURE, CANONICAL_TOEIC_PARTS } from '../../lib/toeic/testStructure';
+import { TOEIC_FULL_TEST_STRUCTURE, CANONICAL_TOEIC_PARTS, type CanonicalToeicPart } from '../../lib/toeic/testStructure';
 
 interface QuestionNavigatorProps {
   totalQuestions: number;
   currentQuestion: number;
   answeredQuestions: Set<number>;
   onNavigate: (questionNumber: number) => void;
+  /** If set, only show this part's questions */
+  partFilter?: number | null;
 }
 
 export const QuestionNavigator: React.FC<QuestionNavigatorProps> = ({
+  totalQuestions,
   currentQuestion,
   answeredQuestions,
   onNavigate,
+  partFilter,
 }) => {
+  const partsToShow: CanonicalToeicPart[] = partFilter
+    ? [`part${partFilter}` as CanonicalToeicPart]
+    : [...CANONICAL_TOEIC_PARTS];
+
+  const scopeTotal = partFilter
+    ? TOEIC_FULL_TEST_STRUCTURE[`part${partFilter}` as CanonicalToeicPart]?.expectedCount || totalQuestions
+    : totalQuestions;
+
   return (
     <div className="space-y-3">
       <div className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">
         Điều hướng câu hỏi
       </div>
       <div className="text-sm font-bold text-slate-700">
-        {answeredQuestions.size} / 200 đã trả lời
+        {answeredQuestions.size} / {scopeTotal} đã trả lời
       </div>
-      {CANONICAL_TOEIC_PARTS.map(partKey => {
+      {partsToShow.map(partKey => {
         const range = TOEIC_FULL_TEST_STRUCTURE[partKey];
+        if (!range) return null;
         const numbers: number[] = [];
         for (let i = range.startNumber; i <= range.endNumber; i++) {
           numbers.push(i);

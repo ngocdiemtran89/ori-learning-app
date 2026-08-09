@@ -1,7 +1,7 @@
 /**
  * P3.6A Student TOEIC Test Runner — Supabase Client Layer
  *
- * All student-facing data access for TOEIC tests.
+ * Supports FULL TEST and PRACTICE BY PART modes.
  * NEVER exposes correct_answer or explanation to the browser.
  */
 
@@ -11,6 +11,7 @@ import type {
   ToeicTestAttempt,
   ToeicTestAttemptAnswer,
   StudentToeicTestContent,
+  ToeicAttemptMode,
 } from './types';
 
 // ============================================================
@@ -33,10 +34,16 @@ export async function fetchPublishedTests(): Promise<{ data: PublishedToeicTest[
 // ATTEMPT MANAGEMENT
 // ============================================================
 
-/** Start or resume a TOEIC test attempt (atomic RPC) */
-export async function startOrResumeTest(testId: string): Promise<{ attemptId: string; resumed: boolean; error?: string }> {
+/** Start or resume a TOEIC test attempt (atomic RPC, mode-aware) */
+export async function startOrResumeTest(
+  testId: string,
+  mode: ToeicAttemptMode = 'full',
+  partNumber: number | null = null,
+): Promise<{ attemptId: string; resumed: boolean; error?: string }> {
   const { data, error } = await supabase.rpc('start_or_resume_toeic_test', {
     p_test_id: testId,
+    p_mode: mode,
+    p_part_number: partNumber,
   });
 
   if (error) return { attemptId: '', resumed: false, error: error.message };
@@ -46,8 +53,38 @@ export async function startOrResumeTest(testId: string): Promise<{ attemptId: st
   };
 }
 
-/** Fetch the student's in-progress attempt for a specific test */
-export async function fetchMyAttempt(testId: string): Promise<{ data: ToeicTestAttempt | null; error: string | null }> {
+/** Fetch the student's in-progress attempt for a specific test + mode */
+export async function fetchMyAttempt(
+  testId: string,
+  mode: ToeicAttemptMode = 'full',
+  partNumber: number | null = null,
+): Promise<{ data: ToeicTestAttempt | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: null, error: 'Not authenticated' };
+
+  let query = supabase
+    .from('toeic_test_attempts')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('test_id', testId)
+    .eq('status', 'in_progress')
+    .eq('mode', mode);
+
+  if (mode === 'part' && partNumber !== null) {
+    query = query.eq('part_number', partNumber);
+  } else {
+    query = query.is('part_number', null);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error) return { data: null, error: error.message };
+  return { data: data as ToeicTestAttempt | null, error: null };
+}
+
+/** Fetch ALL in-progress attempts for a test (for overview page) */
+export async function fetchAllMyAttempts(
+  testId: string,
+): Promise<{ data: ToeicTestAttempt[] | null; error: string | null }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { data: null, error: 'Not authenticated' };
 
@@ -56,11 +93,10 @@ export async function fetchMyAttempt(testId: string): Promise<{ data: ToeicTestA
     .select('*')
     .eq('user_id', user.id)
     .eq('test_id', testId)
-    .eq('status', 'in_progress')
-    .maybeSingle();
+    .eq('status', 'in_progress');
 
   if (error) return { data: null, error: error.message };
-  return { data: data as ToeicTestAttempt | null, error: null };
+  return { data: data as ToeicTestAttempt[], error: null };
 }
 
 /** Update attempt progress via controlled RPC (only permitted fields) */
@@ -80,10 +116,16 @@ export async function updateAttemptProgress(
 // SECURE TEST CONTENT (NO correct_answer / explanation)
 // ============================================================
 
-/** Fetch test content via secure RPC — NEVER includes correct_answer or explanation */
-export async function fetchTestContent(testId: string): Promise<{ data: StudentToeicTestContent | null; error: string | null }> {
+/** Fetch test content via secure RPC — mode-aware filtering */
+export async function fetchTestContent(
+  testId: string,
+  mode: ToeicAttemptMode = 'full',
+  partNumber: number | null = null,
+): Promise<{ data: StudentToeicTestContent | null; error: string | null }> {
   const { data, error } = await supabase.rpc('get_student_toeic_test_content', {
     p_test_id: testId,
+    p_mode: mode,
+    p_part_number: partNumber,
   });
 
   if (error) return { data: null, error: error.message };
@@ -105,7 +147,7 @@ export async function fetchAttemptAnswers(attemptId: string): Promise<{ data: To
   return { data: data as ToeicTestAttemptAnswer[], error: null };
 }
 
-/** Save an answer via secure RPC (validates ownership, status, canonical answer) */
+/** Save an answer via secure RPC (validates ownership, status, scope, canonical answer) */
 export async function saveAnswer(
   attemptId: string,
   questionId: string,

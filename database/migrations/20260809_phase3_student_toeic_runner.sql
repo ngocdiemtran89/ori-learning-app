@@ -1,6 +1,7 @@
 -- ============================================================
 -- Phase P3.6A: Student Full TOEIC Test Runner Foundation
--- HARDENED MIGRATION — all student mutations via controlled RPCs
+-- HARDENED MIGRATION — Full Test + Practice by Part
+-- All student mutations via controlled RPCs
 -- ============================================================
 -- Tables: toeic_test_attempts, toeic_test_attempt_answers
 -- RPCs:   start_or_resume_toeic_test, get_student_toeic_test_content,
@@ -17,6 +18,13 @@ create table if not exists public.toeic_test_attempts (
   test_id uuid not null references public.toeic_tests(id) on delete cascade,
   status text not null default 'in_progress'
     check (status in ('in_progress', 'submitted', 'abandoned')),
+  mode text not null default 'full'
+    check (mode in ('full', 'part')),
+  part_number integer
+    check (
+      (mode = 'full' and part_number is null) or
+      (mode = 'part' and part_number between 1 and 7)
+    ),
   started_at timestamptz not null default now(),
   last_activity_at timestamptz not null default now(),
   submitted_at timestamptz,
@@ -30,9 +38,15 @@ create table if not exists public.toeic_test_attempts (
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists idx_one_active_attempt
+-- One active FULL attempt per user per test
+create unique index if not exists idx_one_active_full_attempt
   on public.toeic_test_attempts (user_id, test_id)
-  where status = 'in_progress';
+  where status = 'in_progress' and mode = 'full';
+
+-- One active PART attempt per user per test per part_number
+create unique index if not exists idx_one_active_part_attempt
+  on public.toeic_test_attempts (user_id, test_id, part_number)
+  where status = 'in_progress' and mode = 'part';
 
 create index if not exists idx_attempts_user on public.toeic_test_attempts (user_id);
 create index if not exists idx_attempts_test on public.toeic_test_attempts (test_id);
@@ -57,7 +71,6 @@ create index if not exists idx_answers_attempt on public.toeic_test_attempt_answ
 
 -- ============================================================
 -- 3. REVOKE DIRECT TABLE MUTATIONS FOR STUDENTS
---    All student writes go through controlled RPCs.
 -- ============================================================
 revoke insert, update, delete on public.toeic_test_attempts from anon, authenticated;
 revoke insert, update, delete on public.toeic_test_attempt_answers from anon, authenticated;
@@ -105,27 +118,18 @@ create policy admin_answers_select on public.toeic_test_attempt_answers
 
 -- ============================================================
 -- 6. TIGHTEN toeic_test_questions / toeic_test_groups SELECT
---    to ADMIN ONLY — students get content via safe RPC only.
---    This prevents students from reading correct_answer/explanation
---    via direct PostgREST queries.
---
---    NOTE: We do NOT edit the already-applied P3.5C migration.
---    We drop and recreate the policies here.
+--    to ADMIN ONLY — prevents students from reading correct_answer
 -- ============================================================
-
--- Questions: admin-only SELECT
 drop policy if exists "admin_toeic_test_questions_select" on public.toeic_test_questions;
 create policy "admin_toeic_test_questions_select" on public.toeic_test_questions
   for select to authenticated
   using (public.is_admin());
 
--- Groups: admin-only SELECT
 drop policy if exists "admin_toeic_test_groups_select" on public.toeic_test_groups;
 create policy "admin_toeic_test_groups_select" on public.toeic_test_groups
   for select to authenticated
   using (public.is_admin());
 
--- Tests: keep published test metadata readable by students (for library/overview)
 drop policy if exists "admin_toeic_tests_select" on public.toeic_tests;
 create policy "admin_toeic_tests_select" on public.toeic_tests
   for select to authenticated
@@ -136,8 +140,6 @@ create policy "admin_toeic_tests_select" on public.toeic_tests
 
 -- ============================================================
 -- 7. MEDIA AUTHORIZATION HELPER
---    Replaces direct question/group SELECT in P3.5E storage policy.
---    Returns boolean only — NEVER exposes answer data.
 -- ============================================================
 create or replace function public.can_access_toeic_media(p_path text)
 returns boolean
@@ -146,64 +148,85 @@ security definer
 set search_path = ''
 as $$
 begin
-  -- Admin always has access
-  if public.is_admin() then
-    return true;
-  end if;
+  if public.is_admin() then return true; end if;
+  if auth.uid() is null then return false; end if;
+  if not public.has_active_access() then return false; end if;
 
-  -- Student checks
-  if auth.uid() is null then
-    return false;
-  end if;
-
-  if not public.has_active_access() then
-    return false;
-  end if;
-
-  -- Check if path is referenced by an active question in a published test
   if exists (
-    select 1
-    from public.toeic_test_questions q
+    select 1 from public.toeic_test_questions q
     join public.toeic_tests t on t.id = q.test_id
-    where t.is_published = true
-      and q.is_active = true
+    where t.is_published = true and q.is_active = true
       and (q.image_url = p_path or q.audio_url = p_path)
-  ) then
-    return true;
-  end if;
+  ) then return true; end if;
 
-  -- Check if path is referenced by an active group in a published test
   if exists (
-    select 1
-    from public.toeic_test_groups g
+    select 1 from public.toeic_test_groups g
     join public.toeic_tests t on t.id = g.test_id
-    where t.is_published = true
-      and g.is_active = true
+    where t.is_published = true and g.is_active = true
       and (g.image_url = p_path or g.audio_url = p_path)
-  ) then
-    return true;
-  end if;
+  ) then return true; end if;
 
   return false;
 end;
 $$;
 
--- Update P3.5E storage student SELECT policy to use the helper
--- (We don't edit the applied P3.5E migration file — we replace policy here)
 drop policy if exists student_media_select on storage.objects;
-create policy student_media_select
-on storage.objects
-for select
-to authenticated
-using (
-  bucket_id = 'toeic-media'
-  and public.can_access_toeic_media(name)
-);
+create policy student_media_select on storage.objects
+  for select to authenticated
+  using (bucket_id = 'toeic-media' and public.can_access_toeic_media(name));
 
 -- ============================================================
--- 8. RPC: start_or_resume_toeic_test (RACE-SAFE)
+-- 8. HELPER: part_number to canonical part string
 -- ============================================================
-create or replace function public.start_or_resume_toeic_test(p_test_id uuid)
+create or replace function public._toeic_part_key(p_part_number integer)
+returns text
+language sql
+immutable
+as $$
+  select 'part' || p_part_number::text;
+$$;
+
+-- ============================================================
+-- 9. HELPER: question number range for a part
+-- ============================================================
+create or replace function public._toeic_part_range(p_part_number integer)
+returns int4range
+language sql
+immutable
+as $$
+  select case p_part_number
+    when 1 then int4range(1, 7)      -- Q1-6
+    when 2 then int4range(7, 32)     -- Q7-31
+    when 3 then int4range(32, 71)    -- Q32-70
+    when 4 then int4range(71, 101)   -- Q71-100
+    when 5 then int4range(101, 131)  -- Q101-130
+    when 6 then int4range(131, 147)  -- Q131-146
+    when 7 then int4range(147, 201)  -- Q147-200
+  end;
+$$;
+
+-- ============================================================
+-- 10. HELPER: first question number for a part
+-- ============================================================
+create or replace function public._toeic_part_start(p_part_number integer)
+returns integer
+language sql
+immutable
+as $$
+  select case p_part_number
+    when 1 then 1   when 2 then 7   when 3 then 32
+    when 4 then 71  when 5 then 101 when 6 then 131 when 7 then 147
+  end;
+$$;
+
+-- ============================================================
+-- 11. RPC: start_or_resume_toeic_test (RACE-SAFE, mode-aware)
+-- ============================================================
+create or replace function public.start_or_resume_toeic_test(
+  p_test_id uuid,
+  p_mode text default 'full',
+  p_part_number integer default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -213,6 +236,8 @@ declare
   v_user_id uuid;
   v_attempt_id uuid;
   v_test_published boolean;
+  v_start_qn integer;
+  v_dur integer;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then
@@ -223,73 +248,102 @@ begin
     raise exception 'Access expired or inactive';
   end if;
 
-  select is_published into v_test_published
-  from public.toeic_tests
-  where id = p_test_id;
-
-  if v_test_published is null then
-    raise exception 'Test not found';
+  -- Validate mode
+  if p_mode not in ('full', 'part') then
+    raise exception 'Invalid mode (must be full or part)';
   end if;
 
-  if not v_test_published then
-    raise exception 'Test is not published';
+  if p_mode = 'full' and p_part_number is not null then
+    raise exception 'Full mode must not specify part_number';
+  end if;
+
+  if p_mode = 'part' then
+    if p_part_number is null or p_part_number < 1 or p_part_number > 7 then
+      raise exception 'Part mode requires part_number between 1 and 7';
+    end if;
+  end if;
+
+  -- Check test exists and is published
+  select is_published into v_test_published
+  from public.toeic_tests where id = p_test_id;
+
+  if v_test_published is null then raise exception 'Test not found'; end if;
+  if not v_test_published then raise exception 'Test is not published'; end if;
+
+  -- Determine start question and duration
+  if p_mode = 'full' then
+    v_start_qn := 1;
+    v_dur := 120;
+  else
+    v_start_qn := public._toeic_part_start(p_part_number);
+    v_dur := 9999; -- Part practice: no enforced time limit
   end if;
 
   -- Try to find existing in-progress attempt
-  select id into v_attempt_id
-  from public.toeic_test_attempts
-  where user_id = v_user_id
-    and test_id = p_test_id
-    and status = 'in_progress';
+  if p_mode = 'full' then
+    select id into v_attempt_id
+    from public.toeic_test_attempts
+    where user_id = v_user_id and test_id = p_test_id
+      and status = 'in_progress' and mode = 'full';
+  else
+    select id into v_attempt_id
+    from public.toeic_test_attempts
+    where user_id = v_user_id and test_id = p_test_id
+      and status = 'in_progress' and mode = 'part'
+      and part_number = p_part_number;
+  end if;
 
   if v_attempt_id is not null then
     update public.toeic_test_attempts
     set last_activity_at = now(), updated_at = now()
     where id = v_attempt_id;
 
-    return jsonb_build_object(
-      'attempt_id', v_attempt_id,
-      'resumed', true
-    );
+    return jsonb_build_object('attempt_id', v_attempt_id, 'resumed', true);
   end if;
 
-  -- Race-safe: INSERT with ON CONFLICT on partial unique index
-  -- If a concurrent call already inserted, we catch it and return the existing.
+  -- Race-safe INSERT
   begin
-    insert into public.toeic_test_attempts (user_id, test_id, status, started_at, last_activity_at)
-    values (v_user_id, p_test_id, 'in_progress', now(), now())
+    insert into public.toeic_test_attempts
+      (user_id, test_id, status, mode, part_number, started_at, last_activity_at,
+       current_question_number, duration_minutes)
+    values
+      (v_user_id, p_test_id, 'in_progress', p_mode, p_part_number, now(), now(),
+       v_start_qn, v_dur)
     returning id into v_attempt_id;
 
-    return jsonb_build_object(
-      'attempt_id', v_attempt_id,
-      'resumed', false
-    );
+    return jsonb_build_object('attempt_id', v_attempt_id, 'resumed', false);
   exception when unique_violation then
-    -- Concurrent insert won the race — find and return the existing attempt
-    select id into v_attempt_id
-    from public.toeic_test_attempts
-    where user_id = v_user_id
-      and test_id = p_test_id
-      and status = 'in_progress';
+    if p_mode = 'full' then
+      select id into v_attempt_id
+      from public.toeic_test_attempts
+      where user_id = v_user_id and test_id = p_test_id
+        and status = 'in_progress' and mode = 'full';
+    else
+      select id into v_attempt_id
+      from public.toeic_test_attempts
+      where user_id = v_user_id and test_id = p_test_id
+        and status = 'in_progress' and mode = 'part'
+        and part_number = p_part_number;
+    end if;
 
     update public.toeic_test_attempts
     set last_activity_at = now(), updated_at = now()
     where id = v_attempt_id;
 
-    return jsonb_build_object(
-      'attempt_id', v_attempt_id,
-      'resumed', true
-    );
+    return jsonb_build_object('attempt_id', v_attempt_id, 'resumed', true);
   end;
 end;
 $$;
 
 -- ============================================================
--- 9. RPC: get_student_toeic_test_content
---    NEVER returns correct_answer or explanation.
---    Groups ordered by MIN(active child question_number).
+-- 12. RPC: get_student_toeic_test_content (mode-aware filtering)
+--     NEVER returns correct_answer or explanation.
 -- ============================================================
-create or replace function public.get_student_toeic_test_content(p_test_id uuid)
+create or replace function public.get_student_toeic_test_content(
+  p_test_id uuid,
+  p_mode text default 'full',
+  p_part_number integer default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -300,86 +354,112 @@ declare
   v_test jsonb;
   v_groups jsonb;
   v_questions jsonb;
+  v_part_key text;
+  v_qn_range int4range;
 begin
   v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Not authenticated';
-  end if;
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
 
-  if not public.has_active_access() then
-    raise exception 'Access expired or inactive';
-  end if;
-
+  -- Test metadata
   select jsonb_build_object(
-    'id', id,
-    'title', title,
-    'test_code', test_code,
-    'description', description,
-    'test_type', test_type
+    'id', id, 'title', title, 'test_code', test_code,
+    'description', description, 'test_type', test_type
   ) into v_test
   from public.toeic_tests
   where id = p_test_id and is_published = true;
 
-  if v_test is null then
-    raise exception 'Test not found or not published';
+  if v_test is null then raise exception 'Test not found or not published'; end if;
+
+  -- Compute scope filter
+  if p_mode = 'part' and p_part_number is not null then
+    v_part_key := public._toeic_part_key(p_part_number);
+    v_qn_range := public._toeic_part_range(p_part_number);
   end if;
 
   -- Groups ordered by MIN(active child question_number)
-  select coalesce(jsonb_agg(
-    jsonb_build_object(
-      'id', sub.id,
-      'part', sub.part,
-      'group_type', sub.group_type,
-      'title', sub.title,
-      'instruction', sub.instruction,
-      'passage', sub.passage,
-      'documents', sub.documents,
-      'audio_url', sub.audio_url,
-      'image_url', sub.image_url
-    ) order by sub.min_qn, sub.sort_order
-  ), '[]'::jsonb) into v_groups
-  from (
-    select g.*,
-      coalesce(
-        (select min(q.question_number)
-         from public.toeic_test_questions q
-         where q.group_id = g.id and q.is_active = true),
-        g.sort_order * 1000
-      ) as min_qn
-    from public.toeic_test_groups g
-    where g.test_id = p_test_id and g.is_active = true
-  ) sub;
+  if v_part_key is not null then
+    -- Part mode: only groups for this part
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
+        'title', sub.title, 'instruction', sub.instruction,
+        'passage', sub.passage, 'documents', sub.documents,
+        'audio_url', sub.audio_url, 'image_url', sub.image_url
+      ) order by sub.min_qn, sub.sort_order
+    ), '[]'::jsonb) into v_groups
+    from (
+      select g.*,
+        coalesce(
+          (select min(q.question_number)
+           from public.toeic_test_questions q
+           where q.group_id = g.id and q.is_active = true),
+          g.sort_order * 1000
+        ) as min_qn
+      from public.toeic_test_groups g
+      where g.test_id = p_test_id and g.is_active = true and g.part = v_part_key
+    ) sub;
+  else
+    -- Full mode: all groups
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
+        'title', sub.title, 'instruction', sub.instruction,
+        'passage', sub.passage, 'documents', sub.documents,
+        'audio_url', sub.audio_url, 'image_url', sub.image_url
+      ) order by sub.min_qn, sub.sort_order
+    ), '[]'::jsonb) into v_groups
+    from (
+      select g.*,
+        coalesce(
+          (select min(q.question_number)
+           from public.toeic_test_questions q
+           where q.group_id = g.id and q.is_active = true),
+          g.sort_order * 1000
+        ) as min_qn
+      from public.toeic_test_groups g
+      where g.test_id = p_test_id and g.is_active = true
+    ) sub;
+  end if;
 
   -- Questions — EXCLUDING correct_answer AND explanation
-  select coalesce(jsonb_agg(
-    jsonb_build_object(
-      'id', q.id,
-      'group_id', q.group_id,
-      'question_number', q.question_number,
-      'part', q.part,
-      'question_text', q.question_text,
-      'options', q.options,
-      'skill_tag', q.skill_tag,
-      'topic', q.topic,
-      'audio_url', q.audio_url,
-      'image_url', q.image_url
-    ) order by q.question_number
-  ), '[]'::jsonb) into v_questions
-  from public.toeic_test_questions q
-  where q.test_id = p_test_id and q.is_active = true;
+  if v_qn_range is not null then
+    -- Part mode: only questions in range
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', q.id, 'group_id', q.group_id,
+        'question_number', q.question_number, 'part', q.part,
+        'question_text', q.question_text, 'options', q.options,
+        'skill_tag', q.skill_tag, 'topic', q.topic,
+        'audio_url', q.audio_url, 'image_url', q.image_url
+      ) order by q.question_number
+    ), '[]'::jsonb) into v_questions
+    from public.toeic_test_questions q
+    where q.test_id = p_test_id and q.is_active = true
+      and q.question_number <@ v_qn_range;
+  else
+    -- Full mode: all questions
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', q.id, 'group_id', q.group_id,
+        'question_number', q.question_number, 'part', q.part,
+        'question_text', q.question_text, 'options', q.options,
+        'skill_tag', q.skill_tag, 'topic', q.topic,
+        'audio_url', q.audio_url, 'image_url', q.image_url
+      ) order by q.question_number
+    ), '[]'::jsonb) into v_questions
+    from public.toeic_test_questions q
+    where q.test_id = p_test_id and q.is_active = true;
+  end if;
 
   return jsonb_build_object(
-    'test', v_test,
-    'groups', v_groups,
-    'questions', v_questions
+    'test', v_test, 'groups', v_groups, 'questions', v_questions
   );
 end;
 $$;
 
 -- ============================================================
--- 10. RPC: save_toeic_answer
---     Validates ownership, in-progress, active access, published
---     test, canonical answer, timer expiry.
+-- 13. RPC: save_toeic_answer (scope-aware)
 -- ============================================================
 create or replace function public.save_toeic_answer(
   p_attempt_id uuid,
@@ -398,49 +478,41 @@ declare
   v_test_published boolean;
 begin
   v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Not authenticated';
-  end if;
-
-  if not public.has_active_access() then
-    raise exception 'Access expired or inactive';
-  end if;
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
 
   -- Verify attempt ownership and status
-  select id, test_id, status, started_at, duration_minutes
+  select id, test_id, status, mode, part_number, started_at, duration_minutes
   into v_attempt
   from public.toeic_test_attempts
-  where id = p_attempt_id
-    and user_id = v_user_id
-    and status = 'in_progress';
+  where id = p_attempt_id and user_id = v_user_id and status = 'in_progress';
 
-  if v_attempt is null then
-    raise exception 'Attempt not found or not in progress';
-  end if;
+  if v_attempt is null then raise exception 'Attempt not found or not in progress'; end if;
 
   -- Verify parent test is still published
   select is_published into v_test_published
-  from public.toeic_tests
-  where id = v_attempt.test_id;
+  from public.toeic_tests where id = v_attempt.test_id;
+  if v_test_published is not true then raise exception 'Test is no longer published'; end if;
 
-  if v_test_published is not true then
-    raise exception 'Test is no longer published';
-  end if;
-
-  -- Check timer expiry
+  -- Check timer expiry (full mode only; part mode has duration_minutes = 9999)
   if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
     raise exception 'Test time has expired';
   end if;
 
   -- Verify question belongs to the attempt's test and is active
-  select id, part into v_question
+  select id, part, question_number into v_question
   from public.toeic_test_questions
-  where id = p_question_id
-    and test_id = v_attempt.test_id
-    and is_active = true;
+  where id = p_question_id and test_id = v_attempt.test_id and is_active = true;
 
   if v_question is null then
     raise exception 'Question not found or does not belong to this test';
+  end if;
+
+  -- SCOPE CHECK: Part mode must only allow questions in the part range
+  if v_attempt.mode = 'part' and v_attempt.part_number is not null then
+    if not (v_question.question_number <@ public._toeic_part_range(v_attempt.part_number)) then
+      raise exception 'Question is outside the scope of this part attempt';
+    end if;
   end if;
 
   -- Validate canonical answer
@@ -460,12 +532,9 @@ begin
   insert into public.toeic_test_attempt_answers (attempt_id, question_id, selected_answer, answered_at)
   values (p_attempt_id, p_question_id, p_selected_answer, now())
   on conflict (attempt_id, question_id)
-  do update set
-    selected_answer = excluded.selected_answer,
-    answered_at = excluded.answered_at,
-    updated_at = now();
+  do update set selected_answer = excluded.selected_answer,
+    answered_at = excluded.answered_at, updated_at = now();
 
-  -- Update attempt activity
   update public.toeic_test_attempts
   set last_activity_at = now(), updated_at = now()
   where id = p_attempt_id;
@@ -475,8 +544,7 @@ end;
 $$;
 
 -- ============================================================
--- 11. RPC: update_toeic_attempt_progress
---     Controlled progress update — ONLY permitted fields.
+-- 14. RPC: update_toeic_attempt_progress
 -- ============================================================
 create or replace function public.update_toeic_attempt_progress(
   p_attempt_id uuid,
@@ -493,50 +561,38 @@ declare
   v_test_published boolean;
 begin
   v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Not authenticated';
-  end if;
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
 
-  if not public.has_active_access() then
-    raise exception 'Access expired or inactive';
-  end if;
-
-  -- Validate question number range
   if p_current_question_number < 1 or p_current_question_number > 200 then
     raise exception 'Question number must be between 1 and 200';
   end if;
 
-  -- Verify attempt ownership and status
-  select id, test_id, started_at, duration_minutes
+  select id, test_id, mode, part_number, started_at, duration_minutes
   into v_attempt
   from public.toeic_test_attempts
-  where id = p_attempt_id
-    and user_id = v_user_id
-    and status = 'in_progress';
+  where id = p_attempt_id and user_id = v_user_id and status = 'in_progress';
 
-  if v_attempt is null then
-    raise exception 'Attempt not found or not in progress';
-  end if;
+  if v_attempt is null then raise exception 'Attempt not found or not in progress'; end if;
 
-  -- Verify parent test remains published
   select is_published into v_test_published
-  from public.toeic_tests
-  where id = v_attempt.test_id;
+  from public.toeic_tests where id = v_attempt.test_id;
+  if v_test_published is not true then raise exception 'Test is no longer published'; end if;
 
-  if v_test_published is not true then
-    raise exception 'Test is no longer published';
-  end if;
-
-  -- Check timer expiry
   if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
     raise exception 'Test time has expired';
   end if;
 
-  -- Update ONLY permitted fields
+  -- Scope check for part mode
+  if v_attempt.mode = 'part' and v_attempt.part_number is not null then
+    if not (p_current_question_number <@ public._toeic_part_range(v_attempt.part_number)) then
+      raise exception 'Question number is outside the scope of this part attempt';
+    end if;
+  end if;
+
   update public.toeic_test_attempts
   set current_question_number = p_current_question_number,
-      last_activity_at = now(),
-      updated_at = now()
+      last_activity_at = now(), updated_at = now()
   where id = p_attempt_id;
 
   return jsonb_build_object('updated', true);
@@ -544,15 +600,15 @@ end;
 $$;
 
 -- ============================================================
--- 12. EXECUTE PRIVILEGE CONTROL
+-- 15. EXECUTE PRIVILEGE CONTROL
 -- ============================================================
-revoke execute on function public.start_or_resume_toeic_test(uuid) from public;
-revoke execute on function public.start_or_resume_toeic_test(uuid) from anon;
-grant execute on function public.start_or_resume_toeic_test(uuid) to authenticated;
+revoke execute on function public.start_or_resume_toeic_test(uuid, text, integer) from public;
+revoke execute on function public.start_or_resume_toeic_test(uuid, text, integer) from anon;
+grant execute on function public.start_or_resume_toeic_test(uuid, text, integer) to authenticated;
 
-revoke execute on function public.get_student_toeic_test_content(uuid) from public;
-revoke execute on function public.get_student_toeic_test_content(uuid) from anon;
-grant execute on function public.get_student_toeic_test_content(uuid) to authenticated;
+revoke execute on function public.get_student_toeic_test_content(uuid, text, integer) from public;
+revoke execute on function public.get_student_toeic_test_content(uuid, text, integer) from anon;
+grant execute on function public.get_student_toeic_test_content(uuid, text, integer) to authenticated;
 
 revoke execute on function public.save_toeic_answer(uuid, uuid, text) from public;
 revoke execute on function public.save_toeic_answer(uuid, uuid, text) from anon;
