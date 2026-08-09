@@ -84,7 +84,6 @@ type ListeningSubTab = 'part1' | 'part2' | 'part3' | 'part4';
 type ReadingSubTab = 'part5' | 'part6' | 'part7';
 
 export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManagerModalProps> = ({
-  isOpen,
   onClose,
   testId,
   testTitle,
@@ -93,8 +92,6 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
   existingGroups = [],
   onUpdated,
 }) => {
-  if (!isOpen) return null;
-
   const safeQuestions = Array.isArray(existingQuestions) ? existingQuestions : [];
   const safeGroups = Array.isArray(existingGroups) ? existingGroups : [];
 
@@ -897,6 +894,7 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
 };
 
 export const SafeScriptBilingualManagerModal: React.FC<ScriptBilingualManagerModalProps> = (props) => {
+  if (!props.isOpen) return null;
   return (
     <ScriptBilingualErrorBoundary onClose={props.onClose}>
       <ScriptBilingualManagerModalContent {...props} />

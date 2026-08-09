@@ -112,8 +112,9 @@ export function getMissingQuestionNumbers(existingNumbers: number[]): number[] {
 /**
  * Calculate Part summary metrics from questions
  */
-export function getPartSummary(questions: Array<{ part: string; question_number: number; is_active?: boolean }>) {
-  const activeQs = questions.filter((q) => q.is_active === true);
+export function getPartSummary(questions?: Array<{ part: string; question_number: number; is_active?: boolean }>) {
+  const safeQuestions = Array.isArray(questions) ? questions : [];
+  const activeQs = safeQuestions.filter((q) => q && q.is_active === true);
 
   const summary: Record<string, { count: number; expected: number; isComplete: boolean; missing: number[] }> = {
     part1: { count: 0, expected: 6, isComplete: false, missing: [] },

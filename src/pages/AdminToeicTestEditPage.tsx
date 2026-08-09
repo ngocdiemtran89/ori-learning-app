@@ -33,7 +33,62 @@ import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
 
-export const AdminToeicTestEditPage: React.FC = () => {
+export class AdminTestEditErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('AdminTestEditErrorBoundary caught exception:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm max-w-2xl mx-auto text-center space-y-4 my-8">
+          <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+            ⚠️
+          </div>
+          <h2 className="text-lg font-extrabold text-slate-900">
+            Trang chỉnh sửa đề thi gặp lỗi giao diện
+          </h2>
+          <p className="text-xs text-slate-600">
+            {this.state.error?.message || 'Không thể hiển thị chi tiết đề thi.'}
+          </p>
+          <p className="text-[11px] text-slate-400">
+            Không có dữ liệu nào bị ảnh hưởng hoặc bị xóa.
+          </p>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 bg-ori-600 hover:bg-ori-700 text-white font-extrabold text-xs rounded-xl transition-colors"
+            >
+              THỬ TẢI LẠI
+            </button>
+            <NavLink
+              to="/admin/content/test-bank"
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl transition-colors"
+            >
+              QUAY LẠI TEST BANK
+            </NavLink>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export const AdminToeicTestEditPageInner: React.FC = () => {
   const { testId } = useParams<{ testId?: string }>();
   const navigate = useNavigate();
   const isEditing = Boolean(testId);
@@ -247,7 +302,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
   // Question Handlers
   const handleOpenNewQuestion = (part: CanonicalToeicPart, groupId?: string) => {
     const range = TOEIC_FULL_TEST_STRUCTURE[part];
-    const existingNums = questions.map((q) => q.question_number);
+    const existingNums = (questions || []).map((q) => q?.question_number);
     let nextNum = range.startNumber;
     while (existingNums.includes(nextNum) && nextNum <= range.endNumber) {
       nextNum++;
@@ -304,9 +359,10 @@ export const AdminToeicTestEditPage: React.FC = () => {
     }
   };
 
-  // Calculate completeness summary
-  const partSummary = getPartSummary(questions);
-  const activeQuestionsCount = new Set(questions.filter((q) => q.is_active === true).map((q) => q.question_number)).size;
+  // Calculate completeness summary safely
+  const safeQuestions = Array.isArray(questions) ? questions : [];
+  const partSummary = getPartSummary(safeQuestions);
+  const activeQuestionsCount = new Set(safeQuestions.filter((q) => q && q.is_active === true).map((q) => q.question_number)).size;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
@@ -1037,5 +1093,13 @@ export const AdminToeicTestEditPage: React.FC = () => {
         </>
       )}
     </div>
+  );
+};
+
+export const AdminToeicTestEditPage: React.FC = () => {
+  return (
+    <AdminTestEditErrorBoundary>
+      <AdminToeicTestEditPageInner />
+    </AdminTestEditErrorBoundary>
   );
 };
