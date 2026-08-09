@@ -1,6 +1,6 @@
 -- ============================================================
 -- Phase P3.5F: TOEIC Bulk Media, Dual Listening Source & Bilingual Foundation
--- NEW MIGRATION — EDITED FOR PRODUCTION HARDENING (FINAL PATCH)
+-- NEW MIGRATION — EDITED FOR FINAL EXAM-INTEGRITY PATCH
 -- DO NOT ALTER PREVIOUSLY APPLIED MIGRATIONS (P3.5, P3.6A)
 -- ============================================================
 
@@ -106,7 +106,7 @@ revoke execute on function public.admin_set_toeic_listening_mode(uuid, text) fro
 grant execute on function public.admin_set_toeic_listening_mode(uuid, text) to authenticated;
 
 -- ============================================================
--- 5. RPC: admin_upload_toeic_listening_track_path (HARDENED: REJECT ALL PUBLISHED TRACK UPLOADS)
+-- 5. RPC: admin_upload_toeic_listening_track_path
 -- ============================================================
 create or replace function public.admin_upload_toeic_listening_track_path(
   p_test_id uuid,
@@ -134,7 +134,6 @@ begin
 
   if v_test is null then raise exception 'Test not found'; end if;
 
-  -- HARDENED: ALWAYS REJECT FOR PUBLISHED TESTS REGARDLESS OF EXISTING TRACK
   if v_test.is_published then
     raise exception 'Cannot upload listening track on a published test. Please unpublish first.';
   end if;
@@ -153,7 +152,7 @@ revoke execute on function public.admin_upload_toeic_listening_track_path(uuid, 
 grant execute on function public.admin_upload_toeic_listening_track_path(uuid, text) to authenticated;
 
 -- ============================================================
--- 6. RPC: admin_upsert_toeic_listening_cues (PUBLISHED BLOCK + DUPLICATE TARGET CHECK)
+-- 6. RPC: admin_upsert_toeic_listening_cues (REQUIRES ACTIVE TARGETS)
 -- ============================================================
 create or replace function public.admin_upsert_toeic_listening_cues(
   p_test_id uuid,
@@ -189,7 +188,6 @@ begin
 
   if v_test is null then raise exception 'Test not found'; end if;
 
-  -- HARDENED: REJECT CUE MUTATION ON PUBLISHED TESTS
   if v_test.is_published then
     raise exception 'Cannot modify listening cues on a published test. Please unpublish first.';
   end if;
@@ -198,7 +196,7 @@ begin
     raise exception 'Payload must be a JSON array of cue objects';
   end if;
 
-  -- 1. SERVER-SIDE DUPLICATE TARGET CHECK (REJECT WHOLE PAYLOAD IF DUPLICATED)
+  -- 1. SERVER-SIDE DUPLICATE TARGET CHECK
   select count(distinct q_id), count(q_id)
   into v_uniq_q, v_tot_q
   from (
@@ -240,12 +238,12 @@ begin
     end if;
 
     if v_q_id is not null then
-      select id, test_id, part into v_q
+      select id, test_id, part, is_active into v_q
       from public.toeic_test_questions
-      where id = v_q_id;
+      where id = v_q_id and is_active = true;
 
       if v_q is null or v_q.test_id != p_test_id then
-        raise exception 'Target question does not belong to this test';
+        raise exception 'Target question does not exist, is inactive, or does not belong to this test';
       end if;
 
       if v_q.part not in ('part1', 'part2') then
@@ -259,12 +257,12 @@ begin
         end_ms = excluded.end_ms,
         updated_at = now();
     else
-      select id, test_id, part into v_g
+      select id, test_id, part, is_active into v_g
       from public.toeic_test_groups
-      where id = v_g_id;
+      where id = v_g_id and is_active = true;
 
       if v_g is null or v_g.test_id != p_test_id then
-        raise exception 'Target group does not belong to this test';
+        raise exception 'Target group does not exist, is inactive, or does not belong to this test';
       end if;
 
       if v_g.part not in ('part3', 'part4') then
@@ -290,7 +288,7 @@ revoke execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb)
 grant execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) to authenticated;
 
 -- ============================================================
--- 7. RPC: admin_import_toeic_bilingual_content (STRICT STRUCTURE & UNAMBIGUOUS RANGE RESOLUTION)
+-- 7. RPC: admin_import_toeic_bilingual_content (REQUIRES ACTIVE DIRECT TARGETS & TYPE MATCH)
 -- ============================================================
 create or replace function public.admin_import_toeic_bilingual_content(
   p_test_id uuid,
@@ -355,11 +353,11 @@ begin
         raise exception 'Bilingual question target not found or question_number missing';
       end if;
 
-      select id, test_id, part, options into v_q
-      from public.toeic_test_questions where id = v_q_id;
+      select id, test_id, part, options, is_active into v_q
+      from public.toeic_test_questions where id = v_q_id and is_active = true;
 
       if v_q is null or v_q.test_id != p_test_id then
-        raise exception 'Target question % does not belong to this test', v_q_id;
+        raise exception 'Target question % not found, inactive, or does not belong to this test', v_q_id;
       end if;
 
       if v_item->'options_vi' is not null then
@@ -432,11 +430,11 @@ begin
         raise exception 'Bilingual group target not found for range';
       end if;
 
-      select id, test_id, part, documents into v_g
-      from public.toeic_test_groups where id = v_g_id;
+      select id, test_id, part, documents, is_active into v_g
+      from public.toeic_test_groups where id = v_g_id and is_active = true;
 
       if v_g is null or v_g.test_id != p_test_id then
-        raise exception 'Target group % does not belong to this test', v_g_id;
+        raise exception 'Target group % not found, inactive, or does not belong to this test', v_g_id;
       end if;
 
       if v_item->>'transcript_vi' is not null and v_g.part not in ('part3', 'part4') then
@@ -477,10 +475,11 @@ begin
             raise exception 'source document element at index % is invalid', v_i;
           end if;
 
-          if v_src_doc->>'type' is not null and v_vi_doc->>'type' is not null then
-            if v_vi_doc->>'type' != v_src_doc->>'type' then
-              raise exception 'documents_vi element at index % type mismatch (% vs %)',
-                v_i, v_vi_doc->>'type', v_src_doc->>'type';
+          -- IF SOURCE HAS TYPE, TRANSLATED DOCUMENT MUST ALSO HAVE TYPE AND MATCH SOURCE TYPE
+          if v_src_doc->>'type' is not null then
+            if v_vi_doc->>'type' is null or v_vi_doc->>'type' != v_src_doc->>'type' then
+              raise exception 'documents_vi element at index % missing or mismatched structural type (% vs required %)',
+                v_i, coalesce(v_vi_doc->>'type', 'NULL'), v_src_doc->>'type';
             end if;
           end if;
         end loop;
@@ -548,7 +547,7 @@ end;
 $$;
 
 -- ============================================================
--- 9. UPDATE: get_student_toeic_test_content (MODE-DEPENDENT CUE METADATA & AUDIO PATH)
+-- 9. UPDATE: get_student_toeic_test_content (SANITY & INTEGRITY HARDENED ACTIVE RUNNER)
 -- ============================================================
 create or replace function public.get_student_toeic_test_content(
   p_test_id uuid,
@@ -603,7 +602,7 @@ begin
     'description', v_test.description, 'test_type', v_test.test_type,
     'listening_audio_mode', v_test.listening_audio_mode,
     'listening_audio_url', case
-      when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+      when v_test.listening_audio_mode = 'single_track' and (p_mode = 'full' or (p_mode = 'part' and p_part_number <= 4)) then v_test.listening_audio_url
       else null
     end
   );
@@ -621,21 +620,33 @@ begin
         'title', sub.title, 'instruction', sub.instruction,
         'passage', sub.passage, 'documents', sub.documents,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
         'cue_start_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
           else null
         end,
         'cue_end_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
           else null
         end,
-        'instruction_vi', case when v_include_translation then sub.instruction_vi else null end,
-        'passage_vi', case when v_include_translation then sub.passage_vi else null end,
-        'documents_vi', case when v_include_translation then sub.documents_vi else null end
+        'instruction_vi', case
+          when sub.part in ('part1', 'part2', 'part3', 'part4') then null
+          when v_include_translation then sub.instruction_vi
+          else null
+        end,
+        'passage_vi', case
+          when sub.part in ('part1', 'part2', 'part3', 'part4') then null
+          when v_include_translation then sub.passage_vi
+          else null
+        end,
+        'documents_vi', case
+          when sub.part in ('part1', 'part2', 'part3', 'part4') then null
+          when v_include_translation then sub.documents_vi
+          else null
+        end
       ) order by sub.min_qn, sub.sort_order
     ), '[]'::jsonb) into v_groups
     from (
@@ -659,16 +670,16 @@ begin
         'title', sub.title, 'instruction', sub.instruction,
         'passage', sub.passage, 'documents', sub.documents,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
         'cue_start_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
           else null
         end,
         'cue_end_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
           else null
         end
       ) order by sub.min_qn, sub.sort_order
@@ -695,23 +706,39 @@ begin
       jsonb_build_object(
         'id', sub.id, 'group_id', sub.group_id,
         'question_number', sub.question_number, 'part', sub.part,
-        'question_text', sub.question_text, 'options', sub.options,
+        'question_text', case
+          when sub.part in ('part1', 'part2') then null
+          else sub.question_text
+        end,
+        'options', case
+          when sub.part = 'part1' then jsonb_build_array('(A)', '(B)', '(C)', '(D)')
+          when sub.part = 'part2' then jsonb_build_array('(A)', '(B)', '(C)')
+          else sub.options
+        end,
         'skill_tag', sub.skill_tag, 'topic', sub.topic,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
         'cue_start_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
           else null
         end,
         'cue_end_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
           else null
         end,
-        'translation_vi', case when v_include_translation then sub.translation_vi else null end,
-        'options_vi', case when v_include_translation then sub.options_vi else null end
+        'translation_vi', case
+          when sub.part in ('part1', 'part2', 'part3', 'part4') then null
+          when v_include_translation then sub.translation_vi
+          else null
+        end,
+        'options_vi', case
+          when sub.part in ('part1', 'part2', 'part3', 'part4') then null
+          when v_include_translation then sub.options_vi
+          else null
+        end
       ) order by sub.question_number
     ), '[]'::jsonb) into v_questions
     from (
@@ -728,19 +755,27 @@ begin
       jsonb_build_object(
         'id', sub.id, 'group_id', sub.group_id,
         'question_number', sub.question_number, 'part', sub.part,
-        'question_text', sub.question_text, 'options', sub.options,
+        'question_text', case
+          when sub.part in ('part1', 'part2') then null
+          else sub.question_text
+        end,
+        'options', case
+          when sub.part = 'part1' then jsonb_build_array('(A)', '(B)', '(C)', '(D)')
+          when sub.part = 'part2' then jsonb_build_array('(A)', '(B)', '(C)')
+          else sub.options
+        end,
         'skill_tag', sub.skill_tag, 'topic', sub.topic,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
         'cue_start_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
           else null
         end,
         'cue_end_ms', case
-          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          when sub.part in ('part1', 'part2', 'part3', 'part4') and v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
           else null
         end
       ) order by sub.question_number

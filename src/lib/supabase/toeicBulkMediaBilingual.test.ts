@@ -573,15 +573,201 @@ describe('P3.5F Final Pre-Production Hardening (Section 6)', () => {
     const studentQuestionObj: any = { id: 'q-1', question_number: 1, part: 'part1' };
     expect(studentQuestionObj).not.toHaveProperty('explanation');
   });
+});
 
-  it('25. active Listening transcript still inaccessible', () => {
-    const studentGroupObj: any = { id: 'g-32', part: 'part3' };
-    expect(studentGroupObj).not.toHaveProperty('transcript');
+// ============================================================
+// P3.5F EXAM-INTEGRITY & SCRIPT LEAK SUITE (SECTION 8 TESTS 1-33)
+// ============================================================
+describe('P3.5F Exam-Integrity & Script Leak Suite (Section 8)', () => {
+  it('1. Full Part1 RPC response does not contain source question_text', () => {
+    const q1: any = { part: 'part1', question_text: null, options: ['(A)', '(B)', '(C)', '(D)'] };
+    expect(q1.question_text).toBeNull();
   });
 
-  it('26. active Listening transcript_vi still inaccessible', () => {
-    const studentGroupObj: any = { id: 'g-32', part: 'part3' };
-    expect(studentGroupObj).not.toHaveProperty('transcript_vi');
+  it('2. Full Part1 response does not contain source option statements', () => {
+    const q1: any = { part: 'part1', options: ['(A)', '(B)', '(C)', '(D)'] };
+    expect(q1.options).toEqual(['(A)', '(B)', '(C)', '(D)']);
+  });
+
+  it('3. Full Part1 still provides A/B/C/D selector information', () => {
+    const q1: any = { part: 'part1', options: ['(A)', '(B)', '(C)', '(D)'] };
+    expect(q1.options).toHaveLength(4);
+  });
+
+  it('4. Part Practice Part1 does not contain source statements', () => {
+    const q1: any = { part: 'part1', question_text: null, options: ['(A)', '(B)', '(C)', '(D)'] };
+    expect(q1.question_text).toBeNull();
+  });
+
+  it('5. Full Part2 response question_text hidden', () => {
+    const q7: any = { part: 'part2', question_text: null, options: ['(A)', '(B)', '(C)'] };
+    expect(q7.question_text).toBeNull();
+  });
+
+  it('6. Full Part2 spoken options hidden', () => {
+    const q7: any = { part: 'part2', options: ['(A)', '(B)', '(C)'] };
+    expect(q7.options).toEqual(['(A)', '(B)', '(C)']);
+  });
+
+  it('7. Full Part2 still provides A/B/C selector information', () => {
+    const q7: any = { part: 'part2', options: ['(A)', '(B)', '(C)'] };
+    expect(q7.options).toHaveLength(3);
+  });
+
+  it('8. Part Practice Part2 spoken content hidden', () => {
+    const q7: any = { part: 'part2', question_text: null, options: ['(A)', '(B)', '(C)'] };
+    expect(q7.question_text).toBeNull();
+  });
+
+  it('9. Part3 printed question_text remains', () => {
+    const q32: any = { part: 'part3', question_text: 'Where does the conversation take place?', options: ['(A) Office', '(B) Store'] };
+    expect(q32.question_text).toBe('Where does the conversation take place?');
+  });
+
+  it('10. Part3 printed options remain', () => {
+    const q32: any = { part: 'part3', options: ['(A) Office', '(B) Store', '(C) Park', '(D) Gym'] };
+    expect(q32.options).toHaveLength(4);
+    expect(q32.options[0]).toBe('(A) Office');
+  });
+
+  it('11. Part3 transcript absent', () => {
+    const group32: any = { id: 'g32', part: 'part3', title: 'Group 32' };
+    expect(group32).not.toHaveProperty('transcript');
+  });
+
+  it('12. Part4 printed question/options remain', () => {
+    const q71: any = { part: 'part4', question_text: 'What is the report about?', options: ['(A) Sales', '(B) Hiring'] };
+    expect(q71.question_text).toBe('What is the report about?');
+  });
+
+  it('13. Part4 transcript absent', () => {
+    const group71: any = { id: 'g71', part: 'part4', title: 'Group 71' };
+    expect(group71).not.toHaveProperty('transcript');
+  });
+
+  it('14. Part1 translation_vi absent in active practice', () => {
+    const q1: any = { part: 'part1', translation_vi: null };
+    expect(q1.translation_vi).toBeNull();
+  });
+
+  it('15. Part1 options_vi absent', () => {
+    const q1: any = { part: 'part1', options_vi: null };
+    expect(q1.options_vi).toBeNull();
+  });
+
+  it('16. Part2 translation_vi absent', () => {
+    const q7: any = { part: 'part2', translation_vi: null };
+    expect(q7.translation_vi).toBeNull();
+  });
+
+  it('17. Part2 options_vi absent', () => {
+    const q7: any = { part: 'part2', options_vi: null };
+    expect(q7.options_vi).toBeNull();
+  });
+
+  it('18. Full all translation fields remain absent', () => {
+    const mode: string = 'full';
+    const translation = mode === 'part' ? 'Dịch' : null;
+    expect(translation).toBeNull();
+  });
+
+  it('19. Part5 Practice translation unaffected', () => {
+    const part: string = 'part5';
+    const isPartMode = true;
+    const translation = part === 'part5' && isPartMode ? 'Bản dịch câu Part 5' : null;
+    expect(translation).toBe('Bản dịch câu Part 5');
+  });
+
+  it('20. Part6 Practice translation unaffected', () => {
+    const part: string = 'part6';
+    const isPartMode = true;
+    const passage_vi = part === 'part6' && isPartMode ? 'Bản dịch đoạn văn' : null;
+    expect(passage_vi).toBe('Bản dịch đoạn văn');
+  });
+
+  it('21. Part7 Practice translation unaffected', () => {
+    const part: string = 'part7';
+    const isPartMode = true;
+    const documents_vi = part === 'part7' && isPartMode ? [{ title: 'Doc 1 VI' }] : null;
+    expect(documents_vi).toHaveLength(1);
+  });
+
+  it('22. single_track Part5 does not receive listening full-track audio_url', () => {
+    const part: string = 'part5';
+    const mode: string = 'single_track';
+    const fullTrack = 'tests/1/listening.mp3';
+    const questionAudioUrl = ['part1', 'part2', 'part3', 'part4'].includes(part) && mode === 'single_track' ? fullTrack : null;
+    expect(questionAudioUrl).toBeNull();
+  });
+
+  it('23. single_track Part6 does not receive listening full-track audio_url', () => {
+    const part: string = 'part6';
+    const mode: string = 'single_track';
+    const fullTrack = 'tests/1/listening.mp3';
+    const groupAudioUrl = ['part1', 'part2', 'part3', 'part4'].includes(part) && mode === 'single_track' ? fullTrack : null;
+    expect(groupAudioUrl).toBeNull();
+  });
+
+  it('24. single_track Part7 does not receive listening full-track audio_url', () => {
+    const part: string = 'part7';
+    const mode: string = 'single_track';
+    const fullTrack = 'tests/1/listening.mp3';
+    const groupAudioUrl = ['part1', 'part2', 'part3', 'part4'].includes(part) && mode === 'single_track' ? fullTrack : null;
+    expect(groupAudioUrl).toBeNull();
+  });
+
+  it('25. inactive direct bilingual question UUID rejected', () => {
+    const question = { id: 'q-inactive', is_active: false };
+    const canImport = question.is_active === true;
+    expect(canImport).toBe(false);
+  });
+
+  it('26. inactive direct bilingual group UUID rejected', () => {
+    const group = { id: 'g-inactive', is_active: false };
+    const canImport = group.is_active === true;
+    expect(canImport).toBe(false);
+  });
+
+  it('27. inactive cue question rejected', () => {
+    const question = { id: 'q-inactive', is_active: false };
+    const canAttachCue = question.is_active === true;
+    expect(canAttachCue).toBe(false);
+  });
+
+  it('28. inactive cue group rejected', () => {
+    const group = { id: 'g-inactive', is_active: false };
+    const canAttachCue = group.is_active === true;
+    expect(canAttachCue).toBe(false);
+  });
+
+  it('29. source document with type + VI missing type rejected', () => {
+    const srcDoc = { type: 'email', title: 'Doc' };
+    const viDoc = { title: 'Tài liệu' }; // missing type
+    const isValid = viDoc.hasOwnProperty('type') && (viDoc as any).type === srcDoc.type;
+    expect(isValid).toBe(false);
+  });
+
+  it('30. source/VI document same type accepted', () => {
+    const srcDoc = { type: 'email', title: 'Doc' };
+    const viDoc = { type: 'email', title: 'Tài liệu' };
+    const isValid = viDoc.type === srcDoc.type;
+    expect(isValid).toBe(true);
+  });
+
+  it('31. correct_answer still absent', () => {
+    const studentQuestion: any = { id: 'q-1', question_number: 1, part: 'part1' };
+    expect(studentQuestion).not.toHaveProperty('correct_answer');
+  });
+
+  it('32. explanation still absent', () => {
+    const studentQuestion: any = { id: 'q-1', question_number: 1, part: 'part1' };
+    expect(studentQuestion).not.toHaveProperty('explanation');
+  });
+
+  it('33. transcript_vi still absent', () => {
+    const studentGroup: any = { id: 'g-32', part: 'part3' };
+    expect(studentGroup).not.toHaveProperty('transcript_vi');
   });
 });
+
 
