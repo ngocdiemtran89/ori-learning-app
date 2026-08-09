@@ -124,6 +124,53 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
 
   const isListeningPart = currentQuestion ? ['part1', 'part2', 'part3', 'part4'].includes(currentQuestion.part) : false;
 
+  const computedScript = useMemo(() => {
+    if (!currentQuestion) return null;
+    if (currentQuestion.transcript) return currentQuestion.transcript;
+    if (currentGroup?.transcript) return currentGroup.transcript;
+
+    if (['part1', 'part2'].includes(currentQuestion.part)) {
+      const hasRealOptionsText = currentQuestion.options?.some(
+        opt => opt.text && !/^\([A-D]\)$/.test(opt.text.trim())
+      );
+
+      if (hasRealOptionsText || currentQuestion.question_text) {
+        const lines: string[] = [];
+        if (currentQuestion.question_text && currentQuestion.part === 'part2') {
+          lines.push(`Prompt: ${currentQuestion.question_text}`);
+        }
+        if (currentQuestion.options) {
+          currentQuestion.options.forEach(opt => {
+            if (opt.text) lines.push(`(${opt.label}) ${opt.text.replace(/^\([A-D]\)\s*/, '')}`);
+          });
+        }
+        return lines.join('\n');
+      }
+    }
+    return null;
+  }, [currentQuestion, currentGroup]);
+
+  const computedScriptVi = useMemo(() => {
+    if (!currentQuestion) return null;
+    if (currentQuestion.transcript_vi) return currentQuestion.transcript_vi;
+    if (currentGroup?.transcript_vi) return currentGroup.transcript_vi;
+
+    if (['part1', 'part2'].includes(currentQuestion.part)) {
+      const lines: string[] = [];
+      if (currentQuestion.translation_vi) {
+        lines.push(currentQuestion.translation_vi);
+      }
+      if (currentQuestion.options_vi && Array.isArray(currentQuestion.options_vi)) {
+        currentQuestion.options_vi.forEach((optVi, idx) => {
+          const label = String.fromCharCode(65 + idx);
+          lines.push(`(${label}) ${optVi}`);
+        });
+      }
+      if (lines.length > 0) return lines.join('\n');
+    }
+    return null;
+  }, [currentQuestion, currentGroup]);
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* HEADER */}
@@ -388,15 +435,15 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                       LISTENING SCRIPT (BẢN DỊCH & THOẠI)
                     </div>
 
-                    {currentQuestion.transcript || currentGroup?.transcript ? (
+                    {computedScript ? (
                       <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs leading-relaxed space-y-2">
                         <div className="font-bold text-slate-800 whitespace-pre-line">
-                          {currentGroup?.transcript || currentQuestion.transcript}
+                          {computedScript}
                         </div>
 
-                        {(currentGroup?.transcript_vi || currentQuestion.transcript_vi) && (
+                        {computedScriptVi && (
                           <div className="pt-2 border-t border-slate-200 text-slate-600 italic whitespace-pre-line">
-                            {currentGroup?.transcript_vi || currentQuestion.transcript_vi}
+                            {computedScriptVi}
                           </div>
                         )}
                       </div>

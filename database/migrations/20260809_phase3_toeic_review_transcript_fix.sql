@@ -1,7 +1,7 @@
 -- ============================================================
 -- Phase 3.6C Production Hotfix: Fix get_student_toeic_attempt_review Column References
--- Description: Fixes RPC error "column q.transcript does not exist" by selecting only existing table columns
--- Target Tables: toeic_test_questions (no q.transcript column), toeic_test_groups (g.transcript exists)
+-- Description: Corrects RPC to return real bilingual columns (translation_vi, options_vi, instruction_vi, passage_vi, transcript_vi, documents_vi)
+-- Target Tables: toeic_test_questions, toeic_test_groups, toeic_listening_cues
 -- Security: SECURITY DEFINER, SET search_path = '', auth.uid() owner check, status = 'submitted' check
 -- ============================================================
 
@@ -49,7 +49,7 @@ begin
     v_part_prefix := 'part' || v_attempt.part_number::text;
   end if;
 
-  -- Build questions review payload using ONLY existing columns on toeic_test_questions
+  -- Build questions review payload using REAL Production columns + cues table join
   select coalesce(jsonb_agg(
     jsonb_build_object(
       'id', q.id,
@@ -58,49 +58,51 @@ begin
       'group_id', q.group_id,
       'question_text', q.question_text,
       'options', q.options,
-      'options_vi', null,
+      'options_vi', q.options_vi,
       'student_answer', a.selected_answer,
       'correct_answer', q.correct_answer,
       'is_correct', (a.selected_answer is not null and a.selected_answer = q.correct_answer),
       'explanation', q.explanation,
-      'translation_vi', null,
+      'translation_vi', q.translation_vi,
       'transcript', null,
       'transcript_vi', null,
       'image_url', q.image_url,
       'audio_url', q.audio_url,
-      'cue_start_ms', null,
-      'cue_end_ms', null
+      'cue_start_ms', c.start_ms,
+      'cue_end_ms', c.end_ms
     ) order by q.question_number
   ), '[]'::jsonb)
   into v_questions
   from public.toeic_test_questions q
   left join public.toeic_test_attempt_answers a on a.question_id = q.id and a.attempt_id = v_attempt.id
+  left join public.toeic_listening_cues c on c.question_id = q.id
   where q.test_id = v_attempt.test_id
     and q.is_active = true
     and (v_attempt.mode = 'full' or q.part = v_part_prefix);
 
-  -- Build groups review payload using ONLY existing columns on toeic_test_groups (g.transcript exists)
+  -- Build groups review payload using REAL Production columns + cues table join
   select coalesce(jsonb_agg(
     jsonb_build_object(
       'id', g.id,
       'part', g.part,
       'title', g.title,
       'instruction', g.instruction,
-      'instruction_vi', null,
+      'instruction_vi', g.instruction_vi,
       'passage', g.passage,
-      'passage_vi', null,
+      'passage_vi', g.passage_vi,
       'transcript', g.transcript,
-      'transcript_vi', null,
+      'transcript_vi', g.transcript_vi,
       'audio_url', g.audio_url,
       'image_url', g.image_url,
       'documents', g.documents,
-      'documents_vi', null,
-      'cue_start_ms', null,
-      'cue_end_ms', null
+      'documents_vi', g.documents_vi,
+      'cue_start_ms', c.start_ms,
+      'cue_end_ms', c.end_ms
     ) order by g.sort_order, g.created_at
   ), '[]'::jsonb)
   into v_groups
   from public.toeic_test_groups g
+  left join public.toeic_listening_cues c on c.group_id = g.id
   where g.test_id = v_attempt.test_id
     and (v_attempt.mode = 'full' or g.part = v_part_prefix);
 
