@@ -158,6 +158,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
   const showPassage = currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0) || currentGroup.instruction);
   const showMedia = Boolean(mediaContext.audioUrl || mediaContext.imageUrl || isListeningPart);
   const hasAudio = Boolean(mediaContext.audioUrl);
+  const hasImage = Boolean(mediaContext.imageUrl);
 
   // Part title for header
   const headerTitle = useMemo(() => {
@@ -270,6 +271,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 disabled={timeExpired && !isPartMode}
                 isPartMode={isPartMode}
                 hasAudio={hasAudio}
+                hasImage={hasImage}
                 onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
                   await saveToeicWord(attempt.id, currentQuestion.id, word, context);
                 } : undefined}

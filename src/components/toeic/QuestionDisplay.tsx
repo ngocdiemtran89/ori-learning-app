@@ -13,6 +13,8 @@ interface QuestionDisplayProps {
   onSaveWord?: (word: string, context: string) => Promise<void>;
   /** Indicates whether question audio is available for Listening questions */
   hasAudio?: boolean;
+  /** Indicates whether question image is available for Part 1 */
+  hasImage?: boolean;
 }
 
 export const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
@@ -23,6 +25,7 @@ export const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
   isPartMode = false,
   onSaveWord,
   hasAudio = true,
+  hasImage = true,
 }) => {
   const isPart1 = question.part === 'part1';
   const isPart2 = question.part === 'part2';
@@ -48,8 +51,13 @@ export const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
     setTimeout(() => { setWordSaved(false); setSaveWordOpen(false); setSaveWordInput(''); }, 1500);
   }, [saveWordInput, onSaveWord, question.question_text]);
 
-  const isAudioMissingForListening = (isPart1 || isPart2) && !hasAudio;
-  const isInteractionDisabled = disabled || isAudioMissingForListening;
+  // Media missing rules for answer enablement
+  const isMediaMissing =
+    (isPart1 && (!hasAudio || !hasImage)) ||
+    (isPart2 && !hasAudio) ||
+    ((isPart3 || isPart4) && !hasAudio);
+
+  const isInteractionDisabled = disabled || isMediaMissing;
 
   return (
     <div className="space-y-4">

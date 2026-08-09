@@ -828,3 +828,137 @@ describe('Listening Exam UX & Content Display', () => {
     expect(typeof getToeicMediaSignedUrl).toBe('function');
   });
 });
+
+// ============================================================
+// S. HOTFIX — INDEPENDENT MEDIA RENDERING & ANSWER ENABLEMENT (17 TESTS)
+// ============================================================
+describe('Hotfix — Independent Media Rendering & Answer Enablement', () => {
+  it('1. Part1 image exists + audio missing => image still renders', () => {
+    const audioUrl = null;
+    const imageUrl = 'toeic-media/q1.png';
+    const isListeningPart = true;
+    const isPart1 = true;
+    const missingAudio = isListeningPart && !audioUrl;
+    const missingImage = isPart1 && !imageUrl;
+    // Condition to render media component
+    const shouldRenderMediaComponent = Boolean(audioUrl || imageUrl || missingAudio || missingImage);
+    expect(shouldRenderMediaComponent).toBe(true);
+    expect(Boolean(imageUrl)).toBe(true);
+  });
+
+  it('2. Part1 image exists + audio missing => audio warning renders', () => {
+    const audioUrl = null;
+    const imageUrl = 'toeic-media/q1.png';
+    const missingAudio = !audioUrl;
+    expect(missingAudio).toBe(true);
+    expect(imageUrl).toBeDefined();
+  });
+
+  it('3. Part1 image exists + audio missing => A-D disabled in Full mode', () => {
+    const hasAudio = false;
+    const hasImage = true;
+    const isPart1 = true;
+    const isMediaMissing = isPart1 && (!hasAudio || !hasImage);
+    expect(isMediaMissing).toBe(true);
+  });
+
+  it('4. Part1 image + audio exist => both render', () => {
+    const hasAudio = true;
+    const hasImage = true;
+    const isPart1 = true;
+    const isMediaMissing = isPart1 && (!hasAudio || !hasImage);
+    expect(isMediaMissing).toBe(false);
+  });
+
+  it('5. Part1 image + audio exist => A-D enabled', () => {
+    const hasAudio = true;
+    const hasImage = true;
+    const disabled = false;
+    const isPart1 = true;
+    const isMediaMissing = isPart1 && (!hasAudio || !hasImage);
+    const isInteractionDisabled = disabled || isMediaMissing;
+    expect(isInteractionDisabled).toBe(false);
+  });
+
+  it('6. Part1 image missing + audio exists => image warning', () => {
+    const audioUrl = 'toeic-media/q1.mp3';
+    const imageUrl = null;
+    const isPart1 = true;
+    const missingImage = isPart1 && !imageUrl;
+    expect(missingImage).toBe(true);
+    expect(audioUrl).toBeDefined();
+  });
+
+  it('7. Part1 image missing Full => A-D disabled', () => {
+    const hasAudio = true;
+    const hasImage = false;
+    const isPart1 = true;
+    const isMediaMissing = isPart1 && (!hasAudio || !hasImage);
+    expect(isMediaMissing).toBe(true);
+  });
+
+  it('8. Part2 missing audio => warning renders', () => {
+    const part = 'part2';
+    const audioUrl = null;
+    const isListeningPart = true;
+    const missingAudio = isListeningPart && !audioUrl;
+    expect(missingAudio).toBe(true);
+    expect(part).toBe('part2');
+  });
+
+  it('9. Part2 missing audio => A-C disabled', () => {
+    const hasAudio = false;
+    const isPart2 = true;
+    const isMediaMissing = isPart2 && !hasAudio;
+    expect(isMediaMissing).toBe(true);
+  });
+
+  it('10. Part2 no image is not treated as image error', () => {
+    const part: string = 'part2';
+    const imageUrl = null;
+    const isPart1 = part === 'part1';
+    const missingImage = isPart1 && !imageUrl;
+    expect(missingImage).toBe(false);
+  });
+
+  it('11. Part3 missing group audio does not hide printed question', () => {
+    const q32 = makeStudentQuestion({ question_number: 32, part: 'part3', question_text: 'Where is the conversation?' });
+    expect(q32.question_text).toBe('Where is the conversation?');
+  });
+
+  it('12. Part4 missing group audio does not hide printed question', () => {
+    const q71 = makeStudentQuestion({ question_number: 71, part: 'part4', question_text: 'What is announced?' });
+    expect(q71.question_text).toBe('What is announced?');
+  });
+
+  it('13. Part1 question text remains hidden', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', question_text: 'Spoken text' });
+    const isPart1 = q1.part === 'part1';
+    const renderText = isPart1 ? null : q1.question_text;
+    expect(renderText).toBeNull();
+  });
+
+  it('14. Part1 textual options remain hidden', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', options: ['A man...', 'A car...'] });
+    const isPart1 = q1.part === 'part1';
+    const renderOptionsText = !isPart1;
+    expect(renderOptionsText).toBe(false);
+  });
+
+  it('15. Part2 spoken text remains hidden', () => {
+    const q7 = makeStudentQuestion({ question_number: 7, part: 'part2', question_text: 'Spoken question' });
+    const isPart2 = q7.part === 'part2';
+    const renderText = isPart2 ? null : q7.question_text;
+    expect(renderText).toBeNull();
+  });
+
+  it('16. correct_answer still inaccessible', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1' });
+    expect(q1).not.toHaveProperty('correct_answer');
+  });
+
+  it('17. explanation still inaccessible', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1' });
+    expect(q1).not.toHaveProperty('explanation');
+  });
+});

@@ -22,9 +22,24 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const isListeningPart = part ? ['part1', 'part2', 'part3', 'part4'].includes(part) : false;
+  const isPart1 = part === 'part1';
+
+  const missingAudio = isListeningPart && isAudioRequired && !audioUrl;
+  const missingImage = isPart1 && !imageUrl;
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+
+    // Only set loading if there is actually a URL to sign
+    if (audioUrl || imageUrl) {
+      setLoading(true);
+    } else {
+      setSignedAudio(null);
+      setSignedImage(null);
+      setLoading(false);
+      return;
+    }
 
     const resolve = async () => {
       const [audio, image] = await Promise.all([
@@ -71,18 +86,10 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
     }
   };
 
-  const isListeningPart = part ? ['part1', 'part2', 'part3', 'part4'].includes(part) : false;
-
-  if (isListeningPart && !audioUrl && isAudioRequired) {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2 max-w-xl mx-auto">
-        <AlertCircle className="w-4 h-4 flex-shrink-0" />
-        Audio của câu này chưa được cấu hình.
-      </div>
-    );
+  // Only return null if there are no media URLs AND no media errors to display
+  if (!audioUrl && !imageUrl && !missingAudio && !missingImage) {
+    return null;
   }
-
-  if (!audioUrl && !imageUrl) return null;
 
   if (loading) {
     return (
@@ -95,7 +102,8 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
 
   return (
     <div className="space-y-4">
-      {signedImage && (
+      {/* IMAGE SECTION */}
+      {signedImage ? (
         <div className="flex justify-center">
           <img
             src={signedImage}
@@ -103,9 +111,15 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
             className="max-h-72 w-auto object-contain rounded-2xl border border-slate-200 shadow-md"
           />
         </div>
-      )}
+      ) : missingImage ? (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2 max-w-xl mx-auto">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          Hình ảnh của câu này chưa được cấu hình.
+        </div>
+      ) : null}
 
-      {signedAudio && (
+      {/* AUDIO SECTION */}
+      {signedAudio ? (
         <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 max-w-xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-ori-600/30 flex items-center justify-center text-ori-400">
@@ -157,7 +171,12 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
             </button>
           </div>
         </div>
-      )}
+      ) : missingAudio ? (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2 max-w-xl mx-auto">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          Audio của câu này chưa được cấu hình.
+        </div>
+      ) : null}
     </div>
   );
 };
