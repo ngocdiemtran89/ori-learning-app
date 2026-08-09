@@ -8,6 +8,7 @@ import {
   Eye,
   Edit,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { LoadingState } from '../components/ui/LoadingState';
 import {
@@ -19,6 +20,7 @@ import {
   ToeicTestRow,
 } from '../lib/supabase/adminTestBank';
 import { ToeicTestPreviewModal } from '../components/admin/ToeicTestPreviewModal';
+import { ToeicPackageImporterModal } from '../components/admin/ToeicPackageImporterModal';
 
 export const AdminToeicTestBankPage: React.FC = () => {
   const navigate = useNavigate();
@@ -41,6 +43,9 @@ export const AdminToeicTestBankPage: React.FC = () => {
   const [previewTest, setPreviewTest] = useState<ToeicTestRow | null>(null);
   const [previewGroups, setPreviewGroups] = useState<any[]>([]);
   const [previewQuestions, setPreviewQuestions] = useState<any[]>([]);
+
+  // Package Importer Modal
+  const [showPackageImporter, setShowPackageImporter] = useState<boolean>(false);
 
   useEffect(() => {
     loadTests();
@@ -127,6 +132,13 @@ export const AdminToeicTestBankPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> Quay lại CMS Hub
         </NavLink>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowPackageImporter(true)}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all"
+          >
+            <Sparkles className="w-4 h-4" /> IMPORT ĐỀ TOEIC HOÀN CHỈNH
+          </button>
           <NavLink
             to="/admin/content/test-bank/classify"
             className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-extrabold text-xs rounded-2xl shadow-md flex items-center gap-1.5 transition-all"
@@ -447,6 +459,16 @@ export const AdminToeicTestBankPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TOEIC PACKAGE IMPORTER MODAL */}
+      <ToeicPackageImporterModal
+        isOpen={showPackageImporter}
+        onClose={() => setShowPackageImporter(false)}
+        onImportSuccess={() => {
+          setShowPackageImporter(false);
+          loadTests();
+        }}
+      />
     </div>
   );
 };

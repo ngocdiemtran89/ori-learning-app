@@ -119,3 +119,20 @@ export async function canvasToFile(
     }, mimeType, 0.92);
   });
 }
+
+// 5. EXTRACT TEXT ITEMS FROM PDF FILE
+export async function extractPdfTextItems(file: File): Promise<Array<{ text: string; pageNum: number }>> {
+  const { pdfDoc, numPages } = await loadPdfDocument(file);
+  const items: Array<{ text: string; pageNum: number }> = [];
+
+  for (let p = 1; p <= numPages; p++) {
+    const page = await pdfDoc.getPage(p);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map((item: any) => item.str || '')
+      .join(' ');
+    items.push({ text: pageText, pageNum: p });
+  }
+
+  return items;
+}
