@@ -81,6 +81,35 @@ export async function fetchMyAttempt(
   return { data: data as ToeicTestAttempt | null, error: null };
 }
 
+/** Fetch the student's most recent attempt for a specific test + mode (regardless of status) */
+export async function fetchLatestAttempt(
+  testId: string,
+  mode: ToeicAttemptMode = 'full',
+  partNumber: number | null = null,
+): Promise<{ data: ToeicTestAttempt | null; error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { data: null, error: 'Not authenticated' };
+
+  let query = supabase
+    .from('toeic_test_attempts')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('test_id', testId)
+    .eq('mode', mode);
+
+  if (mode === 'part' && partNumber !== null) {
+    query = query.eq('part_number', partNumber);
+  } else {
+    query = query.is('part_number', null);
+  }
+
+  query = query.order('started_at', { ascending: false }).limit(1);
+
+  const { data, error } = await query.maybeSingle();
+  if (error) return { data: null, error: error.message };
+  return { data: data as ToeicTestAttempt | null, error: null };
+}
+
 /** Fetch ALL in-progress attempts for a test (for overview page) */
 export async function fetchAllMyAttempts(
   testId: string,

@@ -23,6 +23,57 @@ interface PartPracticeReviewViewProps {
   testId: string;
 }
 
+export class ReviewViewErrorBoundary extends React.Component<
+  { children: React.ReactNode; onRetry?: () => void },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; onRetry?: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('PartPracticeReviewView ErrorBoundary caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-rose-50 border border-rose-200 rounded-3xl text-center space-y-4 max-w-lg mx-auto my-8">
+          <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+            ⚠️
+          </div>
+          <div>
+            <h3 className="text-base font-extrabold text-slate-900">
+              Kết quả đã được ghi nhận, nhưng phần xem lại gặp lỗi
+            </h3>
+            <p className="text-xs text-slate-600 mt-1">
+              {this.state.error?.message || 'Không thể hiển thị chi tiết câu hỏi.'}
+            </p>
+          </div>
+          {this.props.onRetry && (
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onRetry?.();
+              }}
+              className="px-5 py-2.5 bg-ori-600 hover:bg-ori-700 text-white font-extrabold text-xs rounded-xl transition-colors shadow-sm"
+            >
+              Thử tải xem lại
+            </button>
+          )}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 type FilterType = 'all' | 'wrong' | 'correct' | 'unanswered';
 
 export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
