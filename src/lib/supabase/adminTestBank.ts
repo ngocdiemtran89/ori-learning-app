@@ -925,3 +925,65 @@ export async function importToeicLearningContent(
     return { success: false, error: err.message || 'Lỗi khi lưu Script & Song ngữ.' };
   }
 }
+
+/**
+ * P3.5J: Atomic import / update of question content & group passages for a specific TOEIC Part
+ */
+export async function importToeicPartContent(
+  testId: string,
+  part: string,
+  payload: {
+    import_answers?: boolean;
+    questions?: Array<{
+      question_number: number;
+      part?: string;
+      question_text?: string | null;
+      options?: Array<{ label: 'A' | 'B' | 'C' | 'D'; text: string }>;
+      options_vi?: string[];
+      translation_vi?: string | null;
+      explanation?: string | null;
+      correct_answer?: string | null;
+    }>;
+    groups?: Array<{
+      start_question: number;
+      end_question: number;
+      group_type?: string;
+      title?: string | null;
+      instruction?: string | null;
+      passage?: string | null;
+      passage_vi?: string | null;
+      transcript?: string | null;
+      transcript_vi?: string | null;
+      documents?: Array<{ title?: string; content: string }>;
+      documents_vi?: Array<{ title?: string; content: string }>;
+    }>;
+  }
+): Promise<{
+  success: boolean;
+  part?: string;
+  groups_updated?: number;
+  groups_inserted?: number;
+  questions_updated?: number;
+  questions_inserted?: number;
+  error?: string;
+}> {
+  try {
+    const { data, error } = await supabase.rpc('admin_import_toeic_part_content', {
+      p_test_id: testId,
+      p_part: part,
+      p_payload: payload,
+    });
+
+    if (error) return { success: false, error: error.message };
+    return {
+      success: true,
+      part: data?.part || part,
+      groups_updated: data?.groups_updated || 0,
+      groups_inserted: data?.groups_inserted || 0,
+      questions_updated: data?.questions_updated || 0,
+      questions_inserted: data?.questions_inserted || 0,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi khi import nội dung Part.' };
+  }
+}

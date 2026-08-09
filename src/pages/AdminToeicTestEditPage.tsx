@@ -32,6 +32,7 @@ import { Image as ImageIcon } from 'lucide-react';
 import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
+import { SafePartContentImporterModal } from '../components/admin/PartContentImporterModal';
 import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
 export class AdminTestEditErrorBoundary extends React.Component<
@@ -98,6 +99,8 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
   const [showAnswerKeyModal, setShowAnswerKeyModal] = useState<boolean>(false);
   // Script & Bilingual Manager Modal State
   const [showScriptBilingualModal, setShowScriptBilingualModal] = useState<boolean>(false);
+  // Part Content Importer Modal State
+  const [showPartContentModal, setShowPartContentModal] = useState<boolean>(false);
 
   // Header State
   const [title, setTitle] = useState<string>('');
@@ -657,7 +660,15 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowPartContentModal(true)}
+                    className="px-3.5 py-2 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                  >
+                    <span>📥 Import Nội Dung {activePart.toUpperCase()}</span>
+                  </button>
+
                   {activePart !== 'part5' && (
                     <button
                       type="button"
@@ -1097,6 +1108,20 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
             existingGroups={groups ?? []}
             onUpdated={loadTestDetails}
           />
+
+          {activePart !== 'media' && (
+            <SafePartContentImporterModal
+              isOpen={showPartContentModal}
+              onClose={() => setShowPartContentModal(false)}
+              testId={testId}
+              testTitle={title}
+              isPublished={isPublished}
+              targetPart={activePart}
+              existingQuestions={questions ?? []}
+              existingGroups={groups ?? []}
+              onUpdated={loadTestDetails}
+            />
+          )}
         </>
       )}
     </div>
