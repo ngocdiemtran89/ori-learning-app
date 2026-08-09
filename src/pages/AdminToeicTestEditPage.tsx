@@ -31,6 +31,7 @@ import {
 import { Image as ImageIcon } from 'lucide-react';
 import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
+import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
 
 export const AdminToeicTestEditPage: React.FC = () => {
   const { testId } = useParams<{ testId?: string }>();
@@ -39,6 +40,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
 
   // Answer Key Importer Modal State
   const [showAnswerKeyModal, setShowAnswerKeyModal] = useState<boolean>(false);
+  // Script & Bilingual Manager Modal State
+  const [showScriptBilingualModal, setShowScriptBilingualModal] = useState<boolean>(false);
 
   // Header State
   const [title, setTitle] = useState<string>('');
@@ -438,6 +441,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setShowScriptBilingualModal(true)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1 transition-all"
+                  >
+                    <span>📝 Script & Song ngữ</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setShowAnswerKeyModal(true)}
                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1 transition-all"
                   >
@@ -537,13 +548,23 @@ export const AdminToeicTestEditPage: React.FC = () => {
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAnswerKeyModal(true)}
-                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20 shrink-0"
-                >
-                  <span>📋 Import Answer Key</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowScriptBilingualModal(true)}
+                    className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-600/20"
+                  >
+                    <span>📝 Script & Song ngữ</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAnswerKeyModal(true)}
+                    className="px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
+                  >
+                    <span>📋 Import Answer Key</span>
+                  </button>
+                </div>
               </div>
 
               {/* Media Manager Tab */}
@@ -992,15 +1013,28 @@ export const AdminToeicTestEditPage: React.FC = () => {
       )}
 
       {isEditing && testId && (
-        <SafeAnswerKeyImporterModal
-          isOpen={showAnswerKeyModal}
-          onClose={() => setShowAnswerKeyModal(false)}
-          testId={testId}
-          testTitle={title}
-          isPublished={isPublished}
-          existingQuestions={questions ?? []}
-          onUpdated={loadTestDetails}
-        />
+        <>
+          <SafeAnswerKeyImporterModal
+            isOpen={showAnswerKeyModal}
+            onClose={() => setShowAnswerKeyModal(false)}
+            testId={testId}
+            testTitle={title}
+            isPublished={isPublished}
+            existingQuestions={questions ?? []}
+            onUpdated={loadTestDetails}
+          />
+
+          <SafeScriptBilingualManagerModal
+            isOpen={showScriptBilingualModal}
+            onClose={() => setShowScriptBilingualModal(false)}
+            testId={testId}
+            testTitle={title}
+            isPublished={isPublished}
+            existingQuestions={questions ?? []}
+            existingGroups={groups ?? []}
+            onUpdated={loadTestDetails}
+          />
+        </>
       )}
     </div>
   );

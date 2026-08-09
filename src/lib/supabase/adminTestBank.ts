@@ -878,3 +878,50 @@ export async function importToeicAnswerKey(
     return { success: false, error: err.message || 'Lỗi khi cập nhật Answer Key.' };
   }
 }
+
+/**
+ * P3.5I: Atomic import / update of English scripts, prompts, options, explanations & Vietnamese learning content
+ */
+export async function importToeicLearningContent(
+  testId: string,
+  payload: {
+    questions?: Array<{
+      id?: string;
+      question_number?: number;
+      question_text?: string | null;
+      options?: Array<{ label: 'A' | 'B' | 'C' | 'D'; text: string }>;
+      translation_vi?: string | null;
+      options_vi?: string[];
+      explanation?: string | null;
+    }>;
+    groups?: Array<{
+      id?: string;
+      start_question?: number;
+      end_question?: number;
+      transcript?: string | null;
+      transcript_vi?: string | null;
+      instruction?: string | null;
+      instruction_vi?: string | null;
+      passage?: string | null;
+      passage_vi?: string | null;
+      documents?: Array<{ title?: string; content: string }>;
+      documents_vi?: Array<{ title?: string; content: string }>;
+    }>;
+  }
+): Promise<{ success: boolean; updated_questions?: number; updated_groups?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_import_toeic_learning_content', {
+      p_test_id: testId,
+      p_payload: payload,
+    });
+
+    if (error) return { success: false, error: error.message };
+    return {
+      success: true,
+      updated_questions: data?.updated_questions || 0,
+      updated_groups: data?.updated_groups || 0,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi khi lưu Script & Song ngữ.' };
+  }
+}
