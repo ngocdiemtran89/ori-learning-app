@@ -1,6 +1,6 @@
 -- ============================================================
 -- Phase P3.5F: TOEIC Bulk Media, Dual Listening Source & Bilingual Foundation
--- NEW MIGRATION — EDITED FOR PRODUCTION HARDENING
+-- NEW MIGRATION — EDITED FOR PRODUCTION HARDENING (FINAL PATCH)
 -- DO NOT ALTER PREVIOUSLY APPLIED MIGRATIONS (P3.5, P3.6A)
 -- ============================================================
 
@@ -106,7 +106,7 @@ revoke execute on function public.admin_set_toeic_listening_mode(uuid, text) fro
 grant execute on function public.admin_set_toeic_listening_mode(uuid, text) to authenticated;
 
 -- ============================================================
--- 5. RPC: admin_upload_toeic_listening_track_path
+-- 5. RPC: admin_upload_toeic_listening_track_path (HARDENED: REJECT ALL PUBLISHED TRACK UPLOADS)
 -- ============================================================
 create or replace function public.admin_upload_toeic_listening_track_path(
   p_test_id uuid,
@@ -125,13 +125,18 @@ begin
   if v_user_id is null then raise exception 'Not authenticated'; end if;
   if not public.is_admin() then raise exception 'Unauthorized: Admin access required'; end if;
 
+  if p_audio_url is null or trim(p_audio_url) = '' then
+    raise exception 'p_audio_url must be non-null and non-empty';
+  end if;
+
   select id, is_published, listening_audio_url into v_test
   from public.toeic_tests where id = p_test_id;
 
   if v_test is null then raise exception 'Test not found'; end if;
 
-  if v_test.is_published and v_test.listening_audio_url is not null then
-    raise exception 'Cannot replace listening track on a published test. Please unpublish first.';
+  -- HARDENED: ALWAYS REJECT FOR PUBLISHED TESTS REGARDLESS OF EXISTING TRACK
+  if v_test.is_published then
+    raise exception 'Cannot upload listening track on a published test. Please unpublish first.';
   end if;
 
   update public.toeic_tests
@@ -148,7 +153,7 @@ revoke execute on function public.admin_upload_toeic_listening_track_path(uuid, 
 grant execute on function public.admin_upload_toeic_listening_track_path(uuid, text) to authenticated;
 
 -- ============================================================
--- 6. RPC: admin_upsert_toeic_listening_cues (STRICT DUPLICATE & TARGET VALIDATION)
+-- 6. RPC: admin_upsert_toeic_listening_cues (PUBLISHED BLOCK + DUPLICATE TARGET CHECK)
 -- ============================================================
 create or replace function public.admin_upsert_toeic_listening_cues(
   p_test_id uuid,
@@ -161,6 +166,7 @@ set search_path = ''
 as $$
 declare
   v_user_id uuid;
+  v_test record;
   v_item jsonb;
   v_q_id uuid;
   v_g_id uuid;
@@ -178,8 +184,14 @@ begin
   if v_user_id is null then raise exception 'Not authenticated'; end if;
   if not public.is_admin() then raise exception 'Unauthorized: Admin access required'; end if;
 
-  if not exists (select 1 from public.toeic_tests where id = p_test_id) then
-    raise exception 'Test not found';
+  select id, is_published into v_test
+  from public.toeic_tests where id = p_test_id;
+
+  if v_test is null then raise exception 'Test not found'; end if;
+
+  -- HARDENED: REJECT CUE MUTATION ON PUBLISHED TESTS
+  if v_test.is_published then
+    raise exception 'Cannot modify listening cues on a published test. Please unpublish first.';
   end if;
 
   if jsonb_typeof(p_cues) != 'array' then
@@ -278,7 +290,7 @@ revoke execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb)
 grant execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) to authenticated;
 
 -- ============================================================
--- 7. RPC: admin_import_toeic_bilingual_content (STRICT SERVER VALIDATION & ATOMIC FAIL)
+-- 7. RPC: admin_import_toeic_bilingual_content (STRICT STRUCTURE & UNAMBIGUOUS RANGE RESOLUTION)
 -- ============================================================
 create or replace function public.admin_import_toeic_bilingual_content(
   p_test_id uuid,
@@ -304,6 +316,10 @@ declare
   v_vi_docs_len integer;
   v_start_q integer;
   v_end_q integer;
+  v_match_count integer;
+  v_i integer;
+  v_src_doc jsonb;
+  v_vi_doc jsonb;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
@@ -318,10 +334,21 @@ begin
     for v_item in select * from jsonb_array_elements(p_payload->'questions')
     loop
       v_q_id := case when v_item->>'id' is not null then (v_item->>'id')::uuid else null end;
+      
       if v_q_id is null and v_item->>'question_number' is not null then
+        select count(*) into v_match_count
+        from public.toeic_test_questions
+        where test_id = p_test_id and question_number = (v_item->>'question_number')::integer and is_active = true;
+
+        if v_match_count = 0 then
+          raise exception 'No active question found for question_number %', (v_item->>'question_number')::integer;
+        elsif v_match_count > 1 then
+          raise exception 'Ambiguous target for question_number %', (v_item->>'question_number')::integer;
+        end if;
+
         select id into v_q_id
         from public.toeic_test_questions
-        where test_id = p_test_id and question_number = (v_item->>'question_number')::integer;
+        where test_id = p_test_id and question_number = (v_item->>'question_number')::integer and is_active = true;
       end if;
 
       if v_q_id is null then
@@ -368,6 +395,25 @@ begin
       if v_g_id is null and v_item->>'start_question' is not null and v_item->>'end_question' is not null then
         v_start_q := (v_item->>'start_question')::integer;
         v_end_q := (v_item->>'end_question')::integer;
+
+        -- DETERMINISTIC GROUP RANGE MATCH CHECK
+        select count(*) into v_match_count
+        from public.toeic_test_groups g
+        where g.test_id = p_test_id and g.is_active = true
+          and (
+            select min(q.question_number) from public.toeic_test_questions q
+            where q.group_id = g.id and q.is_active = true
+          ) = v_start_q
+          and (
+            select max(q.question_number) from public.toeic_test_questions q
+            where q.group_id = g.id and q.is_active = true
+          ) = v_end_q;
+
+        if v_match_count = 0 then
+          raise exception 'No active group found for question range %-%', v_start_q, v_end_q;
+        elsif v_match_count > 1 then
+          raise exception 'Ambiguous group range %-% (matches multiple active groups)', v_start_q, v_end_q;
+        end if;
 
         select g.id into v_g_id
         from public.toeic_test_groups g
@@ -416,6 +462,28 @@ begin
           raise exception 'documents_vi count (%s) does not match source documents count (%s) for group %s',
             v_vi_docs_len, v_src_docs_len, v_g.id;
         end if;
+
+        -- STRICT DOCUMENT ELEMENT OBJECT & SHAPE CHECK
+        for v_i in 0 .. (v_vi_docs_len - 1)
+        loop
+          v_src_doc := v_g.documents->v_i;
+          v_vi_doc := v_item->'documents_vi'->v_i;
+
+          if jsonb_typeof(v_vi_doc) != 'object' then
+            raise exception 'documents_vi element at index % must be a JSON object', v_i;
+          end if;
+
+          if jsonb_typeof(v_src_doc) != 'object' then
+            raise exception 'source document element at index % is invalid', v_i;
+          end if;
+
+          if v_src_doc->>'type' is not null and v_vi_doc->>'type' is not null then
+            if v_vi_doc->>'type' != v_src_doc->>'type' then
+              raise exception 'documents_vi element at index % type mismatch (% vs %)',
+                v_i, v_vi_doc->>'type', v_src_doc->>'type';
+            end if;
+          end if;
+        end loop;
       end if;
 
       update public.toeic_test_groups set
@@ -480,7 +548,7 @@ end;
 $$;
 
 -- ============================================================
--- 9. UPDATE: get_student_toeic_test_content (STRICT FULL TRACK IN SINGLE TRACK MODE)
+-- 9. UPDATE: get_student_toeic_test_content (MODE-DEPENDENT CUE METADATA & AUDIO PATH)
 -- ============================================================
 create or replace function public.get_student_toeic_test_content(
   p_test_id uuid,
@@ -534,7 +602,10 @@ begin
     'id', v_test.id, 'title', v_test.title, 'test_code', v_test.test_code,
     'description', v_test.description, 'test_type', v_test.test_type,
     'listening_audio_mode', v_test.listening_audio_mode,
-    'listening_audio_url', v_test.listening_audio_url
+    'listening_audio_url', case
+      when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
+      else null
+    end
   );
 
   if p_mode = 'part' and p_part_number is not null then
@@ -554,8 +625,14 @@ begin
           else sub.audio_url
         end,
         'image_url', sub.image_url,
-        'cue_start_ms', sub.cue_start_ms,
-        'cue_end_ms', sub.cue_end_ms,
+        'cue_start_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          else null
+        end,
+        'cue_end_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          else null
+        end,
         'instruction_vi', case when v_include_translation then sub.instruction_vi else null end,
         'passage_vi', case when v_include_translation then sub.passage_vi else null end,
         'documents_vi', case when v_include_translation then sub.documents_vi else null end
@@ -586,8 +663,14 @@ begin
           else sub.audio_url
         end,
         'image_url', sub.image_url,
-        'cue_start_ms', sub.cue_start_ms,
-        'cue_end_ms', sub.cue_end_ms
+        'cue_start_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          else null
+        end,
+        'cue_end_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          else null
+        end
       ) order by sub.min_qn, sub.sort_order
     ), '[]'::jsonb) into v_groups
     from (
@@ -619,8 +702,14 @@ begin
           else sub.audio_url
         end,
         'image_url', sub.image_url,
-        'cue_start_ms', sub.cue_start_ms,
-        'cue_end_ms', sub.cue_end_ms,
+        'cue_start_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          else null
+        end,
+        'cue_end_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          else null
+        end,
         'translation_vi', case when v_include_translation then sub.translation_vi else null end,
         'options_vi', case when v_include_translation then sub.options_vi else null end
       ) order by sub.question_number
@@ -646,8 +735,14 @@ begin
           else sub.audio_url
         end,
         'image_url', sub.image_url,
-        'cue_start_ms', sub.cue_start_ms,
-        'cue_end_ms', sub.cue_end_ms
+        'cue_start_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_start_ms
+          else null
+        end,
+        'cue_end_ms', case
+          when v_test.listening_audio_mode = 'single_track' then sub.cue_end_ms
+          else null
+        end
       ) order by sub.question_number
     ), '[]'::jsonb) into v_questions
     from (

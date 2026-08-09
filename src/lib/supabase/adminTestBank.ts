@@ -754,8 +754,8 @@ export async function uploadToeicListeningTrack(
 
     if (tErr || !test) return { success: false, error: 'Không tìm thấy đề thi.' };
 
-    if (test.is_published && test.listening_audio_url) {
-      return { success: false, error: 'Không thể thay thế listening track của đề thi đã xuất bản. Vui lòng gỡ xuất bản trước.' };
+    if (test.is_published) {
+      return { success: false, error: 'Không thể upload/thay thế listening track của đề thi đã xuất bản. Vui lòng gỡ xuất bản trước.' };
     }
 
     const oldPath = test.listening_audio_url;
