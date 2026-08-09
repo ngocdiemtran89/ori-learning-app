@@ -57,6 +57,17 @@ export async function importToeicTestDraft(
     // 2. Prepare payloads using pure function
     const { testPayload, groupsPayload, questionsPayload } = buildToeicTestRpcPayload(draft);
 
+    if (import.meta.env.DEV) {
+      console.log('CLASSIFIER_IMPORT_PAYLOAD_SAMPLE', questionsPayload
+        .filter(q => [1, 7, 101, 150, 177].includes(q.question_number))
+        .map(q => ({
+          question_number: q.question_number,
+          correct_answer: q.correct_answer,
+          options: q.options
+        }))
+      );
+    }
+
     // 3. Call Atomic RPC
     const { data, error } = await supabase.rpc('admin_create_toeic_test_with_content', {
       test_payload: testPayload,
