@@ -723,26 +723,18 @@ export async function removeGroupMedia(
  */
 export async function updateTestListeningAudioMode(
   testId: string,
-  mode: 'segmented' | 'single_track',
-  listeningAudioUrl?: string | null
+  mode: 'segmented' | 'single_track'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const updatePayload: Record<string, any> = {
-      listening_audio_mode: mode,
-      updated_at: new Date().toISOString(),
-    };
-    if (listeningAudioUrl !== undefined) {
-      updatePayload.listening_audio_url = listeningAudioUrl;
-    }
-    const { error } = await supabase
-      .from('toeic_tests')
-      .update(updatePayload)
-      .eq('id', testId);
+    const { error } = await supabase.rpc('admin_set_toeic_listening_mode', {
+      p_test_id: testId,
+      p_mode: mode
+    });
 
-    if (error) return { success: false, error: 'Không thể cập nhật chế độ audio.' };
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: 'Lỗi khi cập nhật chế độ audio.' };
+    return { success: false, error: err.message || 'Lỗi khi cập nhật chế độ audio.' };
   }
 }
 
@@ -762,6 +754,10 @@ export async function uploadToeicListeningTrack(
 
     if (tErr || !test) return { success: false, error: 'Không tìm thấy đề thi.' };
 
+    if (test.is_published && test.listening_audio_url) {
+      return { success: false, error: 'Không thể thay thế listening track của đề thi đã xuất bản. Vui lòng gỡ xuất bản trước.' };
+    }
+
     const oldPath = test.listening_audio_url;
 
     const uuid = crypto.randomUUID();
@@ -773,18 +769,14 @@ export async function uploadToeicListeningTrack(
 
     const newPath = uploadRes.path;
 
-    const { error: updateErr } = await supabase
-      .from('toeic_tests')
-      .update({
-        listening_audio_mode: 'single_track',
-        listening_audio_url: newPath,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', testId);
+    const { error: updateErr } = await supabase.rpc('admin_upload_toeic_listening_track_path', {
+      p_test_id: testId,
+      p_audio_url: newPath
+    });
 
     if (updateErr) {
       await deleteToeicMedia(newPath);
-      return { success: false, error: 'Lỗi khi cập nhật cơ sở dữ liệu.' };
+      return { success: false, error: updateErr.message };
     }
 
     if (oldPath && oldPath !== newPath) {

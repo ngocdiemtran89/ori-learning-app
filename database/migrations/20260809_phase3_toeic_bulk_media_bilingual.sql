@@ -1,6 +1,7 @@
 -- ============================================================
 -- Phase P3.5F: TOEIC Bulk Media, Dual Listening Source & Bilingual Foundation
--- NEW MIGRATION — DO NOT ALTER PREVIOUSLY APPLIED MIGRATIONS
+-- NEW MIGRATION — EDITED FOR PRODUCTION HARDENING
+-- DO NOT ALTER PREVIOUSLY APPLIED MIGRATIONS (P3.5, P3.6A)
 -- ============================================================
 
 -- ============================================================
@@ -47,7 +48,7 @@ create index if not exists idx_cues_test on public.toeic_listening_cues (test_id
 create index if not exists idx_cues_question on public.toeic_listening_cues (question_id);
 create index if not exists idx_cues_group on public.toeic_listening_cues (group_id);
 
--- RLS
+-- RLS — ADMIN ONLY ACCESS TO CUES TABLE DIRECTLY
 alter table public.toeic_listening_cues enable row level security;
 
 drop policy if exists admin_cues_all on public.toeic_listening_cues;
@@ -58,17 +59,96 @@ create policy admin_cues_all on public.toeic_listening_cues
   using (public.is_admin())
   with check (public.is_admin());
 
-create policy student_cues_select on public.toeic_listening_cues
-  for select to authenticated
-  using (
-    exists (
-      select 1 from public.toeic_tests t
-      where t.id = test_id and t.is_published = true
-    )
-  );
+revoke select, insert, update, delete on public.toeic_listening_cues from public, anon;
 
 -- ============================================================
--- 4. RPC: admin_upsert_toeic_listening_cues
+-- 4. RPC: admin_set_toeic_listening_mode
+-- ============================================================
+create or replace function public.admin_set_toeic_listening_mode(
+  p_test_id uuid,
+  p_mode text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid;
+  v_test record;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.is_admin() then raise exception 'Unauthorized: Admin access required'; end if;
+
+  select id, is_published into v_test
+  from public.toeic_tests where id = p_test_id;
+
+  if v_test is null then raise exception 'Test not found'; end if;
+
+  if v_test.is_published then
+    raise exception 'Cannot change listening audio mode on a published test. Please unpublish first.';
+  end if;
+
+  if p_mode not in ('segmented', 'single_track') then
+    raise exception 'Invalid listening mode (must be segmented or single_track)';
+  end if;
+
+  update public.toeic_tests
+  set listening_audio_mode = p_mode, updated_at = now()
+  where id = p_test_id;
+
+  return jsonb_build_object('success', true, 'mode', p_mode);
+end;
+$$;
+
+revoke execute on function public.admin_set_toeic_listening_mode(uuid, text) from public, anon;
+grant execute on function public.admin_set_toeic_listening_mode(uuid, text) to authenticated;
+
+-- ============================================================
+-- 5. RPC: admin_upload_toeic_listening_track_path
+-- ============================================================
+create or replace function public.admin_upload_toeic_listening_track_path(
+  p_test_id uuid,
+  p_audio_url text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid;
+  v_test record;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.is_admin() then raise exception 'Unauthorized: Admin access required'; end if;
+
+  select id, is_published, listening_audio_url into v_test
+  from public.toeic_tests where id = p_test_id;
+
+  if v_test is null then raise exception 'Test not found'; end if;
+
+  if v_test.is_published and v_test.listening_audio_url is not null then
+    raise exception 'Cannot replace listening track on a published test. Please unpublish first.';
+  end if;
+
+  update public.toeic_tests
+  set listening_audio_mode = 'single_track',
+      listening_audio_url = p_audio_url,
+      updated_at = now()
+  where id = p_test_id;
+
+  return jsonb_build_object('success', true, 'path', p_audio_url);
+end;
+$$;
+
+revoke execute on function public.admin_upload_toeic_listening_track_path(uuid, text) from public, anon;
+grant execute on function public.admin_upload_toeic_listening_track_path(uuid, text) to authenticated;
+
+-- ============================================================
+-- 6. RPC: admin_upsert_toeic_listening_cues (STRICT DUPLICATE & TARGET VALIDATION)
 -- ============================================================
 create or replace function public.admin_upsert_toeic_listening_cues(
   p_test_id uuid,
@@ -89,6 +169,10 @@ declare
   v_q record;
   v_g record;
   v_count integer := 0;
+  v_uniq_q integer;
+  v_tot_q integer;
+  v_uniq_g integer;
+  v_tot_g integer;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
@@ -102,6 +186,32 @@ begin
     raise exception 'Payload must be a JSON array of cue objects';
   end if;
 
+  -- 1. SERVER-SIDE DUPLICATE TARGET CHECK (REJECT WHOLE PAYLOAD IF DUPLICATED)
+  select count(distinct q_id), count(q_id)
+  into v_uniq_q, v_tot_q
+  from (
+    select (elem->>'question_id')::uuid as q_id
+    from jsonb_array_elements(p_cues) elem
+    where elem->>'question_id' is not null
+  ) sub;
+
+  if v_tot_q > v_uniq_q then
+    raise exception 'Duplicate question_id target in cue payload';
+  end if;
+
+  select count(distinct g_id), count(g_id)
+  into v_uniq_g, v_tot_g
+  from (
+    select (elem->>'group_id')::uuid as g_id
+    from jsonb_array_elements(p_cues) elem
+    where elem->>'group_id' is not null
+  ) sub;
+
+  if v_tot_g > v_uniq_g then
+    raise exception 'Duplicate group_id target in cue payload';
+  end if;
+
+  -- 2. PROCESS AND VALIDATE EACH CUE ITEM
   for v_item in select * from jsonb_array_elements(p_cues)
   loop
     v_q_id := case when v_item->>'question_id' is not null then (v_item->>'question_id')::uuid else null end;
@@ -164,12 +274,11 @@ begin
 end;
 $$;
 
-revoke execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) from public;
-revoke execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) from anon;
+revoke execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) from public, anon;
 grant execute on function public.admin_upsert_toeic_listening_cues(uuid, jsonb) to authenticated;
 
 -- ============================================================
--- 5. RPC: admin_import_toeic_bilingual_content
+-- 7. RPC: admin_import_toeic_bilingual_content (STRICT SERVER VALIDATION & ATOMIC FAIL)
 -- ============================================================
 create or replace function public.admin_import_toeic_bilingual_content(
   p_test_id uuid,
@@ -189,6 +298,12 @@ declare
   v_g_count integer := 0;
   v_q record;
   v_g record;
+  v_src_opts_len integer;
+  v_vi_opts_len integer;
+  v_src_docs_len integer;
+  v_vi_docs_len integer;
+  v_start_q integer;
+  v_end_q integer;
 begin
   v_user_id := auth.uid();
   if v_user_id is null then raise exception 'Not authenticated'; end if;
@@ -198,54 +313,120 @@ begin
     raise exception 'Test not found';
   end if;
 
-  -- Questions bilingual update
+  -- 1. QUESTIONS SERVER-SIDE VALIDATION & ATOMIC UPDATE
   if p_payload->'questions' is not null and jsonb_typeof(p_payload->'questions') = 'array' then
     for v_item in select * from jsonb_array_elements(p_payload->'questions')
     loop
-      v_q_id := (v_item->>'id')::uuid;
-      if v_q_id is null then
+      v_q_id := case when v_item->>'id' is not null then (v_item->>'id')::uuid else null end;
+      if v_q_id is null and v_item->>'question_number' is not null then
         select id into v_q_id
         from public.toeic_test_questions
         where test_id = p_test_id and question_number = (v_item->>'question_number')::integer;
       end if;
 
-      if v_q_id is not null then
-        select id, test_id into v_q
-        from public.toeic_test_questions where id = v_q_id;
+      if v_q_id is null then
+        raise exception 'Bilingual question target not found or question_number missing';
+      end if;
 
-        if v_q is not null and v_q.test_id = p_test_id then
-          update public.toeic_test_questions set
-            translation_vi = coalesce(v_item->>'translation_vi', translation_vi),
-            options_vi = case when v_item->'options_vi' is not null then v_item->'options_vi' else options_vi end,
-            updated_at = now()
-          where id = v_q_id;
-          v_q_count := v_q_count + 1;
+      select id, test_id, part, options into v_q
+      from public.toeic_test_questions where id = v_q_id;
+
+      if v_q is null or v_q.test_id != p_test_id then
+        raise exception 'Target question % does not belong to this test', v_q_id;
+      end if;
+
+      if v_item->'options_vi' is not null then
+        if jsonb_typeof(v_item->'options_vi') != 'array' then
+          raise exception 'options_vi must be a JSON array for question %', v_q.id;
+        end if;
+
+        v_src_opts_len := jsonb_array_length(v_q.options);
+        v_vi_opts_len := jsonb_array_length(v_item->'options_vi');
+
+        if v_vi_opts_len != v_src_opts_len then
+          raise exception 'options_vi count (%s) does not match source options count (%s) for question %s',
+            v_vi_opts_len, v_src_opts_len, v_q.id;
         end if;
       end if;
+
+      update public.toeic_test_questions set
+        translation_vi = coalesce(v_item->>'translation_vi', translation_vi),
+        options_vi = case when v_item->'options_vi' is not null then v_item->'options_vi' else options_vi end,
+        updated_at = now()
+      where id = v_q_id;
+
+      v_q_count := v_q_count + 1;
     end loop;
   end if;
 
-  -- Groups bilingual update
+  -- 2. GROUPS SERVER-SIDE VALIDATION & ATOMIC UPDATE
   if p_payload->'groups' is not null and jsonb_typeof(p_payload->'groups') = 'array' then
     for v_item in select * from jsonb_array_elements(p_payload->'groups')
     loop
-      v_g_id := (v_item->>'id')::uuid;
+      v_g_id := case when v_item->>'id' is not null then (v_item->>'id')::uuid else null end;
 
-      if v_g_id is not null then
-        select id, test_id into v_g
-        from public.toeic_test_groups where id = v_g_id;
+      if v_g_id is null and v_item->>'start_question' is not null and v_item->>'end_question' is not null then
+        v_start_q := (v_item->>'start_question')::integer;
+        v_end_q := (v_item->>'end_question')::integer;
 
-        if v_g is not null and v_g.test_id = p_test_id then
-          update public.toeic_test_groups set
-            instruction_vi = coalesce(v_item->>'instruction_vi', instruction_vi),
-            passage_vi = coalesce(v_item->>'passage_vi', passage_vi),
-            documents_vi = case when v_item->'documents_vi' is not null then v_item->'documents_vi' else documents_vi end,
-            transcript_vi = coalesce(v_item->>'transcript_vi', transcript_vi),
-            updated_at = now()
-          where id = v_g_id;
-          v_g_count := v_g_count + 1;
+        select g.id into v_g_id
+        from public.toeic_test_groups g
+        where g.test_id = p_test_id and g.is_active = true
+          and (
+            select min(q.question_number) from public.toeic_test_questions q
+            where q.group_id = g.id and q.is_active = true
+          ) = v_start_q
+          and (
+            select max(q.question_number) from public.toeic_test_questions q
+            where q.group_id = g.id and q.is_active = true
+          ) = v_end_q;
+      end if;
+
+      if v_g_id is null then
+        raise exception 'Bilingual group target not found for range';
+      end if;
+
+      select id, test_id, part, documents into v_g
+      from public.toeic_test_groups where id = v_g_id;
+
+      if v_g is null or v_g.test_id != p_test_id then
+        raise exception 'Target group % does not belong to this test', v_g_id;
+      end if;
+
+      if v_item->>'transcript_vi' is not null and v_g.part not in ('part3', 'part4') then
+        raise exception 'transcript_vi is only allowed for Part 3 and Part 4 groups';
+      end if;
+
+      if v_item->>'passage_vi' is not null and v_g.part != 'part6' then
+        raise exception 'passage_vi is only allowed for Part 6 groups';
+      end if;
+
+      if v_item->'documents_vi' is not null then
+        if v_g.part != 'part7' then
+          raise exception 'documents_vi is only allowed for Part 7 groups';
+        end if;
+        if jsonb_typeof(v_item->'documents_vi') != 'array' then
+          raise exception 'documents_vi must be a JSON array for group %', v_g.id;
+        end if;
+
+        v_src_docs_len := coalesce(jsonb_array_length(v_g.documents), 0);
+        v_vi_docs_len := jsonb_array_length(v_item->'documents_vi');
+
+        if v_vi_docs_len != v_src_docs_len then
+          raise exception 'documents_vi count (%s) does not match source documents count (%s) for group %s',
+            v_vi_docs_len, v_src_docs_len, v_g.id;
         end if;
       end if;
+
+      update public.toeic_test_groups set
+        instruction_vi = coalesce(v_item->>'instruction_vi', instruction_vi),
+        passage_vi = coalesce(v_item->>'passage_vi', passage_vi),
+        documents_vi = case when v_item->'documents_vi' is not null then v_item->'documents_vi' else documents_vi end,
+        transcript_vi = coalesce(v_item->>'transcript_vi', transcript_vi),
+        updated_at = now()
+      where id = v_g_id;
+
+      v_g_count := v_g_count + 1;
     end loop;
   end if;
 
@@ -253,12 +434,11 @@ begin
 end;
 $$;
 
-revoke execute on function public.admin_import_toeic_bilingual_content(uuid, jsonb) from public;
-revoke execute on function public.admin_import_toeic_bilingual_content(uuid, jsonb) from anon;
+revoke execute on function public.admin_import_toeic_bilingual_content(uuid, jsonb) from public, anon;
 grant execute on function public.admin_import_toeic_bilingual_content(uuid, jsonb) to authenticated;
 
 -- ============================================================
--- 6. EXTEND CAN_ACCESS_TOEIC_MEDIA FOR SINGLE TRACK AUDIO
+-- 8. EXTEND CAN_ACCESS_TOEIC_MEDIA FOR SINGLE TRACK AUDIO
 -- ============================================================
 create or replace function public.can_access_toeic_media(p_path text)
 returns boolean
@@ -275,6 +455,7 @@ begin
   if exists (
     select 1 from public.toeic_tests t
     where t.is_published = true
+      and t.listening_audio_mode = 'single_track'
       and t.listening_audio_url = p_path
   ) then return true; end if;
 
@@ -299,7 +480,7 @@ end;
 $$;
 
 -- ============================================================
--- 7. UPDATE: get_student_toeic_test_content (DUAL LISTENING SUPPORT)
+-- 9. UPDATE: get_student_toeic_test_content (STRICT FULL TRACK IN SINGLE TRACK MODE)
 -- ============================================================
 create or replace function public.get_student_toeic_test_content(
   p_test_id uuid,
@@ -369,7 +550,7 @@ begin
         'title', sub.title, 'instruction', sub.instruction,
         'passage', sub.passage, 'documents', sub.documents,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then coalesce(sub.audio_url, v_test.listening_audio_url)
+          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
@@ -401,7 +582,7 @@ begin
         'title', sub.title, 'instruction', sub.instruction,
         'passage', sub.passage, 'documents', sub.documents,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then coalesce(sub.audio_url, v_test.listening_audio_url)
+          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
@@ -434,7 +615,7 @@ begin
         'question_text', sub.question_text, 'options', sub.options,
         'skill_tag', sub.skill_tag, 'topic', sub.topic,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then coalesce(sub.audio_url, v_test.listening_audio_url)
+          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
@@ -461,7 +642,7 @@ begin
         'question_text', sub.question_text, 'options', sub.options,
         'skill_tag', sub.skill_tag, 'topic', sub.topic,
         'audio_url', case
-          when v_test.listening_audio_mode = 'single_track' then coalesce(sub.audio_url, v_test.listening_audio_url)
+          when v_test.listening_audio_mode = 'single_track' then v_test.listening_audio_url
           else sub.audio_url
         end,
         'image_url', sub.image_url,
