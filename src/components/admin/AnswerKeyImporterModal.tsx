@@ -22,10 +22,10 @@ interface AnswerKeyImporterModalProps {
   testTitle: string;
   isPublished: boolean;
   existingQuestions?: Array<{
-    id: string;
-    question_number: number;
-    part: string;
-    correct_answer: string;
+    id?: string;
+    question_number?: number;
+    part?: string;
+    correct_answer?: string;
     options?: any[];
   }>;
   onUpdated: () => void;
@@ -40,6 +40,57 @@ interface ParsedComparisonItem {
   newAnswer: string | null;
   status: 'changed' | 'unchanged' | 'missing' | 'invalid';
   errorMessage?: string;
+}
+
+// React Error Boundary to prevent app-wide white screens
+export class AnswerKeyErrorBoundary extends React.Component<
+  { children: React.ReactNode; onClose: () => void },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; onClose: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('AnswerKeyImporterModal ErrorBoundary caught exception:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+              ⚠️
+            </div>
+            <h3 className="text-base font-extrabold text-slate-900">
+              Không thể mở công cụ Import Answer Key
+            </h3>
+            <p className="text-xs text-slate-500">
+              {this.state.error?.message || 'Đã xảy ra lỗi giao diện khi tải bộ import đáp án.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onClose();
+              }}
+              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold rounded-xl transition-colors"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
@@ -70,7 +121,10 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
   if (!isOpen) return null;
 
-  const safeQuestions = Array.isArray(existingQuestions) ? existingQuestions : [];
+  // Ultra-safe array normalization
+  const safeQuestions = Array.isArray(existingQuestions)
+    ? existingQuestions.filter(q => q && typeof q === 'object')
+    : [];
   const loadedQuestionsCount = safeQuestions.length;
 
   // Handle file select (PDF, TXT, CSV, JSON)
@@ -85,7 +139,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
     try {
       if (file.name.toLowerCase().endsWith('.pdf')) {
         const items = await extractPdfTextItems(file);
-        const fullText = items.map(i => i.text).join(' ');
+        const fullText = (items || []).map(i => i?.text || '').join(' ');
         if (!fullText.trim()) {
           setPdfError(
             'Không thể đọc chữ từ PDF này. Vui lòng dùng PDF có text, TXT, CSV, JSON hoặc Paste đáp án.'
@@ -96,10 +150,10 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
         }
       } else {
         const text = await file.text();
-        setInputText(text);
+        setInputText(text || '');
       }
     } catch (err: any) {
-      setPdfError(err.message || 'Lỗi khi đọc file PDF/văn bản.');
+      setPdfError(err?.message || 'Lỗi khi đọc file PDF/văn bản.');
       setInputText('');
     }
     setIsReadingFile(false);
@@ -118,7 +172,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
     try {
       if (file.name.toLowerCase().endsWith('.pdf')) {
         const items = await extractPdfTextItems(file);
-        const fullText = items.map(i => i.text).join(' ');
+        const fullText = (items || []).map(i => i?.text || '').join(' ');
         if (!fullText.trim()) {
           setPdfError(
             'Không thể đọc chữ từ PDF này. Vui lòng dùng PDF có text, TXT, CSV, JSON hoặc Paste đáp án.'
@@ -129,10 +183,10 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
         }
       } else {
         const text = await file.text();
-        setInputText(text);
+        setInputText(text || '');
       }
     } catch (err: any) {
-      setPdfError(err.message || 'Lỗi khi đọc file.');
+      setPdfError(err?.message || 'Lỗi khi đọc file.');
       setInputText('');
     }
     setIsReadingFile(false);
@@ -140,21 +194,30 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
   // Parsed answer map from input text
   const parsedRawMap = useMemo(() => {
-    if (!inputText.trim()) return new Map<number, string>();
-    const res = parseAnswerKeyText(inputText);
-    const map = new Map<number, string>();
-    res.answers.forEach(item => {
-      map.set(item.question_number, item.correct_answer);
-    });
-    return map;
+    if (!inputText || !inputText.trim()) return new Map<number, string>();
+    try {
+      const res = parseAnswerKeyText(inputText);
+      const map = new Map<number, string>();
+      if (res && Array.isArray(res.answers)) {
+        res.answers.forEach(item => {
+          if (item && typeof item.question_number === 'number' && item.correct_answer) {
+            map.set(item.question_number, String(item.correct_answer).toUpperCase());
+          }
+        });
+      }
+      return map;
+    } catch (err) {
+      console.warn('parseAnswerKeyText exception handled silently:', err);
+      return new Map<number, string>();
+    }
   }, [inputText]);
 
-  // Build 200 comparison items (safely handled even if safeQuestions is loading)
+  // Build 200 comparison items
   const comparisonItems = useMemo((): ParsedComparisonItem[] => {
     const items: ParsedComparisonItem[] = [];
 
     for (let qNum = 1; qNum <= 200; qNum++) {
-      const qExist = safeQuestions.find(q => q.question_number === qNum);
+      const qExist = safeQuestions.find(q => q && q.question_number === qNum);
       const currentAnswer = qExist?.correct_answer || 'A';
       const part = qExist?.part || 'part1';
       const newAnswer = parsedRawMap.get(qNum) || null;
@@ -195,7 +258,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
   // Statistics counters
   const stats = useMemo(() => {
-    const totalParsed = parsedRawMap.size;
+    const totalParsed = parsedRawMap?.size || 0;
     const changed = comparisonItems.filter(i => i.status === 'changed').length;
     const unchanged = comparisonItems.filter(i => i.status === 'unchanged').length;
     const missing = comparisonItems.filter(i => i.status === 'missing').length;
@@ -248,12 +311,12 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-        {/* MODAL HEADER — ALWAYS VISIBLE */}
+        {/* MODAL HEADER */}
         <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-3xl">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
               <ListChecks className="w-5 h-5 text-ori-600" />
-              IMPORT ANSWER KEY — {testTitle}
+              IMPORT ANSWER KEY — {testTitle || 'TOEIC Test'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Cập nhật đáp án đúng (A/B/C/D) cho 200 câu hỏi trong đề thi
@@ -261,6 +324,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
             className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
           >
@@ -268,7 +332,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
           </button>
         </div>
 
-        {/* MODAL BODY — ALWAYS RENDERS SHELL */}
+        {/* MODAL BODY */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {/* PUBLISHED WARNING BANNER */}
           {isPublished && (
@@ -288,7 +352,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
             <div className="p-3 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-bold text-slate-600 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-ori-600" />
-                <span>Đang tải 200 câu hỏi hiện tại... ({loadedQuestionsCount}/200 câu)</span>
+                <span>Đang tải dữ liệu câu hỏi hiện tại... ({loadedQuestionsCount}/200 câu)</span>
               </div>
             </div>
           ) : (
@@ -322,7 +386,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
                 {CANONICAL_TOEIC_PARTS.map(pKey => {
                   const struct = TOEIC_FULL_TEST_STRUCTURE[pKey];
                   const partQs = safeQuestions.filter(
-                    q => q.question_number >= struct.startNumber && q.question_number <= struct.endNumber
+                    q => q && typeof q.question_number === 'number' && q.question_number >= struct.startNumber && q.question_number <= struct.endNumber
                   );
 
                   return (
@@ -331,10 +395,10 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
                         {struct.nameVi} (Câu #{struct.startNumber}–#{struct.endNumber})
                       </div>
                       <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
-                        {partQs.map(q => (
-                          <div key={q.id} className="bg-slate-50 border border-slate-200 rounded p-1 text-center">
-                            <div className="text-[9px] text-slate-400 font-bold">#{q.question_number}</div>
-                            <div className="text-xs font-black text-slate-900">{q.correct_answer}</div>
+                        {partQs.map((q, idx) => (
+                          <div key={q.id || `q-${q.question_number || idx}`} className="bg-slate-50 border border-slate-200 rounded p-1 text-center">
+                            <div className="text-[9px] text-slate-400 font-bold">#{q.question_number || idx + 1}</div>
+                            <div className="text-xs font-black text-slate-900">{q.correct_answer || '—'}</div>
                           </div>
                         ))}
                       </div>
@@ -369,6 +433,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
               <div className="pt-4 flex items-center justify-center gap-3">
                 <button
+                  type="button"
                   onClick={onClose}
                   className="px-6 py-2.5 bg-ori-600 text-white font-extrabold text-xs rounded-xl hover:bg-ori-700 transition-colors shadow-md"
                 >
@@ -570,6 +635,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
         {!submitSuccessResult && (
           <div className="p-4 border-t border-slate-200 bg-slate-50 rounded-b-3xl flex items-center justify-between">
             <button
+              type="button"
               onClick={onClose}
               className="px-4 py-2 bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl hover:bg-slate-300 transition-colors"
             >
@@ -577,6 +643,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
             </button>
 
             <button
+              type="button"
               onClick={() => setShowConfirmModal(true)}
               disabled={isPublished || stats.hasBlockers || stats.totalParsed === 0}
               className="px-6 py-2.5 bg-ori-600 text-white font-extrabold text-xs rounded-xl hover:bg-ori-700 disabled:opacity-40 flex items-center gap-2 shadow-md transition-colors"
@@ -647,5 +714,15 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
         )}
       </div>
     </div>
+  );
+};
+
+// Safe Export Wrapped in Error Boundary
+export const SafeAnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = (props) => {
+  if (!props.isOpen) return null;
+  return (
+    <AnswerKeyErrorBoundary onClose={props.onClose}>
+      <AnswerKeyImporterModal {...props} />
+    </AnswerKeyErrorBoundary>
   );
 };

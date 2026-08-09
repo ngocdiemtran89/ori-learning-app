@@ -30,7 +30,7 @@ import {
 } from '../lib/toeic/testStructure';
 import { Image as ImageIcon } from 'lucide-react';
 import { MediaManagerTab } from '../components/admin/MediaManagerTab';
-import { AnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
+import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 
 export const AdminToeicTestEditPage: React.FC = () => {
   const { testId } = useParams<{ testId?: string }>();
@@ -329,26 +329,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
                 {isEditing ? `Chỉnh Sửa Đề Thi: ${title}` : 'Tạo Đề Thi TOEIC Mới'}
               </h1>
 
-              <div className="flex items-center gap-2">
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAnswerKeyModal(true)}
-                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition-all"
-                  >
-                    <span>📋 Import Answer Key</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSaveHeader}
-                  disabled={saving}
-                  className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
-                >
-                  <Save className="w-4 h-4" /> {saving ? 'Đang Lưu...' : 'Lưu Thông Tin Đầu Đề'}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleSaveHeader}
+                disabled={saving}
+                className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md shadow-ori-600/20 flex items-center gap-1.5 transition-all"
+              >
+                <Save className="w-4 h-4" /> {saving ? 'Đang Lưu...' : 'Lưu Thông Tin Đầu Đề'}
+              </button>
             </div>
 
             {formError && (
@@ -1004,7 +992,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
       )}
 
       {isEditing && testId && (
-        <AnswerKeyImporterModal
+        <SafeAnswerKeyImporterModal
           isOpen={showAnswerKeyModal}
           onClose={() => setShowAnswerKeyModal(false)}
           testId={testId}
