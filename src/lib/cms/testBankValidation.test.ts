@@ -127,7 +127,7 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
       const part = expectedPartForQuestionNumber(i)!;
       const opts = part === 'part2' ? ['(A) Opt 1', '(B) Opt 2', '(C) Opt 3'] : ['(A) Opt 1', '(B) Opt 2', '(C) Opt 3', '(D) Opt 4'];
       let extra: any = {};
-      if (part === 'part1') extra.image_url = 'img.jpg';
+      if (part === 'part1') { extra.image_url = 'img.jpg'; extra.audio_url = 'audio.mp3'; }
       if (part === 'part2') extra.audio_url = 'audio.mp3';
       if (part === 'part3') extra.group_id = 'g3';
       if (part === 'part4') extra.group_id = 'g4';

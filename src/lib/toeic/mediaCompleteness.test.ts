@@ -166,7 +166,7 @@ describe('getMediaCompleteness — group labels', () => {
 
     // Part 1: Q1–6
     for (let i = 1; i <= 6; i++) {
-      questions.push(makeQ({ question_number: i, part: 'part1', image_url: 'img' as any }));
+      questions.push(makeQ({ question_number: i, part: 'part1', image_url: 'img' as any, audio_url: 'aud' as any }));
     }
     // Part 2: Q7–31
     for (let i = 7; i <= 31; i++) {

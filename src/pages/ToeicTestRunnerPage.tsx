@@ -154,8 +154,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
 
   const handleTimeExpired = useCallback(() => { setTimeExpired(true); }, []);
 
-  const showPassage = currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0));
-  const showMedia = mediaContext.audioUrl || mediaContext.imageUrl;
+  const isListeningPart = currentQuestion ? ['part1', 'part2', 'part3', 'part4'].includes(currentQuestion.part) : false;
+  const showPassage = currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0) || currentGroup.instruction);
+  const showMedia = Boolean(mediaContext.audioUrl || mediaContext.imageUrl || isListeningPart);
+  const hasAudio = Boolean(mediaContext.audioUrl);
 
   // Part title for header
   const headerTitle = useMemo(() => {
@@ -252,7 +254,14 @@ export const ToeicTestRunnerPage: React.FC = () => {
           {currentQuestion ? (
             <div className="max-w-2xl mx-auto space-y-6">
               {showPassage && currentGroup && <PassageDisplay group={currentGroup} isPartMode={isPartMode} />}
-              {showMedia && <ListeningMedia audioUrl={mediaContext.audioUrl} imageUrl={mediaContext.imageUrl} />}
+              {showMedia && (
+                <ListeningMedia
+                  audioUrl={mediaContext.audioUrl}
+                  imageUrl={mediaContext.imageUrl}
+                  part={currentQuestion.part}
+                  isAudioRequired={isListeningPart}
+                />
+              )}
 
               <QuestionDisplay
                 question={currentQuestion}
@@ -260,6 +269,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 onSelectAnswer={handleSelectAnswer}
                 disabled={timeExpired && !isPartMode}
                 isPartMode={isPartMode}
+                hasAudio={hasAudio}
                 onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
                   await saveToeicWord(attempt.id, currentQuestion.id, word, context);
                 } : undefined}

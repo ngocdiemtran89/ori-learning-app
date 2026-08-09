@@ -11,6 +11,16 @@ interface PassageDisplayProps {
 export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMode = false }) => {
   const [showTranslation, setShowTranslation] = useState(false);
 
+  // Listening groups (Part 3 / Part 4) MUST NOT render conversation/talk spoken transcripts
+  if (group.part === 'part3' || group.part === 'part4') {
+    if (!group.instruction) return null;
+    return (
+      <div className="text-xs font-bold text-slate-500 italic bg-slate-100/80 rounded-xl p-3">
+        {group.instruction}
+      </div>
+    );
+  }
+
   // Part 7 structured documents
   if (group.documents && Array.isArray(group.documents) && group.documents.length > 0) {
     const docsVi = (group.documents_vi && Array.isArray(group.documents_vi)) ? group.documents_vi : [];
@@ -82,7 +92,7 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
     );
   }
 
-  // Part 6 / single passage
+  // Part 6 / single reading passage
   if (group.passage) {
     return (
       <div className="space-y-3">

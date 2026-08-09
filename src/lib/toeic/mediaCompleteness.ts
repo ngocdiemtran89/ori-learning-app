@@ -133,6 +133,7 @@ export function getMediaCompleteness(
   // Check publish readiness based on required media
   if (
     metrics.part1Images.missing.length > 0 ||
+    metrics.part1Audio.missing.length > 0 ||
     metrics.part2Audio.missing.length > 0 ||
     metrics.part3Audio.missing.length > 0 ||
     metrics.part4Audio.missing.length > 0

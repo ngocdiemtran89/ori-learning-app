@@ -146,7 +146,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId: _testI
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {renderMetricCard('Part 1 Ảnh', metrics.part1Images, <ImageIcon className="w-3.5 h-3.5" />, true)}
-        {renderMetricCard('Part 1 Audio', metrics.part1Audio, <Music className="w-3.5 h-3.5" />, false)}
+        {renderMetricCard('Part 1 Audio', metrics.part1Audio, <Music className="w-3.5 h-3.5" />, true)}
         {renderMetricCard('Part 2 Audio', metrics.part2Audio, <Music className="w-3.5 h-3.5" />, true)}
         {renderMetricCard('Part 3 Audio', metrics.part3Audio, <Music className="w-3.5 h-3.5" />, true)}
         {renderMetricCard('Part 4 Audio', metrics.part4Audio, <Music className="w-3.5 h-3.5" />, true)}

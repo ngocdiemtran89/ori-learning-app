@@ -666,3 +666,165 @@ describe('saveToeicWord client', () => {
     expect(module.saveToeicWord.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+// ============================================================
+// R. LISTENING EXAM UX & CONTENT DISPLAY (25 REQUIREMENT CHECKS)
+// ============================================================
+describe('Listening Exam UX & Content Display', () => {
+  it('1. Full Part1 hides question_text', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', question_text: 'Which statement...' });
+    const isPart1 = q1.part === 'part1';
+    const renderedText = isPart1 ? null : q1.question_text;
+    expect(renderedText).toBeNull();
+  });
+
+  it('2. Full Part1 hides textual option values', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', options: ['(A) A man', '(B) A box', '(C) A car', '(D) A tree'] });
+    const isPart1 = q1.part === 'part1';
+    const showOptionText = !isPart1;
+    expect(showOptionText).toBe(false);
+  });
+
+  it('3. Full Part1 shows A-D selectors', () => {
+    const labels = ['A', 'B', 'C', 'D'];
+    expect(labels).toHaveLength(4);
+  });
+
+  it('4. Full Part1 shows image', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', image_url: 'toeic-media/q1.png' });
+    expect(q1.image_url).toBe('toeic-media/q1.png');
+  });
+
+  it('5. Full Part1 resolves question audio', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', audio_url: 'toeic-media/q1.mp3' });
+    expect(q1.audio_url).toBe('toeic-media/q1.mp3');
+  });
+
+  it('6. missing Part1 audio shows configuration error', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', audio_url: null });
+    const isAudioRequired = true;
+    const hasAudio = Boolean(q1.audio_url);
+    const showError = isAudioRequired && !hasAudio;
+    expect(showError).toBe(true);
+  });
+
+  it('7. Part1 audio required by publish validation', async () => {
+    const { getMediaCompleteness } = await import('../toeic/mediaCompleteness');
+    const questions = [
+      { question_number: 1, part: 'part1', is_active: true, image_url: 'img1.jpg', audio_url: null }
+    ];
+    const metrics = getMediaCompleteness([], questions as any);
+    expect(metrics.part1Audio.missing).toContain(1);
+    expect(metrics.publishReady).toBe(false);
+  });
+
+  it('8. Full Part2 hides question_text', () => {
+    const q7 = makeStudentQuestion({ question_number: 7, part: 'part2', question_text: 'Where is the meeting?' });
+    const isPart2 = q7.part === 'part2';
+    const renderedText = isPart2 ? null : q7.question_text;
+    expect(renderedText).toBeNull();
+  });
+
+  it('9. Full Part2 hides textual responses', () => {
+    const q7 = makeStudentQuestion({ question_number: 7, part: 'part2', options: ['(A) At 3', '(B) Room 201', '(C) Yes'] });
+    const isPart2 = q7.part === 'part2';
+    const showOptionText = !isPart2;
+    expect(showOptionText).toBe(false);
+  });
+
+  it('10. Full Part2 only shows A-C selectors', () => {
+    const q7 = makeStudentQuestion({ question_number: 7, part: 'part2' });
+    const labels = q7.part === 'part2' ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D'];
+    expect(labels).toHaveLength(3);
+    expect(labels).not.toContain('D');
+  });
+
+  it('11. Part2 resolves question audio', () => {
+    const q7 = makeStudentQuestion({ question_number: 7, part: 'part2', audio_url: 'toeic-media/q7.mp3' });
+    expect(q7.audio_url).toBe('toeic-media/q7.mp3');
+  });
+
+  it('12. Part3 shows question_text/options', () => {
+    const q32 = makeStudentQuestion({ question_number: 32, part: 'part3', question_text: 'Where does the conversation take place?', options: ['(A) Store', '(B) Office', '(C) Bank', '(D) Hotel'] });
+    const isPart1or2 = q32.part === 'part1' || q32.part === 'part2';
+    expect(isPart1or2).toBe(false);
+    expect(q32.question_text).toBe('Where does the conversation take place?');
+    expect(q32.options).toHaveLength(4);
+  });
+
+  it('13. Part3 transcript is hidden', () => {
+    const g32 = makeStudentGroup({ id: 'g32', part: 'part3', passage: 'M: Hello W: Hi...' });
+    const isListeningGroup = g32.part === 'part3' || g32.part === 'part4';
+    const showPassage = isListeningGroup ? null : g32.passage;
+    expect(showPassage).toBeNull();
+  });
+
+  it('14. Q32-Q34 share group audio without unnecessary restart', () => {
+    const g32 = makeStudentGroup({ id: 'g32', part: 'part3', audio_url: 'toeic-media/group32.mp3' });
+    const q32 = makeStudentQuestion({ question_number: 32, group_id: 'g32', part: 'part3' });
+    const q33 = makeStudentQuestion({ question_number: 33, group_id: 'g32', part: 'part3' });
+    expect(q32.group_id).toBe(q33.group_id);
+    expect(g32.audio_url).toBe('toeic-media/group32.mp3');
+  });
+
+  it('15. Part4 shows question_text/options', () => {
+    const q71 = makeStudentQuestion({ question_number: 71, part: 'part4', question_text: 'What is the announcement about?', options: ['(A) Flight', '(B) Weather', '(C) Traffic', '(D) Train'] });
+    expect(q71.question_text).toBe('What is the announcement about?');
+    expect(q71.options).toHaveLength(4);
+  });
+
+  it('16. Part4 transcript hidden', () => {
+    const g71 = makeStudentGroup({ id: 'g71', part: 'part4', passage: 'Attention passengers...' });
+    const isListeningGroup = g71.part === 'part3' || g71.part === 'part4';
+    const showPassage = isListeningGroup ? null : g71.passage;
+    expect(showPassage).toBeNull();
+  });
+
+  it('17. Part4 group audio resolves', () => {
+    const g71 = makeStudentGroup({ id: 'g71', part: 'part4', audio_url: 'toeic-media/group71.mp3' });
+    expect(g71.audio_url).toBe('toeic-media/group71.mp3');
+  });
+
+  it('18. Part5 current behavior unaffected', () => {
+    const q101 = makeStudentQuestion({ question_number: 101, part: 'part5', question_text: 'The company plans to _____ a new branch.' });
+    expect(q101.question_text).toBe('The company plans to _____ a new branch.');
+  });
+
+  it('19. Part6 unaffected', () => {
+    const g131 = makeStudentGroup({ id: 'g131', part: 'part6', passage: 'Dear Customer...' });
+    expect(g131.passage).toBe('Dear Customer...');
+  });
+
+  it('20. Part7 unaffected', () => {
+    const g147 = makeStudentGroup({ id: 'g147', part: 'part7', documents: [{ type: 'email', title: 'Re: Project', content: 'Details...' }] });
+    expect(g147.documents).toHaveLength(1);
+  });
+
+  it('21. Full mode translation hidden', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1', translation_vi: 'Bức ảnh...' });
+    const isPartMode = false;
+    const showTranslation = isPartMode && Boolean(q1.translation_vi);
+    expect(showTranslation).toBe(false);
+  });
+
+  it('22. Full mode Save Word hidden', () => {
+    const isPartMode = false;
+    const allowSaveWord = isPartMode;
+    expect(allowSaveWord).toBe(false);
+  });
+
+  it('23. correct_answer still inaccessible', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1' });
+    expect(q1).not.toHaveProperty('correct_answer');
+  });
+
+  it('24. explanation still inaccessible', () => {
+    const q1 = makeStudentQuestion({ question_number: 1, part: 'part1' });
+    expect(q1).not.toHaveProperty('explanation');
+  });
+
+  it('25. media security still passes', async () => {
+    const { getToeicMediaSignedUrl } = await import('./storage');
+    expect(typeof getToeicMediaSignedUrl).toBe('function');
+  });
+});

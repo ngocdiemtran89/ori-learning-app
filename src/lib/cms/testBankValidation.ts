@@ -217,6 +217,9 @@ export function validateToeicTestForPublish(
       if (!q.image_url && (!g || !g.image_url)) {
         errors.push(`Câu #${q.question_number} (Part 1): Thiếu hình ảnh (cần có ở cấp độ câu hỏi hoặc nhóm).`);
       }
+      if (!q.audio_url && (!g || !g.audio_url)) {
+        errors.push(`Câu #${q.question_number} (Part 1): Thiếu audio (cần có ở cấp độ câu hỏi hoặc nhóm).`);
+      }
     } else if (normPart === 'part2') {
       if (!q.audio_url && (!g || !g.audio_url)) {
         errors.push(`Câu #${q.question_number} (Part 2): Thiếu audio (cần có ở cấp độ câu hỏi hoặc nhóm).`);
