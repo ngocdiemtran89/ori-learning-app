@@ -1,7 +1,18 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose } from 'lucide-react';
-import { startOrResumeTest, fetchTestContent, fetchAttemptAnswers, saveAnswer, updateAttemptProgress, fetchMyAttempt, saveToeicWord } from '../lib/supabase/studentToeic';
+import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, Send, AlertTriangle } from 'lucide-react';
+import {
+  startOrResumeTest,
+  fetchTestContent,
+  fetchAttemptAnswers,
+  saveAnswer,
+  updateAttemptProgress,
+  fetchMyAttempt,
+  saveToeicWord,
+  submitStudentToeicAttempt,
+  getStudentToeicAttemptReview,
+  type StudentToeicAttemptReviewPayload,
+} from '../lib/supabase/studentToeic';
 import { TOEIC_FULL_TEST_STRUCTURE, type CanonicalToeicPart } from '../lib/toeic/testStructure';
 import type { StudentToeicTestContent, StudentToeicGroup, ToeicTestAttempt, ToeicAttemptMode } from '../lib/supabase/types';
 import { QuestionDisplay } from '../components/toeic/QuestionDisplay';
@@ -9,6 +20,7 @@ import { QuestionNavigator } from '../components/toeic/QuestionNavigator';
 import { TestTimer } from '../components/toeic/TestTimer';
 import { PassageDisplay } from '../components/toeic/PassageDisplay';
 import { ListeningMedia } from '../components/toeic/ListeningMedia';
+import { PartPracticeReviewView } from '../components/toeic/PartPracticeReviewView';
 
 export const ToeicTestRunnerPage: React.FC = () => {
   const { testId } = useParams<{ testId: string }>();
@@ -40,48 +52,61 @@ export const ToeicTestRunnerPage: React.FC = () => {
   const [navOpen, setNavOpen] = useState(true);
   const [timeExpired, setTimeExpired] = useState(false);
 
-  useEffect(() => {
+  // Submit & Review State
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reviewPayload, setReviewPayload] = useState<StudentToeicAttemptReviewPayload | null>(null);
+
+  const loadRunnerData = useCallback(async () => {
     if (!testId) return;
-    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setReviewPayload(null);
 
-    const init = async () => {
-      setLoading(true);
-      try {
-        const attemptRes = await startOrResumeTest(testId, mode, partNumber);
-        if (attemptRes.error) { setError(attemptRes.error); setLoading(false); return; }
+    try {
+      const attemptRes = await startOrResumeTest(testId, mode, partNumber);
+      if (attemptRes.error) { setError(attemptRes.error); setLoading(false); return; }
 
-        const myAttempt = await fetchMyAttempt(testId, mode, partNumber);
-        if (cancelled) return;
-        if (myAttempt.data) {
-          setAttempt(myAttempt.data);
-          setCurrentQ(myAttempt.data.current_question_number || scopeRange.start);
-        }
+      const myAttempt = await fetchMyAttempt(testId, mode, partNumber);
+      if (myAttempt.data) {
+        setAttempt(myAttempt.data);
 
-        const contentRes = await fetchTestContent(testId, mode, partNumber);
-        if (cancelled) return;
-        if (contentRes.error) { setError(contentRes.error); setLoading(false); return; }
-        setContent(contentRes.data);
-
-        if (myAttempt.data) {
-          const answersRes = await fetchAttemptAnswers(myAttempt.data.id);
-          if (cancelled) return;
-          if (answersRes.data) {
-            const map = new Map<string, string>();
-            answersRes.data.forEach(a => {
-              if (a.selected_answer) map.set(a.question_id, a.selected_answer);
-            });
-            setAnswers(map);
+        // IF ATTEMPT IS ALREADY SUBMITTED, LOAD REVIEW PAYLOAD
+        if (myAttempt.data.status === 'submitted') {
+          const reviewRes = await getStudentToeicAttemptReview(myAttempt.data.id);
+          if (reviewRes.success && reviewRes.data) {
+            setReviewPayload(reviewRes.data);
+            setLoading(false);
+            return;
           }
         }
-      } catch (err: any) {
-        if (!cancelled) setError(err.message || 'Lỗi hệ thống');
-      }
-      if (!cancelled) setLoading(false);
-    };
 
-    init();
-    return () => { cancelled = true; };
+        setCurrentQ(myAttempt.data.current_question_number || scopeRange.start);
+      }
+
+      const contentRes = await fetchTestContent(testId, mode, partNumber);
+      if (contentRes.error) { setError(contentRes.error); setLoading(false); return; }
+      setContent(contentRes.data);
+
+      if (myAttempt.data) {
+        const answersRes = await fetchAttemptAnswers(myAttempt.data.id);
+        if (answersRes.data) {
+          const map = new Map<string, string>();
+          answersRes.data.forEach(a => {
+            if (a.selected_answer) map.set(a.question_id, a.selected_answer);
+          });
+          setAnswers(map);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Lỗi hệ thống');
+    }
+    setLoading(false);
   }, [testId, mode, partNumber, scopeRange.start]);
+
+  useEffect(() => {
+    loadRunnerData();
+  }, [loadRunnerData]);
 
   const sortedQuestions = useMemo(() => {
     if (!content) return [];
@@ -131,7 +156,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
   }, [currentQuestion, currentGroup]);
 
   const handleSelectAnswer = useCallback(async (answer: string) => {
-    if (!currentQuestion || !attempt || timeExpired) return;
+    if (!currentQuestion || !attempt || timeExpired || attempt.status === 'submitted') return;
     setAnswers(prev => new Map(prev).set(currentQuestion.id, answer));
     const res = await saveAnswer(attempt.id, currentQuestion.id, answer, isPartMode ? localElapsedSeconds : undefined);
     if (res.error) console.error('Save answer error:', res.error);
@@ -140,7 +165,9 @@ export const ToeicTestRunnerPage: React.FC = () => {
   const handleNavigate = useCallback((questionNumber: number) => {
     if (questionNumber < scopeRange.start || questionNumber > scopeRange.end) return;
     setCurrentQ(questionNumber);
-    if (attempt) updateAttemptProgress(attempt.id, questionNumber, isPartMode ? localElapsedSeconds : undefined);
+    if (attempt && attempt.status !== 'submitted') {
+      updateAttemptProgress(attempt.id, questionNumber, isPartMode ? localElapsedSeconds : undefined);
+    }
   }, [attempt, scopeRange, isPartMode, localElapsedSeconds]);
 
   const handlePrev = useCallback(() => {
@@ -152,9 +179,43 @@ export const ToeicTestRunnerPage: React.FC = () => {
   }, [currentQ, handleNavigate, scopeRange.end]);
 
   const handleSaveAndExit = useCallback(async () => {
-    if (attempt) await updateAttemptProgress(attempt.id, currentQ, isPartMode ? localElapsedSeconds : undefined);
+    if (attempt && attempt.status !== 'submitted') {
+      await updateAttemptProgress(attempt.id, currentQ, isPartMode ? localElapsedSeconds : undefined);
+    }
     navigate(`/tests/${testId}`);
   }, [attempt, currentQ, testId, navigate, isPartMode, localElapsedSeconds]);
+
+  // SUBMIT EXECUTION
+  const handleConfirmSubmit = useCallback(async () => {
+    if (!attempt) return;
+    setSubmitting(true);
+    try {
+      const subRes = await submitStudentToeicAttempt(attempt.id);
+      if (!subRes.success) {
+        setError(subRes.error || 'Không thể nộp bài');
+        setSubmitting(false);
+        setShowSubmitConfirm(false);
+        return;
+      }
+
+      const reviewRes = await getStudentToeicAttemptReview(attempt.id);
+      if (reviewRes.success && reviewRes.data) {
+        setReviewPayload(reviewRes.data);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Lỗi nộp bài');
+    }
+    setSubmitting(false);
+    setShowSubmitConfirm(false);
+  }, [attempt]);
+
+  // RETAKE EXECUTION
+  const handleRetakePart = useCallback(async () => {
+    if (!attempt || !testId) return;
+    setLoading(true);
+    // Submit status is already 'submitted', calling startOrResumeTest creates a NEW attempt
+    await loadRunnerData();
+  }, [attempt, testId, loadRunnerData]);
 
   const handleTimeExpired = useCallback(() => { setTimeExpired(true); }, []);
 
@@ -173,6 +234,17 @@ export const ToeicTestRunnerPage: React.FC = () => {
     }
     return content.test.title;
   }, [content, isPartMode, partNumber]);
+
+  // RENDER REVIEW MODE IF SUBMITTED
+  if (reviewPayload) {
+    return (
+      <PartPracticeReviewView
+        reviewData={reviewPayload}
+        onRetake={handleRetakePart}
+        testId={testId!}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -198,6 +270,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
     );
   }
 
+  const answeredCount = answeredNumbers.size;
+  const remainingCount = scopeTotal - answeredCount;
+  const isComplete = answeredCount === scopeTotal;
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
@@ -217,8 +293,17 @@ export const ToeicTestRunnerPage: React.FC = () => {
             />
 
             <div className="hidden sm:block text-xs font-bold text-slate-500">
-              {answeredNumbers.size}/{scopeTotal}
+              {answeredCount}/{scopeTotal}
             </div>
+
+            <button
+              onClick={() => setShowSubmitConfirm(true)}
+              className="px-3 py-1.5 text-xs font-extrabold text-white bg-ori-600 hover:bg-ori-700 rounded-lg flex items-center gap-1 transition-colors shadow-sm"
+              title="Nộp bài luyện tập"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Nộp bài
+            </button>
 
             <button
               onClick={() => setNavOpen(!navOpen)}
@@ -238,6 +323,64 @@ export const ToeicTestRunnerPage: React.FC = () => {
         </div>
       </header>
 
+      {/* CONFIRMATION SUBMIT MODAL */}
+      {showSubmitConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl max-w-md w-full text-center space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-ori-100 text-ori-600 mb-1">
+              <Send className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900">
+                Xác nhận nộp {isPartMode && partNumber ? `Part ${partNumber}` : 'bài thi'}
+              </h2>
+              {isComplete ? (
+                <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                  Bạn đã trả lời <span className="font-bold text-slate-900">{answeredCount}/{scopeTotal}</span> câu.<br />
+                  Bạn có chắc chắn muốn nộp bài ngay bây giờ?
+                </p>
+              ) : (
+                <div className="mt-2 p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-sm text-left flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Bài làm chưa hoàn thành</p>
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Bạn đã trả lời <span className="font-bold">{answeredCount}/{scopeTotal}</span> câu. còn <span className="font-bold text-rose-700">{remainingCount}</span> câu chưa trả lời.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSubmitConfirm(false)}
+                disabled={submitting}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-sm rounded-2xl transition-colors"
+              >
+                QUAY LẠI
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSubmit}
+                disabled={submitting}
+                className="flex-1 py-3 bg-ori-600 hover:bg-ori-700 text-white font-extrabold text-sm rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-md"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Đang nộp...
+                  </>
+                ) : (
+                  'NỘP BÀI'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {timeExpired && !isPartMode && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-sm text-center space-y-4">
@@ -245,10 +388,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
             <h2 className="text-lg font-extrabold text-slate-900">Thời gian làm bài đã hết</h2>
             <p className="text-sm text-slate-500">Bài làm của bạn đã được lưu tự động.</p>
             <button
-              onClick={() => navigate(`/tests/${testId}`)}
+              onClick={handleConfirmSubmit}
               className="px-6 py-2.5 bg-ori-600 text-white font-extrabold rounded-xl hover:bg-ori-700 transition-colors"
             >
-              Quay lại
+              Nộp bài ngay
             </button>
           </div>
         </div>
@@ -298,15 +441,25 @@ export const ToeicTestRunnerPage: React.FC = () => {
                   {currentQ} / {scopeRange.end}
                 </span>
 
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  disabled={currentQ >= scopeRange.end}
-                  className="px-4 py-2 text-sm font-bold text-white bg-ori-600 hover:bg-ori-700 rounded-xl flex items-center gap-1 disabled:opacity-40 transition-colors"
-                >
-                  Câu sau
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                {currentQ < scopeRange.end ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="px-4 py-2 text-sm font-bold text-white bg-ori-600 hover:bg-ori-700 rounded-xl flex items-center gap-1 transition-colors"
+                  >
+                    Câu sau
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowSubmitConfirm(true)}
+                    className="px-5 py-2.5 text-sm font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center gap-1.5 transition-colors shadow-md animate-pulse"
+                  >
+                    <Send className="w-4 h-4" />
+                    NỘP {isPartMode && partNumber ? `PART ${partNumber}` : 'BÀI'}
+                  </button>
+                )}
               </div>
             </div>
           ) : (
