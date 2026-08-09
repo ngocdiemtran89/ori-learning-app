@@ -336,127 +336,8 @@ end;
 $$;
 
 -- ============================================================
--- 12. RPC: get_student_toeic_test_content (mode-aware filtering)
---     NEVER returns correct_answer or explanation.
+-- 12. (MOVED to section 16 — mode-aware translation version)
 -- ============================================================
-create or replace function public.get_student_toeic_test_content(
-  p_test_id uuid,
-  p_mode text default 'full',
-  p_part_number integer default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_user_id uuid;
-  v_test jsonb;
-  v_groups jsonb;
-  v_questions jsonb;
-  v_part_key text;
-  v_qn_range int4range;
-begin
-  v_user_id := auth.uid();
-  if v_user_id is null then raise exception 'Not authenticated'; end if;
-  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
-
-  -- Test metadata
-  select jsonb_build_object(
-    'id', id, 'title', title, 'test_code', test_code,
-    'description', description, 'test_type', test_type
-  ) into v_test
-  from public.toeic_tests
-  where id = p_test_id and is_published = true;
-
-  if v_test is null then raise exception 'Test not found or not published'; end if;
-
-  -- Compute scope filter
-  if p_mode = 'part' and p_part_number is not null then
-    v_part_key := public._toeic_part_key(p_part_number);
-    v_qn_range := public._toeic_part_range(p_part_number);
-  end if;
-
-  -- Groups ordered by MIN(active child question_number)
-  if v_part_key is not null then
-    -- Part mode: only groups for this part
-    select coalesce(jsonb_agg(
-      jsonb_build_object(
-        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
-        'title', sub.title, 'instruction', sub.instruction,
-        'passage', sub.passage, 'documents', sub.documents,
-        'audio_url', sub.audio_url, 'image_url', sub.image_url
-      ) order by sub.min_qn, sub.sort_order
-    ), '[]'::jsonb) into v_groups
-    from (
-      select g.*,
-        coalesce(
-          (select min(q.question_number)
-           from public.toeic_test_questions q
-           where q.group_id = g.id and q.is_active = true),
-          g.sort_order * 1000
-        ) as min_qn
-      from public.toeic_test_groups g
-      where g.test_id = p_test_id and g.is_active = true and g.part = v_part_key
-    ) sub;
-  else
-    -- Full mode: all groups
-    select coalesce(jsonb_agg(
-      jsonb_build_object(
-        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
-        'title', sub.title, 'instruction', sub.instruction,
-        'passage', sub.passage, 'documents', sub.documents,
-        'audio_url', sub.audio_url, 'image_url', sub.image_url
-      ) order by sub.min_qn, sub.sort_order
-    ), '[]'::jsonb) into v_groups
-    from (
-      select g.*,
-        coalesce(
-          (select min(q.question_number)
-           from public.toeic_test_questions q
-           where q.group_id = g.id and q.is_active = true),
-          g.sort_order * 1000
-        ) as min_qn
-      from public.toeic_test_groups g
-      where g.test_id = p_test_id and g.is_active = true
-    ) sub;
-  end if;
-
-  -- Questions — EXCLUDING correct_answer AND explanation
-  if v_qn_range is not null then
-    -- Part mode: only questions in range
-    select coalesce(jsonb_agg(
-      jsonb_build_object(
-        'id', q.id, 'group_id', q.group_id,
-        'question_number', q.question_number, 'part', q.part,
-        'question_text', q.question_text, 'options', q.options,
-        'skill_tag', q.skill_tag, 'topic', q.topic,
-        'audio_url', q.audio_url, 'image_url', q.image_url
-      ) order by q.question_number
-    ), '[]'::jsonb) into v_questions
-    from public.toeic_test_questions q
-    where q.test_id = p_test_id and q.is_active = true
-      and q.question_number <@ v_qn_range;
-  else
-    -- Full mode: all questions
-    select coalesce(jsonb_agg(
-      jsonb_build_object(
-        'id', q.id, 'group_id', q.group_id,
-        'question_number', q.question_number, 'part', q.part,
-        'question_text', q.question_text, 'options', q.options,
-        'skill_tag', q.skill_tag, 'topic', q.topic,
-        'audio_url', q.audio_url, 'image_url', q.image_url
-      ) order by q.question_number
-    ), '[]'::jsonb) into v_questions
-    from public.toeic_test_questions q
-    where q.test_id = p_test_id and q.is_active = true;
-  end if;
-
-  return jsonb_build_object(
-    'test', v_test, 'groups', v_groups, 'questions', v_questions
-  );
-end;
-$$;
 
 -- ============================================================
 -- 13. RPC: save_toeic_answer (scope-aware)
@@ -600,7 +481,256 @@ end;
 $$;
 
 -- ============================================================
--- 15. EXECUTE PRIVILEGE CONTROL
+-- 15. TRANSLATION COLUMNS (ALTER existing Production tables)
+--     Stored once globally — reused by all students.
+--     DO NOT edit P3.5C migration — ALTER here.
+-- ============================================================
+alter table public.toeic_test_questions
+  add column if not exists translation_vi text,
+  add column if not exists options_vi jsonb;
+
+alter table public.toeic_test_groups
+  add column if not exists instruction_vi text,
+  add column if not exists passage_vi text,
+  add column if not exists documents_vi jsonb;
+
+-- ============================================================
+-- 16. UPDATE: get_student_toeic_test_content (mode-aware translation)
+--     FULL mode: NO translation fields
+--     PART mode: include translation fields
+--     NEVER returns correct_answer or explanation.
+-- ============================================================
+create or replace function public.get_student_toeic_test_content(
+  p_test_id uuid,
+  p_mode text default 'full',
+  p_part_number integer default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid;
+  v_test jsonb;
+  v_groups jsonb;
+  v_questions jsonb;
+  v_part_key text;
+  v_qn_range int4range;
+  v_include_translation boolean;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
+
+  v_include_translation := (p_mode = 'part');
+
+  select jsonb_build_object(
+    'id', id, 'title', title, 'test_code', test_code,
+    'description', description, 'test_type', test_type
+  ) into v_test
+  from public.toeic_tests
+  where id = p_test_id and is_published = true;
+
+  if v_test is null then raise exception 'Test not found or not published'; end if;
+
+  if p_mode = 'part' and p_part_number is not null then
+    v_part_key := public._toeic_part_key(p_part_number);
+    v_qn_range := public._toeic_part_range(p_part_number);
+  end if;
+
+  -- Groups
+  if v_part_key is not null then
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
+        'title', sub.title, 'instruction', sub.instruction,
+        'passage', sub.passage, 'documents', sub.documents,
+        'audio_url', sub.audio_url, 'image_url', sub.image_url,
+        'instruction_vi', case when v_include_translation then sub.instruction_vi else null end,
+        'passage_vi', case when v_include_translation then sub.passage_vi else null end,
+        'documents_vi', case when v_include_translation then sub.documents_vi else null end
+      ) order by sub.min_qn, sub.sort_order
+    ), '[]'::jsonb) into v_groups
+    from (
+      select g.*,
+        coalesce(
+          (select min(q.question_number)
+           from public.toeic_test_questions q
+           where q.group_id = g.id and q.is_active = true),
+          g.sort_order * 1000
+        ) as min_qn
+      from public.toeic_test_groups g
+      where g.test_id = p_test_id and g.is_active = true and g.part = v_part_key
+    ) sub;
+  else
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', sub.id, 'part', sub.part, 'group_type', sub.group_type,
+        'title', sub.title, 'instruction', sub.instruction,
+        'passage', sub.passage, 'documents', sub.documents,
+        'audio_url', sub.audio_url, 'image_url', sub.image_url
+      ) order by sub.min_qn, sub.sort_order
+    ), '[]'::jsonb) into v_groups
+    from (
+      select g.*,
+        coalesce(
+          (select min(q.question_number)
+           from public.toeic_test_questions q
+           where q.group_id = g.id and q.is_active = true),
+          g.sort_order * 1000
+        ) as min_qn
+      from public.toeic_test_groups g
+      where g.test_id = p_test_id and g.is_active = true
+    ) sub;
+  end if;
+
+  -- Questions
+  if v_qn_range is not null then
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', q.id, 'group_id', q.group_id,
+        'question_number', q.question_number, 'part', q.part,
+        'question_text', q.question_text, 'options', q.options,
+        'skill_tag', q.skill_tag, 'topic', q.topic,
+        'audio_url', q.audio_url, 'image_url', q.image_url,
+        'translation_vi', case when v_include_translation then q.translation_vi else null end,
+        'options_vi', case when v_include_translation then q.options_vi else null end
+      ) order by q.question_number
+    ), '[]'::jsonb) into v_questions
+    from public.toeic_test_questions q
+    where q.test_id = p_test_id and q.is_active = true
+      and q.question_number <@ v_qn_range;
+  else
+    select coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', q.id, 'group_id', q.group_id,
+        'question_number', q.question_number, 'part', q.part,
+        'question_text', q.question_text, 'options', q.options,
+        'skill_tag', q.skill_tag, 'topic', q.topic,
+        'audio_url', q.audio_url, 'image_url', q.image_url
+      ) order by q.question_number
+    ), '[]'::jsonb) into v_questions
+    from public.toeic_test_questions q
+    where q.test_id = p_test_id and q.is_active = true;
+  end if;
+
+  return jsonb_build_object(
+    'test', v_test, 'groups', v_groups, 'questions', v_questions
+  );
+end;
+$$;
+
+-- ============================================================
+-- 17. RPC: save_toeic_word
+--     Reuses existing vocabulary_items + saved_words system.
+--     Creates/finds a global "TOEIC Practice" deck.
+--     Upserts word into vocabulary_items, links via saved_words.
+-- ============================================================
+create or replace function public.save_toeic_word(
+  p_attempt_id uuid,
+  p_question_id uuid,
+  p_word text,
+  p_context_sentence text default null,
+  p_meaning_vi text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid;
+  v_attempt record;
+  v_question record;
+  v_test_published boolean;
+  v_deck_id uuid;
+  v_vocab_id uuid;
+  v_normalized_word text;
+begin
+  v_user_id := auth.uid();
+  if v_user_id is null then raise exception 'Not authenticated'; end if;
+  if not public.has_active_access() then raise exception 'Access expired or inactive'; end if;
+
+  -- Validate input
+  v_normalized_word := lower(trim(p_word));
+  if v_normalized_word = '' or length(v_normalized_word) > 100 then
+    raise exception 'Invalid word';
+  end if;
+
+  -- Verify attempt: must be part mode, in_progress, owned by user
+  select id, test_id, mode, part_number, status
+  into v_attempt
+  from public.toeic_test_attempts
+  where id = p_attempt_id and user_id = v_user_id;
+
+  if v_attempt is null then raise exception 'Attempt not found'; end if;
+  if v_attempt.status != 'in_progress' then raise exception 'Attempt not in progress'; end if;
+  if v_attempt.mode != 'part' then raise exception 'Save Word is only available in Part Practice mode'; end if;
+
+  -- Verify test published
+  select is_published into v_test_published
+  from public.toeic_tests where id = v_attempt.test_id;
+  if v_test_published is not true then raise exception 'Test is no longer published'; end if;
+
+  -- Verify question belongs to attempt's test and is in scope
+  select id, part, question_number into v_question
+  from public.toeic_test_questions
+  where id = p_question_id and test_id = v_attempt.test_id and is_active = true;
+
+  if v_question is null then raise exception 'Question not found'; end if;
+
+  if not (v_question.question_number <@ public._toeic_part_range(v_attempt.part_number)) then
+    raise exception 'Question is outside the scope of this part attempt';
+  end if;
+
+  -- Find or create "TOEIC Practice" deck
+  select id into v_deck_id
+  from public.vocabulary_decks
+  where slug = 'toeic-practice';
+
+  if v_deck_id is null then
+    insert into public.vocabulary_decks (slug, title, description, level, is_published)
+    values ('toeic-practice', 'TOEIC Practice', 'Từ vựng lưu từ luyện TOEIC', 'mixed', true)
+    returning id into v_deck_id;
+  end if;
+
+  -- Upsert vocabulary item (global, shared across students)
+  select id into v_vocab_id
+  from public.vocabulary_items
+  where deck_id = v_deck_id and lower(word) = v_normalized_word
+  limit 1;
+
+  if v_vocab_id is null then
+    insert into public.vocabulary_items (
+      deck_id, word, meaning_vi, example_en, topic, toeic_parts, is_published
+    ) values (
+      v_deck_id,
+      v_normalized_word,
+      coalesce(p_meaning_vi, ''),
+      coalesce(p_context_sentence, ''),
+      'Part ' || v_attempt.part_number,
+      array['part' || v_attempt.part_number],
+      true
+    )
+    returning id into v_vocab_id;
+  end if;
+
+  -- Upsert saved_words link for this user
+  insert into public.saved_words (user_id, vocabulary_id)
+  values (v_user_id, v_vocab_id)
+  on conflict (user_id, vocabulary_id) do nothing;
+
+  return jsonb_build_object(
+    'saved', true,
+    'vocabulary_id', v_vocab_id,
+    'word', v_normalized_word
+  );
+end;
+$$;
+
+-- ============================================================
+-- 18. EXECUTE PRIVILEGE CONTROL
 -- ============================================================
 revoke execute on function public.start_or_resume_toeic_test(uuid, text, integer) from public;
 revoke execute on function public.start_or_resume_toeic_test(uuid, text, integer) from anon;
@@ -621,3 +751,8 @@ grant execute on function public.update_toeic_attempt_progress(uuid, integer) to
 revoke execute on function public.can_access_toeic_media(text) from public;
 revoke execute on function public.can_access_toeic_media(text) from anon;
 grant execute on function public.can_access_toeic_media(text) to authenticated;
+
+revoke execute on function public.save_toeic_word(uuid, uuid, text, text, text) from public;
+revoke execute on function public.save_toeic_word(uuid, uuid, text, text, text) from anon;
+grant execute on function public.save_toeic_word(uuid, uuid, text, text, text) to authenticated;
+

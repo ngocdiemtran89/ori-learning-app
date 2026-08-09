@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose } from 'lucide-react';
-import { startOrResumeTest, fetchTestContent, fetchAttemptAnswers, saveAnswer, updateAttemptProgress, fetchMyAttempt } from '../lib/supabase/studentToeic';
+import { startOrResumeTest, fetchTestContent, fetchAttemptAnswers, saveAnswer, updateAttemptProgress, fetchMyAttempt, saveToeicWord } from '../lib/supabase/studentToeic';
 import { TOEIC_FULL_TEST_STRUCTURE, type CanonicalToeicPart } from '../lib/toeic/testStructure';
 import type { StudentToeicTestContent, StudentToeicGroup, ToeicTestAttempt, ToeicAttemptMode } from '../lib/supabase/types';
 import { QuestionDisplay } from '../components/toeic/QuestionDisplay';
@@ -241,7 +241,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {currentQuestion ? (
             <div className="max-w-2xl mx-auto space-y-6">
-              {showPassage && currentGroup && <PassageDisplay group={currentGroup} />}
+              {showPassage && currentGroup && <PassageDisplay group={currentGroup} isPartMode={isPartMode} />}
               {showMedia && <ListeningMedia audioUrl={mediaContext.audioUrl} imageUrl={mediaContext.imageUrl} />}
 
               <QuestionDisplay
@@ -249,6 +249,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 selectedAnswer={answers.get(currentQuestion.id) || null}
                 onSelectAnswer={handleSelectAnswer}
                 disabled={timeExpired && !isPartMode}
+                isPartMode={isPartMode}
+                onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
+                  await saveToeicWord(attempt.id, currentQuestion.id, word, context);
+                } : undefined}
               />
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">

@@ -161,3 +161,27 @@ export async function saveAnswer(
 
   return { error: error?.message || null };
 }
+
+// ============================================================
+// VOCABULARY — SAVE WORD FROM TOEIC PRACTICE
+// ============================================================
+
+/** Save a word from TOEIC Practice into existing Saved Words system (Part mode only) */
+export async function saveToeicWord(
+  attemptId: string,
+  questionId: string,
+  word: string,
+  contextSentence?: string,
+  meaningVi?: string,
+): Promise<{ saved: boolean; word?: string; error?: string }> {
+  const { data, error } = await supabase.rpc('save_toeic_word', {
+    p_attempt_id: attemptId,
+    p_question_id: questionId,
+    p_word: word,
+    p_context_sentence: contextSentence || null,
+    p_meaning_vi: meaningVi || null,
+  });
+
+  if (error) return { saved: false, error: error.message };
+  return { saved: true, word: data?.word };
+}

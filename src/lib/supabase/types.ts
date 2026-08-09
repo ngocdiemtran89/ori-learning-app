@@ -116,6 +116,9 @@ export interface StudentToeicQuestion {
   topic: string | null;
   audio_url: string | null;
   image_url: string | null;
+  // Translation (part mode only — null in full mode)
+  translation_vi?: string | null;
+  options_vi?: string[] | null;
 }
 
 export interface StudentToeicGroup {
@@ -128,6 +131,10 @@ export interface StudentToeicGroup {
   documents: any[] | null;
   audio_url: string | null;
   image_url: string | null;
+  // Translation (part mode only — null in full mode)
+  instruction_vi?: string | null;
+  passage_vi?: string | null;
+  documents_vi?: any[] | null;
 }
 
 export interface StudentToeicTestMeta {
