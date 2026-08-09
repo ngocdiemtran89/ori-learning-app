@@ -5,9 +5,8 @@ export function parseAnswerKey(text: string): Record<number, string> {
   // Wait, the regex expects the line to be "1 A". If we split by \s+ it won't match.
   // Better approach: use a global regex over the whole string, or normalize it first.
   
-  // Find all occurrences of number followed optionally by punctuation and a letter A-D.
-  // We can use matchAll.
-  const GLOBAL_ANSWER_REGEX = /\b(\d{1,3})[\s\.\-]*([A-D])\b/gi;
+  // Find occurrences of number followed optionally by punctuation and a letter A-D optionally in punctuation.
+  const GLOBAL_ANSWER_REGEX = /\b(\d{1,3})[\s\.\-\):]*[\(\[]?([A-D])[\.\)\]]?\b/gi;
   
   const matches = [...text.matchAll(GLOBAL_ANSWER_REGEX)];
   

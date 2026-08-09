@@ -133,8 +133,11 @@ export function validateToeicTestQuestion(input: ToeicTestQuestionInput): { isVa
     if (uniqueOpts.size !== opts.length) {
       errors.push('Các lựa chọn đáp án không được trùng lặp.');
     }
-    if (!input.correct_answer || !opts.includes(input.correct_answer.trim())) {
-      errors.push('Đáp án đúng phải nằm trong danh sách các lựa chọn.');
+    const ans = (input.correct_answer || '').trim().toUpperCase();
+    const validLetters = expectedOpts === 3 ? ['A', 'B', 'C'] : ['A', 'B', 'C', 'D'];
+    
+    if (!validLetters.includes(ans)) {
+      errors.push(`Đáp án đúng phải là một trong các giá trị hợp lệ (${validLetters.join('/')}).`);
     }
   }
 

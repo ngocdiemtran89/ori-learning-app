@@ -25,10 +25,26 @@ export function validateParsedDraftForImport(draft: ParsedToeicTestDraft): { isV
   // - correct_answer cannot be null
   // - part must be valid
   // - option count must match what the database might strictly require, though technically JSONB accepts anything.
-  // We will enforce correct_answer required.
-  const missingAns = draft.questions.filter(q => !q.correct_answer);
-  if (missingAns.length > 0) {
-    errors.push(`Vẫn còn ${missingAns.length} câu hỏi chưa có đáp án đúng. Vui lòng cập nhật đáp án trước khi Nhập (Database yêu cầu trường này).`);
+  // We enforce correct_answer required, canonical A/B/C/D, and matching option length.
+  const invalidAnswers = draft.questions.filter(q => {
+    if (!q.correct_answer) return true;
+    const ans = q.correct_answer.toUpperCase();
+    if (q.part === 'part2') {
+      if (!['A', 'B', 'C'].includes(ans)) return true;
+    } else {
+      if (!['A', 'B', 'C', 'D'].includes(ans)) return true;
+    }
+    
+    // ensure corresponding option exists
+    const ansIndex = ans.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+    if (!q.options || ansIndex >= q.options.length) return true;
+    
+    return false;
+  });
+
+  if (invalidAnswers.length > 0) {
+    const invalidNumbers = invalidAnswers.map(q => q.question_number).join(', ');
+    errors.push(`Vẫn còn ${invalidAnswers.length} câu hỏi chưa có đáp án đúng hoặc đáp án không hợp lệ (VD không nằm trong A/B/C/D, hoặc D ở Part 2). (Câu: ${invalidNumbers}). Vui lòng cập nhật đáp án trước khi Nhập.`);
   }
 
   // Check that all question parts match expected

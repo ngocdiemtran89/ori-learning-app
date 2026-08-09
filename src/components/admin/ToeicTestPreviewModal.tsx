@@ -221,13 +221,13 @@ export const ToeicTestPreviewModal: React.FC<ToeicTestPreviewModalProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {Array.isArray(q.options) &&
-            q.options.map((opt: string, optIdx: number) => {
+            q.options.map((opt: string, oIdx: number) => {
               const isSelected = selected === opt;
-              const isOptionCorrect = isSubmitted && opt === q.correct_answer;
+              const isOptionCorrect = isSubmitted && q.correct_answer && q.correct_answer.charCodeAt(0) - 65 === oIdx;
 
               return (
                 <button
-                  key={optIdx}
+                  key={oIdx}
                   type="button"
                   onClick={() => handleSelectAnswer(q.question_number, opt)}
                   className={`p-2.5 rounded-xl border text-left text-xs font-medium transition-all ${

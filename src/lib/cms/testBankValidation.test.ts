@@ -60,7 +60,7 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
       question_number: 10,
       part: 'part2',
       options: ['(A) Option A', '(B) Option B', '(C) Option C'],
-      correct_answer: '(A) Option A',
+      correct_answer: 'A',
     });
     expect(p2Val.isValid).toBe(true);
 
@@ -88,10 +88,10 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
       question_number: 105,
       part: 'part5',
       options: ['(A) Alpha', '(B) Beta', '(C) Gamma', '(D) Delta'],
-      correct_answer: '(E) Epsilon',
+      correct_answer: 'E',
     });
     expect(invalidAns.isValid).toBe(false);
-    expect(invalidAns.errors[0]).toContain('Đáp án đúng phải nằm trong danh sách các lựa chọn');
+    expect(invalidAns.errors[0]).toContain('Đáp án đúng phải là một trong các giá trị hợp lệ');
   });
 
   it('CASE N: Part 7 Documents Array Data Accepted', () => {
@@ -136,7 +136,7 @@ describe('Phase 3.5C — TOEIC Test Bank Validation & Structure Tests', () => {
         question_number: i,
         part,
         options: opts,
-        correct_answer: opts[0],
+        correct_answer: 'A',
         ...extra
       });
     }

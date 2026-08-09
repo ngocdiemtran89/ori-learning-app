@@ -156,10 +156,9 @@ export function parseRawToeicTest(
     const parsedKeys = parseAnswerKey(answerKeyText);
     for (const q of questions) {
       if (parsedKeys[q.question_number]) {
-        // Map raw letter to actual option
-        const letter = parsedKeys[q.question_number];
-        const matchOpt = q.options.find(o => o.toUpperCase().startsWith(`(${letter})`));
-        q.correct_answer = matchOpt || letter;
+        // Map raw letter to canonical answer (A, B, C, D)
+        const letter = parsedKeys[q.question_number].toUpperCase();
+        q.correct_answer = letter;
       }
     }
   }

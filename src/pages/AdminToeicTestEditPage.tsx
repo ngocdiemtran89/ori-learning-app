@@ -738,11 +738,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
                         onChange={(e) => setQuestionForm({ ...questionForm, correct_answer: e.target.value })}
                         className="w-full px-3 py-2 bg-white border rounded-xl"
                       >
-                        {questionForm.options.map((opt: string, idx: number) => (
-                          <option key={idx} value={opt}>
-                            {opt || `Lựa chọn #${idx + 1}`}
-                          </option>
-                        ))}
+                        {questionForm.options.map((opt: string, idx: number) => {
+                          const letter = String.fromCharCode(65 + idx);
+                          return (
+                            <option key={idx} value={letter}>
+                              {letter} - {opt || `Lựa chọn #${idx + 1}`}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   </div>
@@ -872,7 +875,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
                             <div
                               key={idx}
                               className={`p-2 rounded-xl border text-[11px] font-medium ${
-                                opt === q.correct_answer
+                                q.correct_answer && q.correct_answer.charCodeAt(0) - 65 === idx
                                   ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900'
                                   : 'bg-slate-50 border-slate-200 text-slate-700'
                               }`}
