@@ -86,6 +86,18 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [currentQIndex, setCurrentQIndex] = useState<number>(0);
   const [showSummaryModal, setShowSummaryModal] = useState<boolean>(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isScriptExpanded, setIsScriptExpanded] = useState<boolean>(false);
+
+  const toggleScriptFocus = (open?: boolean) => {
+    const nextState = open ?? !isScriptExpanded;
+    setIsScriptExpanded(nextState);
+    if (nextState) {
+      setIsSidebarOpen(false); // Auto-hide question list sidebar when focusing script
+    } else {
+      setIsSidebarOpen(true); // Restore sidebar when exiting focused script mode
+    }
+  };
 
   const partNumber = attempt.part_number;
 
@@ -303,8 +315,23 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
               </button>
             </div>
 
-            <div className="text-xs font-bold text-slate-500 mr-2">
-              Hiển thị {filteredQuestions.length} câu
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(prev => !prev)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                  isSidebarOpen
+                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    : 'bg-ori-600 text-white hover:bg-ori-700 shadow-xs'
+                }`}
+                title={isSidebarOpen ? 'Thu gọn danh sách câu' : 'Hiện danh sách câu'}
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+                {isSidebarOpen ? 'Ẩn danh sách câu' : `Hiện danh sách câu (${questions.length})`}
+              </button>
+              <span className="text-xs font-bold text-slate-500 mr-2 hidden sm:inline">
+                Hiển thị {filteredQuestions.length} câu
+              </span>
             </div>
           </div>
 
@@ -360,9 +387,24 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                   <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 min-w-0 w-full">
                     {/* QUESTION HEADER & BADGES */}
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
-                      <span className="text-base font-extrabold text-slate-900">
-                        Câu {currentQuestion.question_number}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-extrabold text-slate-900">
+                          Câu {currentQuestion.question_number}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => toggleScriptFocus()}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition-all ${
+                            isScriptExpanded
+                              ? 'bg-ori-100 text-ori-800 border border-ori-200'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                          title="Đọc Script & giải thích (tự động ẩn danh sách câu)"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-ori-600" />
+                          {isScriptExpanded ? 'Đang đọc Script' : 'Mở rộng Script'}
+                        </button>
+                      </div>
                       <div>
                         {currentQuestion.student_answer ? (
                           currentQuestion.is_correct ? (
@@ -585,10 +627,17 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
 
                   {isListeningPart && currentQuestion.part !== 'part1' && (
                     <div className="pt-4 border-t border-slate-100 space-y-3">
-                      <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                      <button
+                        type="button"
+                        onClick={() => toggleScriptFocus()}
+                        className="flex items-center gap-2 text-xs font-extrabold text-slate-700 hover:text-ori-600 uppercase tracking-wide cursor-pointer transition-colors"
+                      >
                         <Volume2 className="w-4 h-4 text-ori-600" />
                         LISTENING SCRIPT (BẢN DỊCH & THOẠI)
-                      </div>
+                        <span className="text-[10px] text-slate-400 normal-case font-normal ml-1">
+                          ({isScriptExpanded ? 'Nhấn để thu gọn' : 'Nhấn để tập trung đọc & ẩn danh sách câu'})
+                        </span>
+                      </button>
 
                       {computedScript ? (
                         <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs leading-relaxed space-y-2">
@@ -671,61 +720,73 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
         </main>
 
         {/* QUESTION NAVIGATOR GRID WITH COLOR CODES */}
-        <aside className="hidden lg:block w-72 border-l border-slate-200 bg-white p-4 overflow-y-auto">
-          <div className="space-y-4">
-            <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
-              DANH SÁCH CÂU HỎI
-            </h3>
+        {isSidebarOpen && (
+          <aside className="hidden lg:block w-64 shrink-0 border-l border-slate-200 bg-white p-4 overflow-y-auto transition-all">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-extrabold uppercase text-slate-400 tracking-wider">
+                  DANH SÁCH CÂU HỎI
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                  title="Thu gọn danh sách"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
 
-            <div className="grid grid-cols-5 gap-2">
-              {questions.map((q) => {
-                const isCurrent = currentQuestion?.id === q.id;
-                let bgClass = 'bg-slate-100 text-slate-600 border-slate-200';
+              <div className="grid grid-cols-5 gap-2">
+                {questions.map((q) => {
+                  const isCurrent = currentQuestion?.id === q.id;
+                  let bgClass = 'bg-slate-100 text-slate-600 border-slate-200';
 
-                if (q.student_answer) {
-                  if (q.is_correct) {
-                    bgClass = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold';
-                  } else {
-                    bgClass = 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold';
+                  if (q.student_answer) {
+                    if (q.is_correct) {
+                      bgClass = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-extrabold';
+                    } else {
+                      bgClass = 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold';
+                    }
                   }
-                }
 
-                if (isCurrent) {
-                  bgClass += ' ring-2 ring-ori-600 ring-offset-1';
-                }
+                  if (isCurrent) {
+                    bgClass += ' ring-2 ring-ori-600 ring-offset-1';
+                  }
 
-                return (
-                  <button
-                    key={q.id}
-                    onClick={() => {
-                      setActiveFilter('all');
-                      const idx = questions.findIndex(item => item.id === q.id);
-                      if (idx !== -1) setCurrentQIndex(idx);
-                    }}
-                    className={`h-9 rounded-xl border text-xs font-bold transition-all flex items-center justify-center ${bgClass}`}
-                  >
-                    {q.question_number}
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => {
+                        setActiveFilter('all');
+                        const idx = questions.findIndex(item => item.id === q.id);
+                        if (idx !== -1) setCurrentQIndex(idx);
+                      }}
+                      className={`h-9 rounded-xl border text-xs font-bold transition-all flex items-center justify-center ${bgClass}`}
+                    >
+                      {q.question_number}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <span className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-300 inline-block"></span>
+                  <span>Câu đúng</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-600">
+                  <span className="w-3.5 h-3.5 rounded bg-rose-100 border border-rose-300 inline-block"></span>
+                  <span>Câu sai</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-600">
+                  <span className="w-3.5 h-3.5 rounded bg-slate-100 border border-slate-200 inline-block"></span>
+                  <span>Chưa trả lời</span>
+                </div>
+              </div>
             </div>
-
-            <div className="pt-4 border-t border-slate-100 space-y-2 text-xs">
-              <div className="flex items-center gap-2 text-slate-600">
-                <span className="w-3.5 h-3.5 rounded bg-emerald-100 border border-emerald-300 inline-block"></span>
-                <span>Câu đúng</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-600">
-                <span className="w-3.5 h-3.5 rounded bg-rose-100 border border-rose-300 inline-block"></span>
-                <span>Câu sai</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-600">
-                <span className="w-3.5 h-3.5 rounded bg-slate-100 border border-slate-200 inline-block"></span>
-                <span>Chưa trả lời</span>
-              </div>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        )}
       </div>
     </div>
   );
