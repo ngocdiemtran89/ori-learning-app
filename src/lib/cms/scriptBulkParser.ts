@@ -33,6 +33,23 @@ export interface ParseResult {
   userFriendlyMessage?: string;
 }
 
+export const CANONICAL_PART3_RANGES = [
+  '32-34', '35-37', '38-40', '41-43', '44-46', '47-49',
+  '50-52', '53-55', '56-58', '59-61', '62-64', '65-67', '68-70'
+];
+
+export const CANONICAL_PART4_RANGES = [
+  '71-73', '74-76', '77-79', '80-82', '83-85', '86-88',
+  '89-91', '92-94', '95-97', '98-100'
+];
+
+export function isCanonicalGroupRange(rangeStr: string, part?: string): boolean {
+  const norm = rangeStr.replace(/[\u2013\u2014–—~]/g, '-').trim();
+  if (part === 'part3' || part === '3') return CANONICAL_PART3_RANGES.includes(norm);
+  if (part === 'part4' || part === '4') return CANONICAL_PART4_RANGES.includes(norm);
+  return CANONICAL_PART3_RANGES.includes(norm) || CANONICAL_PART4_RANGES.includes(norm);
+}
+
 export function parseHumanScriptText(text: string): ParsedScriptItem[] {
   const lines = text.split('\n');
   const items: ParsedScriptItem[] = [];
@@ -49,7 +66,6 @@ export function parseHumanScriptText(text: string): ParsedScriptItem[] {
       if (currentItem.targetType === 'group') {
         currentItem.transcript = rawEnLines.join('\n').trim();
       } else {
-        // Distribute lines for question
         const optionLines: Array<{ label: 'A' | 'B' | 'C' | 'D'; text: string }> = [];
         const nonOptionLines: string[] = [];
 
@@ -118,53 +134,97 @@ export function parseHumanScriptText(text: string): ParsedScriptItem[] {
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
 
-    // Check Question Range Header (e.g. CÂU 32-34, Q32-34)
-    const rangeMatch = trimmed.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)\s*[-–~]\s*(\d+)/i);
+    // Ignore horizontal separators (e.g. ---, ***, ___)
+    if (/^(?:---|\*\*\*|___)\s*$/.test(trimmed)) {
+      continue;
+    }
+
+    // Clean structural Markdown markers (#, ##, **, __) for header matching
+    const cleanHeader = trimmed
+      .replace(/^[#\s]+/, '')
+      .replace(/^[\*\_\s]+/, '')
+      .replace(/[\*\_\s]+$/, '')
+      .trim();
+
+    // Ignore section headers (e.g. # PART 3, PART 3, # PART 4, PART 4)
+    if (/^(?:PART\s*[1-7]|PHẦN\s*[1-7])$/i.test(cleanHeader)) {
+      continue;
+    }
+
+    // Check Question Range Header (e.g. ## CÂU 32–34, CÂU 32-34, Q32-34)
+    // Replace Unicode dashes (en dash –, em dash —) with standard ASCII hyphen (-)
+    const normalizedHeader = cleanHeader.replace(/[\u2013\u2014–—~]/g, '-');
+    const rangeMatch = normalizedHeader.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)\s*-\s*(\d+)/i);
     if (rangeMatch) {
       finalizeCurrentItem();
       const start = parseInt(rangeMatch[1], 10);
       const end = parseInt(rangeMatch[2], 10);
+
+      let partName = 'part3';
+      if (start >= 1 && end <= 6) partName = 'part1';
+      else if (start >= 7 && end <= 31) partName = 'part2';
+      else if (start >= 32 && end <= 70) partName = 'part3';
+      else if (start >= 71 && end <= 100) partName = 'part4';
+      else if (start >= 101 && end <= 130) partName = 'part5';
+      else if (start >= 131 && end <= 146) partName = 'part6';
+      else if (start >= 147 && end <= 200) partName = 'part7';
+
       currentItem = {
         targetType: 'group',
         startQuestion: start,
         endQuestion: end,
         range: `${start}-${end}`,
+        part: partName,
       };
       continue;
     }
 
     // Check Single Question Header (e.g. CÂU 1, Q1, QUESTION 1)
-    const qMatch = trimmed.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)/i);
+    const qMatch = normalizedHeader.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)$/i);
     if (qMatch) {
       finalizeCurrentItem();
       const num = parseInt(qMatch[1], 10);
+      let partName = 'part1';
+      if (num >= 1 && num <= 6) partName = 'part1';
+      else if (num >= 7 && num <= 31) partName = 'part2';
+      else if (num >= 32 && num <= 70) partName = 'part3';
+      else if (num >= 71 && num <= 100) partName = 'part4';
+      else if (num >= 101 && num <= 130) partName = 'part5';
+      else if (num >= 131 && num <= 146) partName = 'part6';
+      else if (num >= 147 && num <= 200) partName = 'part7';
+
       currentItem = {
         targetType: 'question',
         number: num,
+        part: partName,
       };
       continue;
     }
 
-    // Check Section Headings
-    const isEnHeading = /^(?:SCRIPT\s*TIẾNG\s*ANH|SCRIPT\s*EN|ENGLISH\s*SCRIPT|SCRIPT|TIẾNG\s*ANH|TIENG\s*ANH|CÂU\s*HỎI\s*TIẾNG\s*ANH|CAU\s*HOI\s*TIENG\s*ANH|CÂU\s*TRẢ\s*LỜI\s*TIẾNG\s*ANH|ENGLISH)$/i.test(trimmed);
+    // Check Section Headings (EN vs VI)
+    const isEnHeading = /^(?:SCRIPT\s*TIẾNG\s*ANH|SCRIPT\s*EN|ENGLISH\s*SCRIPT|SCRIPT|TIẾNG\s*ANH|TIENG\s*ANH|CÂU\s*HỎI\s*TIẾNG\s*ANH|CAU\s*HOI\s*TIENG\s*ANH|CÂU\s*TRẢ\s*LỜI\s*TIẾNG\s*ANH|ENGLISH)$/i.test(cleanHeader);
     if (isEnHeading) {
       currentSection = 'en';
       continue;
     }
 
-    const isViHeading = /^(?:BẢN\s*DỊCH\s*TIẾNG\s*VIỆT|BAN\s*DICH\s*TIENG\s*VIET|BẢN\s*DỊCH|BAN\s*DICH|DỊCH\s*TIẾNG\s*VIỆT|DICH\s*TIENG\s*VIET|TIẾNG\s*VIỆT|TIENG\s*VIET|VIETNAMESE|VI|BẢN\s*DỊCH\s*CÂU\s*HỎI)$/i.test(trimmed);
+    const isViHeading = /^(?:BẢN\s*DỊCH\s*TIẾNG\s*VIỆT|BAN\s*DICH\s*TIENG\s*VIET|BẢN\s*DỊCH|BAN\s*DICH|DỊCH\s*TIẾNG\s*VIỆT|DICH\s*TIENG\s*VIET|TIẾNG\s*VIỆT|TIENG\s*VIET|VIETNAMESE|VI|BẢN\s*DỊCH\s*CÂU\s*HỎI)$/i.test(cleanHeader);
     if (isViHeading) {
       currentSection = 'vi';
       continue;
     }
 
-    // Accumulate lines into active section or default to EN
+    // Accumulate content lines into active section
     if (currentItem) {
+      // Normalize Markdown bold speaker prefixes (e.g. **W:** -> W:, **M:** -> M:, **Nữ:** -> Nữ:, **Nam:** -> Nam:)
+      let processedLine = trimmed;
+      processedLine = processedLine.replace(/^\*\*([A-Za-z0-9\s\u00C0-\u1EF9]+:)\*\*\s*/gi, '$1 ');
+      processedLine = processedLine.replace(/^__([A-Za-z0-9\s\u00C0-\u1EF9]+:)__\s*/gi, '$1 ');
+
       if (currentSection === 'vi') {
-        rawViLines.push(rawLine);
+        rawViLines.push(processedLine.trim());
       } else {
-        // Default section is English if not specified
-        rawEnLines.push(rawLine);
+        rawEnLines.push(processedLine.trim());
       }
     }
   }
