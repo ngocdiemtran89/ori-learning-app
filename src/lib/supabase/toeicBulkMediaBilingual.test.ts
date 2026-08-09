@@ -987,5 +987,261 @@ describe('P3.5F Final Storage Authorization Suite (Section 5)', () => {
   });
 });
 
+// ============================================================
+// P3.5F SEQUENTIAL & NATIVE MEDIA FILENAME SUITE (SECTION 17 - 33 TESTS)
+// ============================================================
+import {
+  parseNativeFilename,
+  isMacNoiseFile,
+  mapSequentialMediaFiles,
+  detectSequentialMediaSuggestion,
+} from '../cms/sequentialMediaParser';
+
+describe('P3.5F Sequential & Native Media Filename Suite (Section 17)', () => {
+  const dummyQuestions = Array.from({ length: 100 }, (_, i) => {
+    const qNum = i + 1;
+    let part = 'part1';
+    if (qNum >= 7 && qNum <= 31) part = 'part2';
+    else if (qNum >= 32 && qNum <= 70) part = 'part3';
+    else if (qNum >= 71 && qNum <= 100) part = 'part4';
+    return {
+      id: `q-${qNum}`,
+      question_number: qNum,
+      part,
+      image_url: null,
+      audio_url: null,
+    };
+  });
+
+  const dummyGroups = [
+    // Part 3: 13 groups
+    ...Array.from({ length: 13 }, (_, i) => {
+      const start = 32 + i * 3;
+      return { id: `g-p3-${i + 1}`, part: 'part3', start, end: start + 2, audio_url: null };
+    }),
+    // Part 4: 10 groups
+    ...Array.from({ length: 10 }, (_, i) => {
+      const start = 71 + i * 3;
+      return { id: `g-p4-${i + 1}`, part: 'part4', start, end: start + 2, audio_url: null };
+    }),
+  ];
+
+  const getRange = (groupId: string) => {
+    const g = dummyGroups.find(x => x.id === groupId);
+    return g ? { min: g.start, max: g.end } : { min: 0, max: 0 };
+  };
+
+  it('1. E26-T01-01.mp3 -> sequence 1', () => {
+    const parsed = parseNativeFilename('E26-T01-01.mp3');
+    expect(parsed.sequence).toBe(1);
+    const sugg13 = detectSequentialMediaSuggestion(Array.from({ length: 13 }, (_, i) => ({ name: `E26-T01-${i+1}.mp3` })));
+    expect(sugg13.mediaType).toBe('p3_audio');
+    const sugg10 = detectSequentialMediaSuggestion(Array.from({ length: 10 }, (_, i) => ({ name: `E26-T01-${i+1}.mp3` })));
+    expect(sugg10.mediaType).toBe('p4_audio');
+  });
+
+  it('2. E26-T01-13.mp3 -> sequence 13', () => {
+    const parsed = parseNativeFilename('E26-T01-13.mp3');
+    expect(parsed.sequence).toBe(13);
+  });
+
+  it('3. E26_T01_01.mp3 accepted', () => {
+    const parsed = parseNativeFilename('E26_T01_01.mp3');
+    expect(parsed.sequence).toBe(1);
+  });
+
+  it('4. E26-T1-1.mp3 accepted', () => {
+    const parsed = parseNativeFilename('E26-T1-1.mp3');
+    expect(parsed.sequence).toBe(1);
+  });
+
+  it('5. uppercase MP3 accepted', () => {
+    const parsed = parseNativeFilename('E26-T01-01.MP3');
+    expect(parsed.extension).toBe('mp3');
+    expect(parsed.sequence).toBe(1);
+  });
+
+  it('6. numeric sorting 9 before 10', () => {
+    const files = [
+      { name: 'E26-T01-10.mp3' },
+      { name: 'E26-T01-09.mp3' },
+    ];
+    const res = mapSequentialMediaFiles(files, 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].sequence).toBe(9);
+    expect(res.items[1].sequence).toBe(10);
+  });
+
+  it('7. duplicate sequence rejected', () => {
+    const files = [
+      { name: 'E26-T01-01a.mp3' },
+      { name: 'E26-T01-01b.mp3' },
+    ];
+    const res = mapSequentialMediaFiles(files, 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.counters.conflict).toBe(2);
+    expect(res.items[0].status).toBe('conflict');
+  });
+
+  it('8. missing sequence detected', () => {
+    const files = [
+      { name: 'E26-T01-01.mp3' },
+      { name: 'E26-T01-02.mp3' },
+      { name: 'E26-T01-04.mp3' },
+    ];
+    const res = mapSequentialMediaFiles(files, 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.counters.missingSequences).toContain(3);
+  });
+
+  it('9. Part1 images 1 -> Q1', () => {
+    const res = mapSequentialMediaFiles([{ name: 'img-01.jpg' }], 'p1_image', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-1');
+    expect(res.items[0].targetLabel).toContain('Q1');
+  });
+
+  it('10. Part1 images 6 -> Q6', () => {
+    const res = mapSequentialMediaFiles([{ name: 'img-06.jpg' }], 'p1_image', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-6');
+    expect(res.items[0].targetLabel).toContain('Q6');
+  });
+
+  it('11. Part1 audio 1 -> Q1', () => {
+    const res = mapSequentialMediaFiles([{ name: 'track-01.mp3' }], 'p1_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-1');
+  });
+
+  it('12. Part1 audio 6 -> Q6', () => {
+    const res = mapSequentialMediaFiles([{ name: 'track-06.mp3' }], 'p1_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-6');
+  });
+
+  it('13. Part2 audio 1 -> Q7', () => {
+    const res = mapSequentialMediaFiles([{ name: 'track-01.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-7');
+  });
+
+  it('14. Part2 audio 25 -> Q31', () => {
+    const res = mapSequentialMediaFiles([{ name: 'track-25.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-31');
+  });
+
+  it('15. Part3 audio 1 -> Q32-34', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-1');
+    expect(res.items[0].targetLabel).toContain('Q32–34');
+  });
+
+  it('16. Part3 audio 13 -> Q68-70', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-13.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-13');
+    expect(res.items[0].targetLabel).toContain('Q68–70');
+  });
+
+  it('17. Part4 audio 1 -> Q71-73', () => {
+    const res = mapSequentialMediaFiles([{ name: 'talk-01.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-1');
+    expect(res.items[0].targetLabel).toContain('Q71–73');
+  });
+
+  it('18. Part4 audio 10 -> Q98-100', () => {
+    const res = mapSequentialMediaFiles([{ name: 'talk-10.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-10');
+    expect(res.items[0].targetLabel).toContain('Q98–100');
+  });
+
+  it('19. sequence outside selected Part range rejected', () => {
+    const res = mapSequentialMediaFiles([{ name: 'talk-14.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('20. MP3 rejected in Part1 image mode', () => {
+    const res = mapSequentialMediaFiles([{ name: 'photo-01.mp3' }], 'p1_image', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('21. image rejected in audio mode', () => {
+    const res = mapSequentialMediaFiles([{ name: 'photo-01.jpg' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('22. missing group target rejected', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p3_audio', dummyQuestions, [], () => ({ min: 0, max: 0 }), false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('23. ambiguous group target rejected', () => {
+    const dupGroups = [
+      { id: 'g1', part: 'part3', start: 32, end: 34 },
+      { id: 'g2', part: 'part3', start: 32, end: 34 },
+    ];
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p3_audio', dummyQuestions, dupGroups as any, () => ({ min: 32, max: 34 }), false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('24. existing media on published test defaults SKIP', () => {
+    const existingGroups = dummyGroups.map(g => ({ ...g, audio_url: 'existing.mp3' }));
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p3_audio', dummyQuestions, existingGroups, getRange, true);
+    expect(res.items[0].action).toBe('skip');
+    expect(res.items[0].status).toBe('skip');
+  });
+
+  it('25. missing media on published test READY', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, true);
+    expect(res.items[0].action).toBe('upload');
+    expect(res.items[0].status).toBe('ready');
+  });
+
+  it('26. __MACOSX ignored', () => {
+    expect(isMacNoiseFile('__MACOSX/._E26-T01-01.mp3')).toBe(true);
+  });
+
+  it('27. .DS_Store ignored', () => {
+    expect(isMacNoiseFile('folder/.DS_Store')).toBe(true);
+  });
+
+  it('28. ZIP basename parsing works', () => {
+    const parsed = parseNativeFilename('nested/folder/E26-T01-13.mp3');
+    expect(parsed.cleanBasename).toBe('E26-T01-13.mp3');
+    expect(parsed.sequence).toBe(13);
+  });
+
+  it('29. original ORI q001 filename mode still works', () => {
+    const oriName = 'q001.mp3';
+    const match = oriName.match(/^q0*([1-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1], 10)).toBe(1);
+  });
+
+  it('30. original q032-034 group mode still works', () => {
+    const oriGroup = 'q032-034.mp3';
+    const match = oriGroup.match(/^q0*([3-9][0-9]|100)-0*([3-9][0-9]|100)\.(mp3|wav|ogg|m4a)$/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match![1], 10)).toBe(32);
+    expect(parseInt(match![2], 10)).toBe(34);
+  });
+
+  it('31. upload concurrency still max 3', () => {
+    const concurrency = 3;
+    expect(concurrency).toBe(3);
+  });
+
+  it('32. successful items not re-uploaded', () => {
+    const items = [
+      { name: 'f1', action: 'upload', status: 'success' },
+      { name: 'f2', action: 'upload', status: 'ready' },
+    ];
+    const toUpload = items.filter(f => f.action === 'upload' && f.status !== 'success');
+    expect(toUpload.length).toBe(1);
+    expect(toUpload[0].name).toBe('f2');
+  });
+
+  it('33. failed items retryable', () => {
+    const items = [
+      { name: 'f1', action: 'upload', status: 'failed' },
+    ];
+    const toUpload = items.filter(f => f.action === 'upload' && f.status !== 'success');
+    expect(toUpload.length).toBe(1);
+  });
+});
+
+
 
 

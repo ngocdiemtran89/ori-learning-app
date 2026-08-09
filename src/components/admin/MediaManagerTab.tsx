@@ -17,6 +17,14 @@ import {
 import { getToeicMediaSignedUrl } from '../../lib/supabase/storage';
 import type { ToeicListeningCue } from '../../lib/supabase/types';
 
+import {
+  SequentialMediaType,
+  mapSequentialMediaFiles,
+  detectSequentialMediaSuggestion,
+  isMacNoiseFile,
+  SequentialMappingResult
+} from '../../lib/cms/sequentialMediaParser';
+
 interface MediaManagerTabProps {
   testId: string;
   test?: ToeicTestInput;
@@ -39,7 +47,12 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
 
   // Bulk Media Modal & State
   const [showBulkModal, setShowBulkModal] = useState(false);
-  const [bulkFiles, setBulkFiles] = useState<Array<{ name: string; file: File; type: 'image' | 'audio'; targetType: 'question' | 'group'; targetId: string; targetLabel: string; currentExists: boolean; action: 'upload' | 'keep' | 'skip'; status: 'pending' | 'uploading' | 'success' | 'failed'; error?: string }>>([]);
+  const [rawFiles, setRawFiles] = useState<Array<{ name: string; file: File }>>([]);
+  const [bulkMatchMode, setBulkMatchMode] = useState<'ori' | 'sequential'>('ori');
+  const [sequentialMediaType, setSequentialMediaType] = useState<SequentialMediaType>('p1_image');
+  const [suggestion, setSuggestion] = useState<{ mediaType: SequentialMediaType | null; message: string | null }>({ mediaType: null, message: null });
+  const [sequentialResult, setSequentialResult] = useState<SequentialMappingResult | null>(null);
+  const [bulkFiles, setBulkFiles] = useState<Array<{ name: string; file: File; sequence?: number | null; type: 'image' | 'audio'; targetType: 'question' | 'group' | 'none'; targetId?: string; targetLabel: string; currentExists: boolean; action: 'upload' | 'skip' | 'invalid' | 'conflict'; status: 'pending' | 'ready' | 'skip' | 'invalid' | 'conflict' | 'uploading' | 'success' | 'failed'; error?: string }>>([]);
   const [bulkProcessing, setBulkProcessing] = useState(false);
 
   // Cue Map Modal & State
@@ -173,6 +186,115 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
   // ============================================================
   // BULK MEDIA IMPORT PARSER & RUNNER
   // ============================================================
+  const updateBulkMatches = (
+    files: Array<{ name: string; file: File }>,
+    mode: 'ori' | 'sequential',
+    seqType: SequentialMediaType
+  ) => {
+    const isPublished = Boolean(test?.is_published);
+    const getRange = (gId: string) => getToeicGroupQuestionRange(gId, questions);
+
+    if (mode === 'ori') {
+      const matchedItems: typeof bulkFiles = [];
+      const cleanFiles = files.filter(f => !isMacNoiseFile(f.name));
+
+      cleanFiles.forEach(({ name, file }) => {
+        const cleanName = name.toLowerCase().trim();
+        const basename = cleanName.split('/').pop() || cleanName;
+
+        // Part 1 Image: q001.jpg, q1.png, etc.
+        const imgMatch = basename.match(/^q0*([1-6])\.(jpg|jpeg|png|webp)$/);
+        if (imgMatch) {
+          const qNum = parseInt(imgMatch[1], 10);
+          const q = questions.find(item => item.question_number === qNum && item.part === 'part1');
+          if (q && q.id) {
+            const exists = Boolean(q.image_url);
+            matchedItems.push({
+              name,
+              file,
+              type: 'image',
+              targetType: 'question',
+              targetId: q.id,
+              targetLabel: `Q${qNum} (Hình ảnh)`,
+              currentExists: exists,
+              action: isPublished && exists ? 'skip' : 'upload',
+              status: isPublished && exists ? 'skip' : 'ready'
+            });
+            return;
+          }
+        }
+
+        // Part 1 & 2 Audio: q001.mp3, q007.mp3, etc.
+        const audioMatch = basename.match(/^q0*([1-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/);
+        if (audioMatch) {
+          const qNum = parseInt(audioMatch[1], 10);
+          const q = questions.find(item => item.question_number === qNum);
+          if (q && q.id) {
+            const exists = Boolean(q.audio_url);
+            matchedItems.push({
+              name,
+              file,
+              type: 'audio',
+              targetType: 'question',
+              targetId: q.id,
+              targetLabel: `Q${qNum} (Audio)`,
+              currentExists: exists,
+              action: isPublished && exists ? 'skip' : 'upload',
+              status: isPublished && exists ? 'skip' : 'ready'
+            });
+            return;
+          }
+        }
+
+        // Part 3 & 4 Group Audio: q032-034.mp3, q32-34.mp3, etc.
+        const groupMatch = basename.match(/^q0*([3-9][0-9]|100)-0*([3-9][0-9]|100)\.(mp3|wav|ogg|m4a)$/);
+        if (groupMatch) {
+          const startQ = parseInt(groupMatch[1], 10);
+          const endQ = parseInt(groupMatch[2], 10);
+          const g = groups.find(grp => {
+            const range = getRange(grp.id!);
+            return range.min === startQ && range.max === endQ;
+          });
+          if (g && g.id) {
+            const exists = Boolean(g.audio_url);
+            matchedItems.push({
+              name,
+              file,
+              type: 'audio',
+              targetType: 'group',
+              targetId: g.id,
+              targetLabel: `Q${startQ}–${endQ} Group Audio`,
+              currentExists: exists,
+              action: isPublished && exists ? 'skip' : 'upload',
+              status: isPublished && exists ? 'skip' : 'ready'
+            });
+            return;
+          }
+        }
+
+        // Unmatched ORI file
+        matchedItems.push({
+          name,
+          file,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: 'Không khớp tên ORI',
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: 'Tên file không đúng chuẩn ORI (ví dụ q001.jpg, q001.mp3, q032-034.mp3)'
+        });
+      });
+
+      setBulkFiles(matchedItems);
+      setSequentialResult(null);
+    } else {
+      const result = mapSequentialMediaFiles(files, seqType, questions, groups, getRange, isPublished);
+      setSequentialResult(result);
+      setBulkFiles(result.items as any);
+    }
+  };
+
   const processRawFileList = async (files: FileList | File[]) => {
     const fileArray: Array<{ name: string; file: File }> = [];
 
@@ -197,86 +319,33 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
       }
     }
 
-    // Match files to questions / groups
-    const matchedItems: typeof bulkFiles = [];
-    const isPublished = Boolean(test?.is_published);
+    setRawFiles(fileArray);
+    const sugg = detectSequentialMediaSuggestion(fileArray);
+    setSuggestion(sugg);
 
-    fileArray.forEach(({ name, file }) => {
-      const cleanName = name.toLowerCase().trim();
-      
-      // Part 1 Image: q001.jpg, q1.png, etc.
-      const imgMatch = cleanName.match(/^q0*([1-6])\.(jpg|jpeg|png|webp)$/);
-      if (imgMatch) {
-        const qNum = parseInt(imgMatch[1], 10);
-        const q = questions.find(item => item.question_number === qNum && item.part === 'part1');
-        if (q && q.id) {
-          const exists = Boolean(q.image_url);
-          matchedItems.push({
-            name,
-            file,
-            type: 'image',
-            targetType: 'question',
-            targetId: q.id,
-            targetLabel: `Q${qNum} (Image)`,
-            currentExists: exists,
-            action: isPublished && exists ? 'skip' : 'upload',
-            status: 'pending'
-          });
-          return;
-        }
-      }
+    // If suggestion detected, default to sequential mode with suggested type!
+    let initialMode: 'ori' | 'sequential' = bulkMatchMode;
+    let initialType: SequentialMediaType = sequentialMediaType;
 
-      // Part 1 & 2 Audio: q001.mp3, q007.mp3, etc.
-      const audioMatch = cleanName.match(/^q0*([1-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/);
-      if (audioMatch) {
-        const qNum = parseInt(audioMatch[1], 10);
-        const q = questions.find(item => item.question_number === qNum);
-        if (q && q.id) {
-          const exists = Boolean(q.audio_url);
-          matchedItems.push({
-            name,
-            file,
-            type: 'audio',
-            targetType: 'question',
-            targetId: q.id,
-            targetLabel: `Q${qNum} (Audio)`,
-            currentExists: exists,
-            action: isPublished && exists ? 'skip' : 'upload',
-            status: 'pending'
-          });
-          return;
-        }
-      }
+    if (sugg.mediaType) {
+      initialMode = 'sequential';
+      initialType = sugg.mediaType;
+      setBulkMatchMode('sequential');
+      setSequentialMediaType(sugg.mediaType);
+    }
 
-      // Part 3 & 4 Group Audio: q032-034.mp3, q32-34.mp3, etc.
-      const groupMatch = cleanName.match(/^q0*([3-9][0-9]|100)-0*([3-9][0-9]|100)\.(mp3|wav|ogg|m4a)$/);
-      if (groupMatch) {
-        const startQ = parseInt(groupMatch[1], 10);
-        const endQ = parseInt(groupMatch[2], 10);
-        const g = groups.find(grp => {
-          const range = getToeicGroupQuestionRange(grp.id!, questions);
-          return range.min === startQ && range.max === endQ;
-        });
-        if (g && g.id) {
-          const exists = Boolean(g.audio_url);
-          matchedItems.push({
-            name,
-            file,
-            type: 'audio',
-            targetType: 'group',
-            targetId: g.id,
-            targetLabel: `Q${startQ}–${endQ} Group Audio`,
-            currentExists: exists,
-            action: isPublished && exists ? 'skip' : 'upload',
-            status: 'pending'
-          });
-          return;
-        }
-      }
-    });
-
-    setBulkFiles(matchedItems);
+    updateBulkMatches(fileArray, initialMode, initialType);
     setShowBulkModal(true);
+  };
+
+  const handleMatchModeChange = (mode: 'ori' | 'sequential') => {
+    setBulkMatchMode(mode);
+    updateBulkMatches(rawFiles, mode, sequentialMediaType);
+  };
+
+  const handleSequentialTypeChange = (type: SequentialMediaType) => {
+    setSequentialMediaType(type);
+    updateBulkMatches(rawFiles, 'sequential', type);
   };
 
   const executeBulkUpload = async () => {
@@ -295,7 +364,9 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
         setBulkFiles(prev => prev.map(f => f.name === item.name ? { ...f, status: 'uploading' } : f));
 
         let res;
-        if (item.targetType === 'question') {
+        if (!item.targetId) {
+          res = { success: false, error: 'Thiếu ID đối tượng target' };
+        } else if (item.targetType === 'question') {
           res = await uploadQuestionMedia(item.targetId, item.file, item.type);
         } else {
           res = await uploadGroupMedia(item.targetId, item.file, item.type);
@@ -781,26 +852,167 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
       {/* BULK MEDIA CONFIRMATION MODAL */}
       {showBulkModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-3xl w-full space-y-4 max-h-[85vh] flex flex-col shadow-2xl">
-            <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-ori-600" />
-              Xem trước Bulk Media Import ({bulkFiles.length} file khớp)
-            </h3>
+          <div className="bg-white rounded-3xl p-6 max-w-4xl w-full space-y-4 max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-ori-600" />
+                Xem trước Bulk Media Import ({rawFiles.length} file đã chọn)
+              </h3>
+            </div>
 
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl p-2 space-y-1">
-              {bulkFiles.length === 0 ? (
-                <p className="text-xs text-slate-400 p-4 text-center">Không tìm thấy file nào khớp với quy tắc đặt tên (q001.jpg, q001.mp3, q032-034.mp3...)</p>
-              ) : (
-                bulkFiles.map((item, idx) => (
-                  <div key={idx} className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                    <span className="font-mono font-bold text-slate-700">{item.name}</span>
-                    <span className="font-extrabold text-ori-600">{item.targetLabel}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'success' ? 'bg-emerald-100 text-emerald-700' : item.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
-                      {item.status === 'uploading' ? 'Đang upload...' : item.status}
-                    </span>
+            {/* MATCHING MODE SELECTOR */}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 text-xs">
+              <div className="flex items-center gap-6 font-bold text-slate-800">
+                <span className="text-slate-500 font-extrabold uppercase text-[11px]">MATCHING MODE:</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="bulkMode"
+                    checked={bulkMatchMode === 'ori'}
+                    onChange={() => handleMatchModeChange('ori')}
+                    className="text-ori-600 focus:ring-ori-500"
+                  />
+                  <span>Tự nhận diện tên chuẩn ORI (q001.jpg, q001.mp3, q032-034.mp3)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="bulkMode"
+                    checked={bulkMatchMode === 'sequential'}
+                    onChange={() => handleMatchModeChange('sequential')}
+                    className="text-ori-600 focus:ring-ori-500"
+                  />
+                  <span>File tuần tự / tên gốc (E26-T01-01.mp3, E26-T01-02.mp3...)</span>
+                </label>
+              </div>
+
+              {/* SEQUENTIAL MEDIA TYPE SELECTOR */}
+              {bulkMatchMode === 'sequential' && (
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <div className="flex items-center gap-4 flex-wrap font-bold text-slate-700">
+                    <span className="text-slate-500 font-extrabold uppercase text-[11px]">LOẠI MEDIA:</span>
+                    {(
+                      [
+                        { key: 'p1_image', label: 'Part 1 — Hình ảnh (1–6)' },
+                        { key: 'p1_audio', label: 'Part 1 — Audio (1–6)' },
+                        { key: 'p2_audio', label: 'Part 2 — Audio (1–25)' },
+                        { key: 'p3_audio', label: 'Part 3 — Audio nhóm (1–13)' },
+                        { key: 'p4_audio', label: 'Part 4 — Audio nhóm (1–10)' },
+                      ] as const
+                    ).map(item => (
+                      <label key={item.key} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-ori-400">
+                        <input
+                          type="radio"
+                          name="seqType"
+                          checked={sequentialMediaType === item.key}
+                          onChange={() => handleSequentialTypeChange(item.key)}
+                          className="text-ori-600 focus:ring-ori-500"
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
                   </div>
-                ))
+                </div>
               )}
+
+              {/* SMART SUGGESTION BANNER */}
+              {suggestion.message && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between text-amber-800 font-medium">
+                  <span className="flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-amber-600" />
+                    {suggestion.message}
+                  </span>
+                  {suggestion.mediaType && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleMatchModeChange('sequential');
+                        handleSequentialTypeChange(suggestion.mediaType!);
+                      }}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] rounded-lg shadow-sm"
+                    >
+                      Áp dụng Gợi ý
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* SUMMARY COUNTERS BAR */}
+            <div className="flex items-center gap-4 text-xs font-bold text-slate-600 bg-slate-100 p-2.5 rounded-xl flex-wrap">
+              <span>Tổng file: <strong className="text-slate-900">{rawFiles.filter(f => !isMacNoiseFile(f.name)).length}</strong></span>
+              <span>Sẵn sàng: <strong className="text-emerald-600">{bulkFiles.filter(f => f.action === 'upload' && f.status !== 'failed').length}</strong></span>
+              <span>Đã có (Bỏ qua): <strong className="text-slate-500">{bulkFiles.filter(f => f.action === 'skip').length}</strong></span>
+              <span>Không hợp lệ: <strong className="text-red-600">{bulkFiles.filter(f => f.status === 'invalid').length}</strong></span>
+              <span>Trùng thứ tự: <strong className="text-amber-600">{bulkFiles.filter(f => f.status === 'conflict').length}</strong></span>
+            </div>
+
+            {/* MISSING SEQUENCES WARNING */}
+            {sequentialResult && sequentialResult.counters.missingSequences.length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-2.5 text-xs text-orange-800 font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0" />
+                <span>Cảnh báo: Thiếu các số thứ tự trong dãy: #{sequentialResult.counters.missingSequences.join(', #')}</span>
+              </div>
+            )}
+
+            {/* PREVIEW TABLE */}
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl space-y-1">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 sticky top-0 font-extrabold text-slate-700 border-b border-slate-200">
+                  <tr>
+                    <th className="p-2.5">FILE GỐC</th>
+                    <th className="p-2.5 w-16 text-center">#</th>
+                    <th className="p-2.5">TỰ GẮN VÀO</th>
+                    <th className="p-2.5 text-right">TRẠNG THÁI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono">
+                  {bulkFiles.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="p-6 text-center text-slate-400 italic">Không tìm thấy file nào khớp</td>
+                    </tr>
+                  ) : (
+                    bulkFiles.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/80">
+                        <td className="p-2.5 font-bold text-slate-800 break-all">{item.name}</td>
+                        <td className="p-2.5 text-center font-bold text-slate-500">{item.sequence ?? '—'}</td>
+                        <td className="p-2.5 font-extrabold text-ori-600">{item.targetLabel}</td>
+                        <td className="p-2.5 text-right whitespace-nowrap">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              item.status === 'success'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : item.status === 'ready'
+                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                                : item.status === 'skip'
+                                ? 'bg-slate-100 text-slate-600'
+                                : item.status === 'conflict'
+                                ? 'bg-amber-100 text-amber-800'
+                                : item.status === 'invalid'
+                                ? 'bg-red-100 text-red-700'
+                                : item.status === 'failed'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            {item.status === 'uploading'
+                              ? 'Đang upload...'
+                              : item.status === 'ready'
+                              ? '✓ Sẵn sàng'
+                              : item.status === 'skip'
+                              ? 'Đã có (Bỏ qua)'
+                              : item.status === 'conflict'
+                              ? '✕ Trùng thứ tự'
+                              : item.status === 'invalid'
+                              ? `✕ ${item.error || 'Không hợp lệ'}`
+                              : item.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
 
             <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
@@ -814,11 +1026,11 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
               <button
                 type="button"
                 onClick={executeBulkUpload}
-                disabled={bulkProcessing || bulkFiles.length === 0}
+                disabled={bulkProcessing || bulkFiles.filter(f => f.action === 'upload').length === 0}
                 className="px-5 py-2 text-xs font-extrabold text-white bg-ori-600 rounded-xl hover:bg-ori-500 disabled:opacity-50 flex items-center gap-2"
               >
                 {bulkProcessing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Bắt đầu Upload Bulk ({bulkFiles.filter(f => f.action === 'upload').length} items)
+                Xác nhận & Upload ({bulkFiles.filter(f => f.action === 'upload').length} items)
               </button>
             </div>
           </div>
