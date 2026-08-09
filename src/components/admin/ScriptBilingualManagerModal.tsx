@@ -13,9 +13,11 @@ import {
   Volume2,
   Save,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Sparkles
 } from 'lucide-react';
 import { importToeicLearningContent } from '../../lib/supabase/adminTestBank';
+import { autoDetectAndParseScriptInput, ParsedScriptItem } from '../../lib/cms/scriptBulkParser';
 
 export class ScriptBilingualErrorBoundary extends React.Component<
   { children: React.ReactNode; onClose?: () => void },
@@ -141,8 +143,9 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
 
   // Bulk import states
   const [bulkInputText, setBulkInputText] = useState('');
-  const [bulkFormat, setBulkFormat] = useState<'json' | 'csv' | 'txt' | 'pdf'>('json');
-  const [parsedItems, setParsedItems] = useState<any[]>([]);
+  const [bulkFormat, setBulkFormat] = useState<'auto' | 'json' | 'csv' | 'txt' | 'pdf'>('auto');
+  const [parsedItems, setParsedItems] = useState<ParsedScriptItem[]>([]);
+  const [detectedFormatName, setDetectedFormatName] = useState<string | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -275,56 +278,22 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
   // BULK IMPORT PARSER
   const handleParseBulkInput = () => {
     setStatusMessage(null);
-    try {
-      if (bulkFormat === 'json') {
-        const obj = JSON.parse(bulkInputText);
-        const parsed: any[] = [];
-        if (obj.part1) {
-          Object.entries(obj.part1).forEach(([numStr, val]: [string, any]) => {
-            parsed.push({ targetType: 'question', number: parseInt(numStr, 10), part: 'part1', ...val });
-          });
-        }
-        if (obj.part2) {
-          Object.entries(obj.part2).forEach(([numStr, val]: [string, any]) => {
-            parsed.push({ targetType: 'question', number: parseInt(numStr, 10), part: 'part2', ...val });
-          });
-        }
-        if (obj.part3) {
-          Object.entries(obj.part3).forEach(([rangeStr, val]: [string, any]) => {
-            parsed.push({ targetType: 'group', range: rangeStr, part: 'part3', ...val });
-          });
-        }
-        if (obj.part4) {
-          Object.entries(obj.part4).forEach(([rangeStr, val]: [string, any]) => {
-            parsed.push({ targetType: 'group', range: rangeStr, part: 'part4', ...val });
-          });
-        }
-        setParsedItems(parsed);
-      } else {
-        // Line-based simple text parse
-        const lines = bulkInputText.split('\n').filter(l => l.trim());
-        const parsed: any[] = [];
-        let currentItem: any = null;
+    setDetectedFormatName(null);
 
-        lines.forEach(line => {
-          const matchQ = line.match(/^Q(\d+)/i);
-          const matchGroup = line.match(/^Q(\d+)[-–](\d+)/i);
+    const result = autoDetectAndParseScriptInput(bulkInputText, bulkFormat);
+    setParsedItems(result.items);
+    setDetectedFormatName(result.userFriendlyMessage || null);
 
-          if (matchGroup) {
-            if (currentItem) parsed.push(currentItem);
-            currentItem = { targetType: 'group', range: `${matchGroup[1]}-${matchGroup[2]}`, lines: [] };
-          } else if (matchQ) {
-            if (currentItem) parsed.push(currentItem);
-            currentItem = { targetType: 'question', number: parseInt(matchQ[1], 10), lines: [] };
-          } else if (currentItem) {
-            currentItem.lines.push(line);
-          }
-        });
-        if (currentItem) parsed.push(currentItem);
-        setParsedItems(parsed);
-      }
-    } catch (err: any) {
-      setStatusMessage({ type: 'error', text: `Lỗi đọc dữ liệu: ${err.message}` });
+    if (result.counters.errorsCount > 0 && result.items.length === 0) {
+      setStatusMessage({
+        type: 'error',
+        text: result.userFriendlyMessage || 'JSON không hợp lệ.'
+      });
+    } else {
+      setStatusMessage({
+        type: 'success',
+        text: `${result.userFriendlyMessage || 'Đã phân tích thành công'}. (Nhận diện ${result.counters.questionCount} câu, ${result.counters.groupCount} nhóm).`
+      });
     }
   };
 
@@ -334,7 +303,7 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
         const q = safeQuestions.find(q => q.question_number === item.number);
         if (q) {
           updateQuestionState(q.id || `q-${q.question_number}`, {
-            ...(item.options && { options: item.options.map((t: string, i: number) => ({ label: String.fromCharCode(65 + i), text: t })) }),
+            ...(item.options && { options: item.options }),
             ...(item.options_vi && { options_vi: item.options_vi }),
             ...(item.question_text && { question_text: item.question_text }),
             ...(item.translation_vi && { translation_vi: item.translation_vi }),
@@ -795,16 +764,19 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
                 </h3>
 
                 <div className="flex items-center gap-2">
-                  {(['json', 'csv', 'txt', 'pdf'] as const).map(fmt => (
+                  {(['auto', 'json', 'csv', 'txt', 'pdf'] as const).map(fmt => (
                     <button
                       key={fmt}
                       type="button"
-                      onClick={() => setBulkFormat(fmt)}
+                      onClick={() => {
+                        setBulkFormat(fmt);
+                        setStatusMessage(null);
+                      }}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold uppercase transition-colors ${
                         bulkFormat === fmt ? 'bg-ori-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      {fmt}
+                      {fmt === 'auto' ? '⚡ AUTO' : fmt}
                     </button>
                   ))}
                 </div>
@@ -815,19 +787,41 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
                   rows={10}
                   value={bulkInputText}
                   onChange={(e) => setBulkInputText(e.target.value)}
-                  placeholder={`Dán nội dung ${bulkFormat.toUpperCase()} tại đây...\n\nFormat mẫu:\nQ1\n(A) Statement A\n(B) Statement B\n\nhoặc JSON mẫu qua tab bên...`}
+                  placeholder={`Dán nội dung script tiếng Anh / bản dịch tiếng Việt tại đây (tự động nhận diện format TXT, JSON, CSV)...\n\nFormat mẫu:\nCÂU 1\n\nSCRIPT TIẾNG ANH\n(A) Statement A\n(B) Statement B\n\nBẢN DỊCH TIẾNG VIỆT\n(A) Lời dịch A...`}
                   className="w-full text-xs p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:ring-1 focus:ring-ori-500"
                 />
               </div>
 
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={handleParseBulkInput}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
-                >
-                  PHÂN TÍCH DỮ LIỆU INPUT
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleParseBulkInput}
+                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors"
+                  >
+                    PHÂN TÍCH DỮ LIỆU INPUT
+                  </button>
+
+                  {bulkFormat === 'json' && statusMessage?.type === 'error' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkFormat('auto');
+                        const res = autoDetectAndParseScriptInput(bulkInputText, 'auto');
+                        setParsedItems(res.items);
+                        setDetectedFormatName(res.userFriendlyMessage || null);
+                        setStatusMessage({
+                          type: 'success',
+                          text: 'ORI nhận thấy nội dung này là văn bản thường, không phải JSON. Đã tự chuyển sang chế độ TXT.'
+                        });
+                      }}
+                      className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      <span>THỬ NHẬN DIỆN TỰ ĐỘNG</span>
+                    </button>
+                  )}
+                </div>
 
                 {parsedItems.length > 0 && (
                   <button
@@ -841,16 +835,57 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
               </div>
 
               {parsedItems.length > 0 && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 max-h-60 overflow-y-auto">
-                  <div className="text-xs font-extrabold text-slate-700">KẾT QUẢ PHÂN TÍCH INPUT ({parsedItems.length} mục)</div>
-                  {parsedItems.map((item, idx) => (
-                    <div key={idx} className="text-xs p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
-                      <span className="font-bold text-slate-800">
-                        {item.targetType === 'question' ? `Câu #${item.number}` : `Nhóm ${item.range}`} ({item.part?.toUpperCase() || 'Tự động'})
-                      </span>
-                      <span className="text-emerald-600 font-bold">Đã nhận diện ✓</span>
+                <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 max-h-72 overflow-y-auto">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-extrabold text-slate-800">
+                      KẾT QUẢ PHÂN TÍCH INPUT ({parsedItems.length} mục)
                     </div>
-                  ))}
+                    {detectedFormatName && (
+                      <span className="text-[11px] font-bold text-ori-700 bg-ori-50 px-2 py-0.5 rounded-md border border-ori-200">
+                        {detectedFormatName}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {parsedItems.map((item, idx) => {
+                      const hasEn = Boolean(item.options?.length || item.question_text || item.transcript);
+                      const hasVi = Boolean(item.options_vi?.length || item.translation_vi || item.transcript_vi);
+
+                      return (
+                        <div key={idx} className="text-xs p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 shadow-xs">
+                          <div className="flex items-center justify-between font-bold">
+                            <span className="text-slate-900">
+                              {item.targetType === 'question' ? `Câu #${item.number}` : `Nhóm ${item.range}`}
+                            </span>
+                            <div className="flex items-center gap-2 text-[11px]">
+                              <span className={hasEn ? 'text-emerald-600 font-bold' : 'text-slate-400'}>
+                                Script EN {hasEn ? '✓' : '✗'}
+                              </span>
+                              <span className={hasVi ? 'text-emerald-600 font-bold' : 'text-slate-400'}>
+                                Bản dịch VI {hasVi ? '✓' : '✗'}
+                              </span>
+                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-mono text-[10px]">
+                                Target: {item.targetType === 'question' ? `Q${item.number} → q.options / q.options_vi` : `Q${item.range} → g.transcript`}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Quick summary snippet */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600 pt-1 border-t border-slate-100">
+                            <div>
+                              <strong className="text-slate-700">EN:</strong>{' '}
+                              {item.options ? item.options.map(o => `(${o.label}) ${o.text}`).join(' ') : (item.question_text || item.transcript || 'Chưa có')}
+                            </div>
+                            <div>
+                              <strong className="text-slate-700">VI:</strong>{' '}
+                              {item.options_vi ? item.options_vi.map((v, i) => `(${String.fromCharCode(65+i)}) ${v}`).join(' ') : (item.translation_vi || item.transcript_vi || 'Chưa có')}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
