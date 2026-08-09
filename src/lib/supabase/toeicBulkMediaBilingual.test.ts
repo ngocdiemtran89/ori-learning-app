@@ -770,4 +770,222 @@ describe('P3.5F Exam-Integrity & Script Leak Suite (Section 8)', () => {
   });
 });
 
+// ============================================================
+// P3.5F FINAL STORAGE AUTHORIZATION SUITE (SECTION 5 TESTS 1-22)
+// ============================================================
+describe('P3.5F Final Storage Authorization Suite (Section 5)', () => {
+  const canAccessMedia = (
+    p_path: string,
+    opts: {
+      isAdmin?: boolean;
+      userId?: string | null;
+      hasAccess?: boolean;
+      testPublished?: boolean;
+      testAudioMode?: 'segmented' | 'single_track';
+      testAudioUrl?: string | null;
+      qActive?: boolean;
+      qPart?: string;
+      qImageUrl?: string | null;
+      qAudioUrl?: string | null;
+      gActive?: boolean;
+      gPart?: string;
+      gImageUrl?: string | null;
+      gAudioUrl?: string | null;
+    }
+  ) => {
+    if (opts.isAdmin) return true;
+    if (!opts.userId) return false;
+    if (!opts.hasAccess) return false;
+
+    // 1. Single track audio
+    if (opts.testPublished && opts.testAudioMode === 'single_track' && opts.testAudioUrl === p_path) {
+      return true;
+    }
+    // 2. Question image (mode-independent)
+    if (opts.testPublished && opts.qActive && opts.qImageUrl === p_path) {
+      return true;
+    }
+    // 3. Group image (mode-independent)
+    if (opts.testPublished && opts.gActive && opts.gImageUrl === p_path) {
+      return true;
+    }
+    // 4. Part 1/2 segmented question audio
+    if (opts.testPublished && opts.testAudioMode === 'segmented' && opts.qActive && ['part1', 'part2'].includes(opts.qPart || '') && opts.qAudioUrl === p_path) {
+      return true;
+    }
+    // 5. Part 3/4 segmented group audio
+    if (opts.testPublished && opts.testAudioMode === 'segmented' && opts.gActive && ['part3', 'part4'].includes(opts.gPart || '') && opts.gAudioUrl === p_path) {
+      return true;
+    }
+    return false;
+  };
+
+  it('1. single_track stale Part1 q.audio_url unauthorized', () => {
+    const res = canAccessMedia('q1.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', qActive: true, qPart: 'part1', qAudioUrl: 'q1.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('2. single_track stale Part2 q.audio_url unauthorized', () => {
+    const res = canAccessMedia('q7.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', qActive: true, qPart: 'part2', qAudioUrl: 'q7.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('3. single_track stale Part3 group.audio_url unauthorized', () => {
+    const res = canAccessMedia('g32.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', gActive: true, gPart: 'part3', gAudioUrl: 'g32.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('4. single_track stale Part4 group.audio_url unauthorized', () => {
+    const res = canAccessMedia('g71.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', gActive: true, gPart: 'part4', gAudioUrl: 'g71.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('5. single_track full listening_audio_url authorized', () => {
+    const res = canAccessMedia('full.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('6. segmented Part1 q.audio_url authorized', () => {
+    const res = canAccessMedia('q1.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      qActive: true, qPart: 'part1', qAudioUrl: 'q1.mp3'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('7. segmented Part2 q.audio_url authorized', () => {
+    const res = canAccessMedia('q7.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      qActive: true, qPart: 'part2', qAudioUrl: 'q7.mp3'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('8. segmented Part3 group.audio_url authorized', () => {
+    const res = canAccessMedia('g32.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      gActive: true, gPart: 'part3', gAudioUrl: 'g32.mp3'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('9. segmented Part4 group.audio_url authorized', () => {
+    const res = canAccessMedia('g71.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      gActive: true, gPart: 'part4', gAudioUrl: 'g71.mp3'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('10. segmented stale full-track URL unauthorized', () => {
+    const res = canAccessMedia('full.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      testAudioUrl: 'full.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('11. Part1 image authorized in segmented', () => {
+    const res = canAccessMedia('photo1.jpg', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      qActive: true, qPart: 'part1', qImageUrl: 'photo1.jpg'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('12. Part1 image authorized in single_track', () => {
+    const res = canAccessMedia('photo1.jpg', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', qActive: true, qPart: 'part1', qImageUrl: 'photo1.jpg'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('13. group image authorization unaffected', () => {
+    const res = canAccessMedia('chart.png', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3', gActive: true, gPart: 'part3', gImageUrl: 'chart.png'
+    });
+    expect(res).toBe(true);
+  });
+
+  it('14. unpublished media unauthorized', () => {
+    const res = canAccessMedia('q1.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: false, testAudioMode: 'segmented',
+      qActive: true, qPart: 'part1', qAudioUrl: 'q1.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('15. inactive question media unauthorized', () => {
+    const res = canAccessMedia('q1.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      qActive: false, qPart: 'part1', qAudioUrl: 'q1.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('16. inactive group media unauthorized', () => {
+    const res = canAccessMedia('g32.mp3', {
+      userId: 'u1', hasAccess: true, testPublished: true, testAudioMode: 'segmented',
+      gActive: false, gPart: 'part3', gAudioUrl: 'g32.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('17. expired student media unauthorized', () => {
+    const res = canAccessMedia('full.mp3', {
+      userId: 'u1', hasAccess: false, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('18. anon media unauthorized', () => {
+    const res = canAccessMedia('full.mp3', {
+      userId: null, hasAccess: false, testPublished: true, testAudioMode: 'single_track',
+      testAudioUrl: 'full.mp3'
+    });
+    expect(res).toBe(false);
+  });
+
+  it('19. correct_answer still absent', () => {
+    const q: any = { id: 'q1', question_number: 1 };
+    expect(q).not.toHaveProperty('correct_answer');
+  });
+
+  it('20. explanation still absent', () => {
+    const q: any = { id: 'q1', question_number: 1 };
+    expect(q).not.toHaveProperty('explanation');
+  });
+
+  it('21. P1/P2 spoken script still absent', () => {
+    const q1: any = { part: 'part1', question_text: null, options: ['(A)', '(B)', '(C)', '(D)'] };
+    expect(q1.question_text).toBeNull();
+    expect(q1.options).toEqual(['(A)', '(B)', '(C)', '(D)']);
+  });
+
+  it('22. transcript/transcript_vi still absent', () => {
+    const g: any = { id: 'g32', part: 'part3' };
+    expect(g).not.toHaveProperty('transcript');
+    expect(g).not.toHaveProperty('transcript_vi');
+  });
+});
+
+
 

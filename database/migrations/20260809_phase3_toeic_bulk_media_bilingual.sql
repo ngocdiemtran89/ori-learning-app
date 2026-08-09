@@ -1,6 +1,6 @@
 -- ============================================================
 -- Phase P3.5F: TOEIC Bulk Media, Dual Listening Source & Bilingual Foundation
--- NEW MIGRATION — EDITED FOR FINAL EXAM-INTEGRITY PATCH
+-- NEW MIGRATION — EDITED FOR STORAGE AUTHORIZATION HARDENING
 -- DO NOT ALTER PREVIOUSLY APPLIED MIGRATIONS (P3.5, P3.6A)
 -- ============================================================
 
@@ -505,7 +505,7 @@ revoke execute on function public.admin_import_toeic_bilingual_content(uuid, jso
 grant execute on function public.admin_import_toeic_bilingual_content(uuid, jsonb) to authenticated;
 
 -- ============================================================
--- 8. EXTEND CAN_ACCESS_TOEIC_MEDIA FOR SINGLE TRACK AUDIO
+-- 8. EXTEND CAN_ACCESS_TOEIC_MEDIA (STRICT DUAL-MODE & MEDIA-TYPE ISOLATION)
 -- ============================================================
 create or replace function public.can_access_toeic_media(p_path text)
 returns boolean
@@ -526,20 +526,38 @@ begin
       and t.listening_audio_url = p_path
   ) then return true; end if;
 
-  -- 2. Check question media
+  -- 2. Check question images (mode-independent)
   if exists (
     select 1 from public.toeic_test_questions q
     join public.toeic_tests t on t.id = q.test_id
     where t.is_published = true and q.is_active = true
-      and (q.image_url = p_path or q.audio_url = p_path)
+      and q.image_url = p_path
   ) then return true; end if;
 
-  -- 3. Check group media
+  -- 3. Check group images (mode-independent)
   if exists (
     select 1 from public.toeic_test_groups g
     join public.toeic_tests t on t.id = g.test_id
     where t.is_published = true and g.is_active = true
-      and (g.image_url = p_path or g.audio_url = p_path)
+      and g.image_url = p_path
+  ) then return true; end if;
+
+  -- 4. Check Part 1/2 segmented question audio
+  if exists (
+    select 1 from public.toeic_test_questions q
+    join public.toeic_tests t on t.id = q.test_id
+    where t.is_published = true and t.listening_audio_mode = 'segmented'
+      and q.is_active = true and q.part in ('part1', 'part2')
+      and q.audio_url = p_path
+  ) then return true; end if;
+
+  -- 5. Check Part 3/4 segmented group audio
+  if exists (
+    select 1 from public.toeic_test_groups g
+    join public.toeic_tests t on t.id = g.test_id
+    where t.is_published = true and t.listening_audio_mode = 'segmented'
+      and g.is_active = true and g.part in ('part3', 'part4')
+      and g.audio_url = p_path
   ) then return true; end if;
 
   return false;
