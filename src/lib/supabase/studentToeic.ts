@@ -63,19 +63,15 @@ export async function fetchMyAttempt(testId: string): Promise<{ data: ToeicTestA
   return { data: data as ToeicTestAttempt | null, error: null };
 }
 
-/** Update attempt progress (current question, last activity) */
+/** Update attempt progress via controlled RPC (only permitted fields) */
 export async function updateAttemptProgress(
   attemptId: string,
   currentQuestionNumber: number
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('toeic_test_attempts')
-    .update({
-      current_question_number: currentQuestionNumber,
-      last_activity_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', attemptId);
+  const { error } = await supabase.rpc('update_toeic_attempt_progress', {
+    p_attempt_id: attemptId,
+    p_current_question_number: currentQuestionNumber,
+  });
 
   return { error: error?.message || null };
 }
