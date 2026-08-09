@@ -6,6 +6,9 @@ import {
   Loader2,
   ArrowRight,
   ListChecks,
+  Eye,
+  EyeOff,
+  CheckCircle2,
 } from 'lucide-react';
 import { parseAnswerKeyText } from '../../lib/toeicPackage/answerKeyParser';
 import { extractPdfTextItems } from '../../lib/cms/pdfUtils';
@@ -18,7 +21,7 @@ interface AnswerKeyImporterModalProps {
   testId: string;
   testTitle: string;
   isPublished: boolean;
-  existingQuestions: Array<{
+  existingQuestions?: Array<{
     id: string;
     question_number: number;
     part: string;
@@ -35,7 +38,7 @@ interface ParsedComparisonItem {
   part: string;
   currentAnswer: string;
   newAnswer: string | null;
-  status: 'changed' | 'unchanged' | 'missing' | 'invalid' | 'new';
+  status: 'changed' | 'unchanged' | 'missing' | 'invalid';
   errorMessage?: string;
 }
 
@@ -45,7 +48,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
   testId,
   testTitle,
   isPublished,
-  existingQuestions,
+  existingQuestions = [],
   onUpdated,
 }) => {
   const [importMode, setImportMode] = useState<ImportMode>('full');
@@ -53,6 +56,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
   const [fileName, setFileName] = useState<string | null>(null);
   const [isReadingFile, setIsReadingFile] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [showCurrentOverview, setShowCurrentOverview] = useState(false);
 
   // Execution state
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -66,9 +70,45 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
   if (!isOpen) return null;
 
+  const safeQuestions = Array.isArray(existingQuestions) ? existingQuestions : [];
+  const loadedQuestionsCount = safeQuestions.length;
+
   // Handle file select (PDF, TXT, CSV, JSON)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    setPdfError(null);
+    setIsReadingFile(true);
+
+    try {
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        const items = await extractPdfTextItems(file);
+        const fullText = items.map(i => i.text).join(' ');
+        if (!fullText.trim()) {
+          setPdfError(
+            'Không thể đọc chữ từ PDF này. Vui lòng dùng PDF có text, TXT, CSV, JSON hoặc Paste đáp án.'
+          );
+          setInputText('');
+        } else {
+          setInputText(fullText);
+        }
+      } else {
+        const text = await file.text();
+        setInputText(text);
+      }
+    } catch (err: any) {
+      setPdfError(err.message || 'Lỗi khi đọc file PDF/văn bản.');
+      setInputText('');
+    }
+    setIsReadingFile(false);
+  };
+
+  // Drag & drop support
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
     if (!file) return;
 
     setFileName(file.name);
@@ -109,13 +149,12 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
     return map;
   }, [inputText]);
 
-  // Build 200 comparison items
+  // Build 200 comparison items (safely handled even if safeQuestions is loading)
   const comparisonItems = useMemo((): ParsedComparisonItem[] => {
     const items: ParsedComparisonItem[] = [];
 
-    // Question 1 to 200
     for (let qNum = 1; qNum <= 200; qNum++) {
-      const qExist = existingQuestions.find(q => q.question_number === qNum);
+      const qExist = safeQuestions.find(q => q.question_number === qNum);
       const currentAnswer = qExist?.correct_answer || 'A';
       const part = qExist?.part || 'part1';
       const newAnswer = parsedRawMap.get(qNum) || null;
@@ -152,7 +191,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
     }
 
     return items;
-  }, [existingQuestions, parsedRawMap, importMode]);
+  }, [safeQuestions, parsedRawMap, importMode]);
 
   // Statistics counters
   const stats = useMemo(() => {
@@ -176,6 +215,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
   // Confirm Submit to Database via Atomic RPC
   const handleExecuteImport = async () => {
+    if (isPublished) return;
     setIsSubmitting(true);
     setSubmitError(null);
 
@@ -208,7 +248,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-        {/* MODAL HEADER */}
+        {/* MODAL HEADER — ALWAYS VISIBLE */}
         <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-3xl">
           <div>
             <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -228,18 +268,79 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
           </button>
         </div>
 
-        {/* MODAL BODY */}
+        {/* MODAL BODY — ALWAYS RENDERS SHELL */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* PUBLISHED WARNING BLOCKER */}
+          {/* PUBLISHED WARNING BANNER */}
           {isPublished && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-extrabold text-sm">Đề thi đang được Xuất bản (Published)</p>
                 <p className="mt-0.5 text-amber-800">
-                  Hệ thống khóa thay đổi Answer Key trên đề đang xuất bản để bảo vệ tính toàn vẹn kết quả.
-                  Vui lòng <strong>Unpublish</strong> đề thi trước khi thực hiện import đáp án mới.
+                  Bạn vẫn có thể tải file, phân tích và kiểm tra Answer Key, nhưng phải <strong>Unpublish</strong> đề thi trước khi thực hiện cập nhật đáp án vào cơ sở dữ liệu.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* QUESTIONS LOADING INDICATOR */}
+          {loadedQuestionsCount < 200 ? (
+            <div className="p-3 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-bold text-slate-600 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-ori-600" />
+                <span>Đang tải 200 câu hỏi hiện tại... ({loadedQuestionsCount}/200 câu)</span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Đã tải đủ {loadedQuestionsCount}/200 câu hiện tại của đề thi
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCurrentOverview(!showCurrentOverview)}
+                className="text-ori-600 hover:text-ori-700 flex items-center gap-1 text-[11px] font-extrabold"
+              >
+                {showCurrentOverview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showCurrentOverview ? 'Ẩn Answer Key hiện tại' : 'Xem Answer Key hiện tại'}
+              </button>
+            </div>
+          )}
+
+          {/* COLLAPSIBLE CURRENT ANSWER KEY OVERVIEW */}
+          {showCurrentOverview && (
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4 text-xs animate-in fade-in duration-150">
+              <div className="flex items-center justify-between">
+                <h4 className="font-extrabold text-slate-700 uppercase tracking-wide">
+                  ĐÁP ÁN HIỆN TẠI TRONG CƠ SỞ DỮ LIỆU (200 CÂU)
+                </h4>
+                <span className="text-[11px] font-bold text-slate-400">Xem dạng đọc</span>
+              </div>
+
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {CANONICAL_TOEIC_PARTS.map(pKey => {
+                  const struct = TOEIC_FULL_TEST_STRUCTURE[pKey];
+                  const partQs = safeQuestions.filter(
+                    q => q.question_number >= struct.startNumber && q.question_number <= struct.endNumber
+                  );
+
+                  return (
+                    <div key={pKey} className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                      <div className="font-extrabold text-slate-800 text-[11px]">
+                        {struct.nameVi} (Câu #{struct.startNumber}–#{struct.endNumber})
+                      </div>
+                      <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
+                        {partQs.map(q => (
+                          <div key={q.id} className="bg-slate-50 border border-slate-200 rounded p-1 text-center">
+                            <div className="text-[9px] text-slate-400 font-bold">#{q.question_number}</div>
+                            <div className="text-xs font-black text-slate-900">{q.correct_answer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -263,39 +364,6 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center">
                   <div className="text-xs font-bold text-slate-600">Giữ nguyên</div>
                   <div className="text-2xl font-black text-slate-800">{submitSuccessResult.unchangedCount}</div>
-                </div>
-              </div>
-
-              {/* READ-ONLY OVERVIEW GRID GROUPED BY PART */}
-              <div className="text-left pt-4 border-t border-slate-200 space-y-4">
-                <h4 className="text-xs font-extrabold uppercase text-slate-500 tracking-wider">
-                  BẢNG ĐÁP ÁN CHUẨN ĐÃ CẬP NHẬT (Q1–Q200)
-                </h4>
-
-                <div className="space-y-4">
-                  {CANONICAL_TOEIC_PARTS.map(pKey => {
-                    const struct = TOEIC_FULL_TEST_STRUCTURE[pKey];
-                    const partQs = comparisonItems.filter(i => i.questionNumber >= struct.startNumber && i.questionNumber <= struct.endNumber);
-
-                    return (
-                      <div key={pKey} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                        <div className="text-xs font-extrabold text-slate-700">
-                          {struct.nameVi} (Câu #{struct.startNumber}–#{struct.endNumber})
-                        </div>
-                        <div className="grid grid-cols-6 sm:grid-cols-10 gap-1.5">
-                          {partQs.map(q => (
-                            <div
-                              key={q.questionNumber}
-                              className="bg-white border border-slate-200 rounded-lg p-1.5 text-center shadow-xs"
-                            >
-                              <div className="text-[10px] font-bold text-slate-400">#{q.questionNumber}</div>
-                              <div className="text-xs font-black text-ori-600">{q.newAnswer || q.currentAnswer}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -349,36 +417,39 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
                   </div>
                 </div>
 
-                {/* UPLOAD / PASTE */}
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                {/* UPLOAD / DRAG DROP */}
+                <div
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={handleDrop}
+                  className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 flex flex-col justify-between"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-extrabold uppercase text-slate-500 tracking-wide">
-                      NGUỒN DỮ LIỆU (FILE HOẶC PASTE)
+                      NGUỒN ĐÁP ÁN (FILE HOẶC DRAG & DROP)
                     </span>
-                    {fileName && <span className="text-[11px] font-bold text-ori-600 truncate">{fileName}</span>}
+                    {fileName && <span className="text-[11px] font-bold text-ori-600 truncate max-w-[120px]">{fileName}</span>}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <label className="flex-1 py-2 px-3 bg-white border border-slate-200 hover:border-ori-400 rounded-xl cursor-pointer text-xs font-bold text-slate-700 flex items-center justify-center gap-2 transition-colors">
-                      <UploadCloud className="w-4 h-4 text-ori-600" />
-                      <span>Chọn file (PDF, TXT, CSV, JSON)</span>
-                      <input
-                        type="file"
-                        accept=".pdf,.txt,.csv,.json"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
+                  <label className="py-3 px-4 bg-white border-2 border-dashed border-slate-300 hover:border-ori-500 rounded-xl cursor-pointer text-xs font-bold text-slate-700 flex flex-col items-center justify-center gap-1.5 transition-colors text-center">
+                    <UploadCloud className="w-6 h-6 text-ori-600" />
+                    <span>Chọn file hoặc Kéo thả vào đây</span>
+                    <span className="text-[10px] text-slate-400 font-medium">(Hỗ trợ: PDF, TXT, CSV, JSON)</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.txt,.csv,.json"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </label>
 
                   {pdfError && (
-                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold">
+                    <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold">
                       {pdfError}
                     </div>
                   )}
 
                   {isReadingFile && (
-                    <div className="text-xs text-ori-600 font-bold flex items-center gap-1.5">
+                    <div className="text-xs text-ori-600 font-bold flex items-center justify-center gap-1.5">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Đang đọc nội dung file...
                     </div>
@@ -388,11 +459,14 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
 
               {/* DIRECT TEXT PASTE AREA */}
               <div className="space-y-1.5">
-                <label className="text-xs font-extrabold text-slate-700">Dán trực tiếp văn bản đáp án (Paste Text):</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-extrabold text-slate-700">HOẶC PASTE ĐÁP ÁN TRỰC TIẾP (TEXTAREA):</label>
+                  <span className="text-[11px] text-slate-400">Ví dụ: 1. A | Q1:A | 1,A | JSON</span>
+                </div>
                 <textarea
                   value={inputText}
                   onChange={e => { setInputText(e.target.value); setFileName(null); }}
-                  placeholder="Ví dụ:&#10;1. A&#10;2. B&#10;3. C&#10;...&#10;200. D"
+                  placeholder="Dán đáp án vào đây...&#10;1. A&#10;2. B&#10;3. C&#10;...&#10;200. D"
                   rows={4}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-800 focus:ring-2 focus:ring-ori-500 focus:bg-white transition-all"
                 />
@@ -506,6 +580,7 @@ export const AnswerKeyImporterModal: React.FC<AnswerKeyImporterModalProps> = ({
               onClick={() => setShowConfirmModal(true)}
               disabled={isPublished || stats.hasBlockers || stats.totalParsed === 0}
               className="px-6 py-2.5 bg-ori-600 text-white font-extrabold text-xs rounded-xl hover:bg-ori-700 disabled:opacity-40 flex items-center gap-2 shadow-md transition-colors"
+              title={isPublished ? 'Cần unpublish đề thi trước khi lưu' : ''}
             >
               <span>XÁC NHẬN CẬP NHẬT ANSWER KEY</span>
               <ArrowRight className="w-4 h-4" />
