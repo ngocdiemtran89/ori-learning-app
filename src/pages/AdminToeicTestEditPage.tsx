@@ -20,6 +20,7 @@ import {
   saveToeicTestQuestion,
   setToeicTestQuestionActive,
 } from '../lib/supabase/adminTestBank';
+import { validateToeicTestForPublish } from '../lib/cms/testBankValidation';
 import {
   CANONICAL_TOEIC_PARTS,
   TOEIC_FULL_TEST_STRUCTURE,
@@ -27,6 +28,8 @@ import {
   getPartSummary,
   expectedOptionCountForPart,
 } from '../lib/toeic/testStructure';
+import { Image as ImageIcon } from 'lucide-react';
+import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 
 export const AdminToeicTestEditPage: React.FC = () => {
   const { testId } = useParams<{ testId?: string }>();
@@ -47,7 +50,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
   const [questions, setQuestions] = useState<any[]>([]);
 
   // Active Tab
-  const [activePart, setActivePart] = useState<CanonicalToeicPart>('part1');
+  const [activePart, setActivePart] = useState<CanonicalToeicPart | 'media'>('part1');
 
   // UI / Form State
   const [loading, setLoading] = useState<boolean>(false);
@@ -146,6 +149,15 @@ export const AdminToeicTestEditPage: React.FC = () => {
       sort_order: sortOrder,
       is_published: isPublished,
     };
+
+    if (isPublished) {
+      const val = validateToeicTestForPublish(input, groups, questions);
+      if (!val.isValid) {
+        setFormError(`Không thể xuất bản (Publish): ${val.errors.join(' ')}`);
+        setSaving(false);
+        return;
+      }
+    }
 
     if (isEditing && testId) {
       const res = await updateToeicTest(testId, input);
@@ -487,10 +499,36 @@ export const AdminToeicTestEditPage: React.FC = () => {
                     </button>
                   );
                 })}
+
+                <button
+                  type="button"
+                  onClick={() => setActivePart('media')}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
+                    activePart === 'media'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Media Manager</span>
+                </button>
               </div>
 
-              {/* Part Section Header */}
-              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              {/* Media Manager Tab */}
+              {activePart === 'media' && (
+                <MediaManagerTab
+                  testId={testId!}
+                  groups={groups}
+                  questions={questions}
+                  onMediaUpdated={loadTestDetails}
+                />
+              )}
+
+              {/* Part Section */}
+              {activePart !== 'media' && (
+                <div className="space-y-6">
+                  {/* Part Section Header */}
+                  <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-200">
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-ori-600" />
@@ -888,6 +926,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
                   ))}
               </div>
             </div>
+            )}
+          </div>
           )}
         </>
       )}
