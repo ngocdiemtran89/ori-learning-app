@@ -1770,6 +1770,218 @@ describe('P3.5F PDF Part 1 Image Source Suite (Section 48)', () => {
   });
 });
 
+// ============================================================
+// P3.5F NATIVE GROUP QUESTION-RANGE HOTFIX SUITE (SECTION 16 - 26 TESTS)
+// ============================================================
+import { parseGroupAudioFilename } from '../cms/sequentialMediaParser';
+
+describe('P3.5F Native Group Question-Range Hotfix Suite (Section 16)', () => {
+  const dummyQuestions = Array.from({ length: 100 }, (_, i) => {
+    const qNum = i + 1;
+    let part = 'part1';
+    if (qNum >= 7 && qNum <= 31) part = 'part2';
+    else if (qNum >= 32 && qNum <= 70) part = 'part3';
+    else if (qNum >= 71 && qNum <= 100) part = 'part4';
+    return { id: `q-${qNum}`, question_number: qNum, part, image_url: null, audio_url: null };
+  });
+
+  const dummyGroups = [
+    ...Array.from({ length: 13 }, (_, i) => {
+      const start = 32 + i * 3;
+      return { id: `g-p3-${i + 1}`, part: 'part3', start, end: start + 2, audio_url: null };
+    }),
+    ...Array.from({ length: 10 }, (_, i) => {
+      const start = 71 + i * 3;
+      return { id: `g-p4-${i + 1}`, part: 'part4', start, end: start + 2, audio_url: null };
+    }),
+  ];
+
+  const getRange = (groupId: string) => {
+    const g = dummyGroups.find(x => x.id === groupId);
+    return g ? { min: g.start, max: g.end } : { min: 0, max: 0 };
+  };
+
+  it('1. E26-T01-32-34.mp3 -> Part3 Q32–34', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-32-34.mp3', 'p3_audio');
+    expect(parsed.matchType).toBe('range');
+    expect(parsed.startQ).toBe(32);
+    expect(parsed.endQ).toBe(34);
+    expect(parsed.sequence).toBe(1);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-1');
+  });
+
+  it('2. E26-T01-35-37.mp3 -> Part3 Q35–37', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-35-37.mp3', 'p3_audio');
+    expect(parsed.startQ).toBe(35);
+    expect(parsed.endQ).toBe(37);
+    expect(parsed.sequence).toBe(2);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-35-37.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-2');
+  });
+
+  it('3. E26-T01-68-70.mp3 -> Part3 Q68–70', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-68-70.mp3', 'p3_audio');
+    expect(parsed.startQ).toBe(68);
+    expect(parsed.endQ).toBe(70);
+    expect(parsed.sequence).toBe(13);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-68-70.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-13');
+  });
+
+  it('4. E26-T01-71-73.mp3 -> Part4 Q71–73', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-71-73.mp3', 'p4_audio');
+    expect(parsed.startQ).toBe(71);
+    expect(parsed.endQ).toBe(73);
+    expect(parsed.sequence).toBe(1);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-71-73.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-1');
+  });
+
+  it('5. E26-T01-74-76.mp3 -> Part4 Q74–76', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-74-76.mp3', 'p4_audio');
+    expect(parsed.startQ).toBe(74);
+    expect(parsed.endQ).toBe(76);
+    expect(parsed.sequence).toBe(2);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-74-76.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-2');
+  });
+
+  it('6. E26-T01-98-100.mp3 -> Part4 Q98–100', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-98-100.mp3', 'p4_audio');
+    expect(parsed.startQ).toBe(98);
+    expect(parsed.endQ).toBe(100);
+    expect(parsed.sequence).toBe(10);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-98-100.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-10');
+  });
+
+  it('7. E26_T01_32_34.mp3 accepted', () => {
+    const parsed = parseGroupAudioFilename('E26_T01_32_34.mp3', 'p3_audio');
+    expect(parsed.startQ).toBe(32);
+    expect(parsed.endQ).toBe(34);
+  });
+
+  it('8. E26 T01 32 34.mp3 accepted', () => {
+    const parsed = parseGroupAudioFilename('E26 T01 32 34.mp3', 'p3_audio');
+    expect(parsed.startQ).toBe(32);
+    expect(parsed.endQ).toBe(34);
+  });
+
+  it('9. uppercase MP3 accepted', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-32-34.MP3', 'p3_audio');
+    expect(parsed.extension).toBe('mp3');
+    expect(parsed.startQ).toBe(32);
+  });
+
+  it('10. Part3 sequential E26-T01-01.mp3 still -> Q32–34', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-01.mp3', 'p3_audio');
+    expect(parsed.matchType).toBe('sequential');
+    expect(parsed.sequence).toBe(1);
+    expect(parsed.startQ).toBe(32);
+  });
+
+  it('11. Part3 sequential E26-T01-13.mp3 still -> Q68–70', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-13.mp3', 'p3_audio');
+    expect(parsed.matchType).toBe('sequential');
+    expect(parsed.sequence).toBe(13);
+    expect(parsed.startQ).toBe(68);
+  });
+
+  it('12. Part4 sequential E26-T01-01.mp3 still -> Q71–73', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-01.mp3', 'p4_audio');
+    expect(parsed.sequence).toBe(1);
+    expect(parsed.startQ).toBe(71);
+  });
+
+  it('13. Part4 sequential E26-T01-10.mp3 still -> Q98–100', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-10.mp3', 'p4_audio');
+    expect(parsed.sequence).toBe(10);
+    expect(parsed.startQ).toBe(98);
+  });
+
+  it('14. invalid Part3 33-35 rejected', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-33-35.mp3', 'p3_audio');
+    expect(parsed.isValidRange).toBe(false);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-33-35.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('15. invalid Part4 72-74 rejected', () => {
+    const parsed = parseGroupAudioFilename('E26-T01-72-74.mp3', 'p4_audio');
+    expect(parsed.isValidRange).toBe(false);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-72-74.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('16. q032-034.mp3 canonical still works', () => {
+    const res = mapSequentialMediaFiles([{ name: 'q032-034.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-1');
+  });
+
+  it('17. q098-100.mp3 canonical still works', () => {
+    const res = mapSequentialMediaFiles([{ name: 'q098-100.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-10');
+  });
+
+  it('18. range-style missing group detection works', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }, { name: 'E26-T01-35-37.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.counters.missingGroupLabels).toContain('Q38–40');
+  });
+
+  it('19. sequential + range file resolving to same Q32–34 => conflict', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }, { name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('conflict');
+    expect(res.items[1].status).toBe('conflict');
+  });
+
+  it('20. range duplicate same target => conflict', () => {
+    const res = mapSequentialMediaFiles([{ name: 'fileA-32-34.mp3' }, { name: 'fileB-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('conflict');
+    expect(res.items[1].status).toBe('conflict');
+  });
+
+  it('21. published existing target -> SKIP', () => {
+    const existingG = dummyGroups.map(g => g.id === 'g-p3-1' ? { ...g, audio_url: 'exist.mp3' } : g);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, existingG, getRange, true);
+    expect(res.items[0].status).toBe('skip');
+  });
+
+  it('22. published missing target -> READY', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, true);
+    expect(res.items[0].status).toBe('ready');
+  });
+
+  it('23. per-Part workflow uses fixed parser', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].status).toBe('ready');
+  });
+
+  it('24. Full Listening workflow uses fixed parser', () => {
+    const raw: Record<FullListeningZoneKey, any[]> = {
+      p1_image: [],
+      p1_audio: [],
+      p2_audio: [],
+      p3_audio: [{ name: 'E26-T01-32-34.mp3' }],
+      p4_audio: [{ name: 'E26-T01-71-73.mp3' }],
+    };
+    const res = mapAllFullListeningZones(raw, dummyQuestions, dummyGroups, getRange, false);
+    expect(res.zoneItems.p3_audio[0].targetLabel).toContain('Q32–34');
+    expect(res.zoneItems.p4_audio[0].targetLabel).toContain('Q71–73');
+  });
+
+  it('25. Part1 existing tests unchanged', () => {
+    const res = mapSequentialMediaFiles([{ name: '01.png' }], 'p1_image', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-1');
+  });
+
+  it('26. Part2 existing tests unchanged', () => {
+    const res = mapSequentialMediaFiles([{ name: '01.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-7');
+  });
+});
+
+
 
 
 
