@@ -527,18 +527,15 @@ export async function setToeicTestQuestionActive(
  * Upload media for a question and safely replace the old one
  */
 export async function uploadQuestionMedia(
-  testId: string,
   questionId: string,
-  questionNumber: number,
-  part: string,
   file: File,
   type: 'image' | 'audio'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Get current question to find old media path
+    // 1. Get current question to find old media path and metadata
     const { data: q, error: qErr } = await supabase
       .from('toeic_test_questions')
-      .select('image_url, audio_url')
+      .select('test_id, question_number, part, image_url, audio_url')
       .eq('id', questionId)
       .single();
 
@@ -547,7 +544,7 @@ export async function uploadQuestionMedia(
     const oldPath = type === 'image' ? q.image_url : q.audio_url;
 
     // 2. Upload new media
-    const prefix = `toeic-tests/${testId}/${part.toLowerCase()}/q${String(questionNumber).padStart(3, '0')}`;
+    const prefix = `toeic-tests/${q.test_id}/${q.part.toLowerCase()}/q${String(q.question_number).padStart(3, '0')}`;
     const uploadRes = await uploadToeicMedia(prefix, file, type);
     if (!uploadRes.success || !uploadRes.path) {
       return { success: false, error: uploadRes.error };
@@ -563,13 +560,13 @@ export async function uploadQuestionMedia(
       .eq('id', questionId);
 
     if (updateErr) {
-      // Rollback newly uploaded media if DB fails
+      // Rollback newly uploaded media if DB fails (compensating cleanup)
       await deleteToeicMedia(newPath);
       return { success: false, error: 'Lỗi khi cập nhật cơ sở dữ liệu.' };
     }
 
     // 4. Delete old media if successful
-    if (oldPath) {
+    if (oldPath && oldPath !== newPath) {
       await deleteToeicMedia(oldPath);
     }
 
@@ -589,11 +586,19 @@ export async function removeQuestionMedia(
   try {
     const { data: q, error: qErr } = await supabase
       .from('toeic_test_questions')
-      .select('image_url, audio_url')
+      .select(`
+        image_url, 
+        audio_url,
+        toeic_tests!inner(is_published)
+      `)
       .eq('id', questionId)
       .single();
 
     if (qErr || !q) return { success: false, error: 'Không tìm thấy câu hỏi.' };
+
+    if ((q.toeic_tests as any).is_published) {
+      return { success: false, error: 'Không thể xóa media của đề thi đã xuất bản. Vui lòng gỡ xuất bản trước.' };
+    }
 
     const oldPath = type === 'image' ? q.image_url : q.audio_url;
     if (!oldPath) return { success: true };
@@ -618,16 +623,14 @@ export async function removeQuestionMedia(
  * Upload media for a group and safely replace the old one
  */
 export async function uploadGroupMedia(
-  testId: string,
   groupId: string,
-  part: string,
   file: File,
   type: 'image' | 'audio'
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { data: g, error: gErr } = await supabase
       .from('toeic_test_groups')
-      .select('image_url, audio_url')
+      .select('test_id, part, image_url, audio_url')
       .eq('id', groupId)
       .single();
 
@@ -635,7 +638,7 @@ export async function uploadGroupMedia(
 
     const oldPath = type === 'image' ? g.image_url : g.audio_url;
 
-    const prefix = `toeic-tests/${testId}/${part.toLowerCase()}/group-${groupId}`;
+    const prefix = `toeic-tests/${g.test_id}/${g.part.toLowerCase()}/group-${groupId}`;
     const uploadRes = await uploadToeicMedia(prefix, file, type);
     if (!uploadRes.success || !uploadRes.path) {
       return { success: false, error: uploadRes.error };
@@ -650,11 +653,11 @@ export async function uploadGroupMedia(
       .eq('id', groupId);
 
     if (updateErr) {
-      await deleteToeicMedia(newPath);
+      await deleteToeicMedia(newPath); // compensating cleanup
       return { success: false, error: 'Lỗi khi cập nhật cơ sở dữ liệu.' };
     }
 
-    if (oldPath) {
+    if (oldPath && oldPath !== newPath) {
       await deleteToeicMedia(oldPath);
     }
 
@@ -674,11 +677,19 @@ export async function removeGroupMedia(
   try {
     const { data: g, error: gErr } = await supabase
       .from('toeic_test_groups')
-      .select('image_url, audio_url')
+      .select(`
+        image_url, 
+        audio_url,
+        toeic_tests!inner(is_published)
+      `)
       .eq('id', groupId)
       .single();
 
     if (gErr || !g) return { success: false, error: 'Không tìm thấy nhóm câu hỏi.' };
+
+    if ((g.toeic_tests as any).is_published) {
+      return { success: false, error: 'Không thể xóa media của đề thi đã xuất bản. Vui lòng gỡ xuất bản trước.' };
+    }
 
     const oldPath = type === 'image' ? g.image_url : g.audio_url;
     if (!oldPath) return { success: true };

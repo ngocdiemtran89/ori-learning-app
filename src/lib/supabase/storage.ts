@@ -64,8 +64,8 @@ export async function uploadToeicMedia(pathPrefix: string, file: File, type: 'im
   }
 
   const ext = getNormalizedExtension(file);
-  const timestamp = Date.now();
-  const fullPath = `${pathPrefix}/${type}_${timestamp}.${ext}`;
+  const uniqueId = crypto.randomUUID();
+  const fullPath = `${pathPrefix}/${type}_${uniqueId}.${ext}`;
 
   try {
     const { data, error } = await supabase.storage

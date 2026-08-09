@@ -1,7 +1,16 @@
 -- Create the toeic-media bucket if it doesn't exist
-insert into storage.buckets (id, name, public)
-values ('toeic-media', 'toeic-media', false)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'toeic-media', 
+  'toeic-media', 
+  false,
+  104857600, -- 100MB
+  array['image/jpeg', 'image/png', 'image/webp', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/ogg']
+)
+on conflict (id) do update set 
+  public = false,
+  file_size_limit = 104857600,
+  allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/ogg'];
 
 -- Ensure RLS is enabled for storage.objects
 alter table storage.objects enable row level security;
@@ -24,7 +33,8 @@ create policy admin_media_update
 on storage.objects
 for update
 to authenticated
-using (bucket_id = 'toeic-media' and public.is_admin());
+using (bucket_id = 'toeic-media' and public.is_admin())
+with check (bucket_id = 'toeic-media' and public.is_admin());
 
 -- Policy 3: Allow authenticated users (Admins) to delete media
 create policy admin_media_delete
@@ -47,9 +57,32 @@ using (
     or (
       public.has_active_access()
       and exists (
-        select 1 from public.toeic_tests
-        where id::text = split_part(name, '/', 2)
-        and is_published = true
+        select 1
+        from public.toeic_tests t
+        where t.is_published = true
+          and (
+            exists (
+              select 1
+              from public.toeic_test_questions q
+              where q.test_id = t.id
+                and q.is_active = true
+                and (
+                  q.image_url = storage.objects.name
+                  or q.audio_url = storage.objects.name
+                )
+            )
+            or
+            exists (
+              select 1
+              from public.toeic_test_groups g
+              where g.test_id = t.id
+                and g.is_active = true
+                and (
+                  g.image_url = storage.objects.name
+                  or g.audio_url = storage.objects.name
+                )
+            )
+          )
       )
     )
   )

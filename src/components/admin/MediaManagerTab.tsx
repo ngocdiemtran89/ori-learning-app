@@ -12,66 +12,79 @@ interface MediaManagerTabProps {
   onMediaUpdated: () => void;
 }
 
-export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups, questions, onMediaUpdated }) => {
+export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId: _testId, groups, questions, onMediaUpdated }) => {
   const metrics = getMediaCompleteness(groups, questions);
   
-  const [loadingMedia, setLoadingMedia] = useState<string | null>(null);
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
 
-  const handleUploadQuestionMedia = async (questionId: string, questionNumber: number, part: string, e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'audio') => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    setLoadingMedia(`${type}-q-${questionId}`);
-    
-    const { success, error } = await uploadQuestionMedia(testId, questionId, questionNumber, part, file, type);
-    
-    setLoadingMedia(null);
-    if (success) {
-      onMediaUpdated();
-    } else {
-      alert(`Upload lỗi: ${error}`);
+  const handleUploadQuestionMedia = async (qId: string, file: File, type: 'image' | 'audio') => {
+    setLoading(prev => ({ ...prev, [qId]: true }));
+    setError(null);
+    try {
+      const res = await uploadQuestionMedia(qId, file, type);
+      if (res.success) {
+        onMediaUpdated();
+      } else {
+        setError(res.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      setError('Unknown error occurred');
+    } finally {
+      setLoading(prev => ({ ...prev, [qId]: false }));
     }
   };
 
   const handleRemoveQuestionMedia = async (questionId: string, type: 'image' | 'audio') => {
     if (!window.confirm('Bạn có chắc muốn xóa media này?')) return;
-    setLoadingMedia(`${type}-q-${questionId}`);
-    
-    const { success, error } = await removeQuestionMedia(questionId, type);
-    
-    setLoadingMedia(null);
-    if (success) {
-      onMediaUpdated();
-    } else {
-      alert(`Xóa lỗi: ${error}`);
+    setLoading(prev => ({ ...prev, [questionId]: true }));
+    setError(null);
+    try {
+      const res = await removeQuestionMedia(questionId, type);
+      if (res.success) {
+        onMediaUpdated();
+      } else {
+        setError(res.error || 'Xóa lỗi');
+      }
+    } catch (err: any) {
+      setError('Unknown error occurred');
+    } finally {
+      setLoading(prev => ({ ...prev, [questionId]: false }));
     }
   };
 
-  const handleUploadGroupMedia = async (groupId: string, part: string, e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'audio') => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    setLoadingMedia(`${type}-g-${groupId}`);
-    
-    const { success, error } = await uploadGroupMedia(testId, groupId, part, file, type);
-    
-    setLoadingMedia(null);
-    if (success) {
-      onMediaUpdated();
-    } else {
-      alert(`Upload lỗi: ${error}`);
+  const handleUploadGroupMedia = async (gId: string, file: File, type: 'image' | 'audio') => {
+    setLoading(prev => ({ ...prev, [gId]: true }));
+    setError(null);
+    try {
+      const res = await uploadGroupMedia(gId, file, type);
+      if (res.success) {
+        onMediaUpdated();
+      } else {
+        setError(res.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      setError('Unknown error occurred');
+    } finally {
+      setLoading(prev => ({ ...prev, [gId]: false }));
     }
   };
 
   const handleRemoveGroupMedia = async (groupId: string, type: 'image' | 'audio') => {
     if (!window.confirm('Bạn có chắc muốn xóa media nhóm này?')) return;
-    setLoadingMedia(`${type}-g-${groupId}`);
-    
-    const { success, error } = await removeGroupMedia(groupId, type);
-    
-    setLoadingMedia(null);
-    if (success) {
-      onMediaUpdated();
-    } else {
-      alert(`Xóa lỗi: ${error}`);
+    setLoading(prev => ({ ...prev, [groupId]: true }));
+    setError(null);
+    try {
+      const res = await removeGroupMedia(groupId, type);
+      if (res.success) {
+        onMediaUpdated();
+      } else {
+        setError(res.error || 'Xóa lỗi');
+      }
+    } catch (err: any) {
+      setError('Unknown error occurred');
+    } finally {
+      setLoading(prev => ({ ...prev, [groupId]: false }));
     }
   };
 
@@ -101,7 +114,6 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
     );
   };
 
-  // Preview components
   const MediaPreview = ({ url, type }: { url: string | null | undefined, type: 'image' | 'audio' }) => {
     const [signedUrl, setSignedUrl] = useState<string | null>(null);
     
@@ -125,6 +137,13 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm font-bold flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {renderMetricCard('Part 1 Ảnh', metrics.part1Images, <ImageIcon className="w-3.5 h-3.5" />, true)}
         {renderMetricCard('Part 1 Audio', metrics.part1Audio, <Music className="w-3.5 h-3.5" />, false)}
@@ -150,13 +169,12 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
             <div key={q.id} className="p-3 bg-white border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-4">
               <div className="font-bold text-sm w-16">Câu #{q.question_number}</div>
               
-              {/* Image */}
               <div className="flex items-center gap-3 flex-1 min-w-[200px]">
                 <div className="w-20"><MediaPreview url={q.image_url} type="image" /></div>
                 <div className="flex items-center gap-2">
                   <label className="cursor-pointer text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1">
-                    {loadingMedia === `image-q-${q.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Ảnh
-                    <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={(e) => handleUploadQuestionMedia(q.id!, q.question_number, q.part, e, 'image')} disabled={!!loadingMedia} />
+                    {loading[q.id!] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Ảnh
+                    <input type="file" className="hidden" accept="image/jpeg,image/png,image/webp" onChange={(e) => { if (e.target.files?.[0]) handleUploadQuestionMedia(q.id!, e.target.files[0], 'image') }} disabled={loading[q.id!]} />
                   </label>
                   {q.image_url && (
                     <button type="button" onClick={() => handleRemoveQuestionMedia(q.id!, 'image')} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
@@ -166,13 +184,12 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
                 </div>
               </div>
 
-              {/* Audio */}
               <div className="flex items-center gap-3 flex-1 min-w-[200px]">
                 <div className="w-40"><MediaPreview url={q.audio_url} type="audio" /></div>
                 <div className="flex items-center gap-2">
                   <label className="cursor-pointer text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1">
-                    {loadingMedia === `audio-q-${q.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio
-                    <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => handleUploadQuestionMedia(q.id!, q.question_number, q.part, e, 'audio')} disabled={!!loadingMedia} />
+                    {loading[q.id!] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio
+                    <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => { if (e.target.files?.[0]) handleUploadQuestionMedia(q.id!, e.target.files[0], 'audio') }} disabled={loading[q.id!]} />
                   </label>
                   {q.audio_url && (
                     <button type="button" onClick={() => handleRemoveQuestionMedia(q.id!, 'audio')} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
@@ -197,8 +214,8 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
                 <div className="w-40"><MediaPreview url={q.audio_url} type="audio" /></div>
                 <div className="flex items-center gap-2">
                   <label className="cursor-pointer text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1">
-                    {loadingMedia === `audio-q-${q.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio
-                    <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => handleUploadQuestionMedia(q.id!, q.question_number, q.part, e, 'audio')} disabled={!!loadingMedia} />
+                    {loading[q.id!] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio
+                    <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => { if (e.target.files?.[0]) handleUploadQuestionMedia(q.id!, e.target.files[0], 'audio') }} disabled={loading[q.id!]} />
                   </label>
                   {q.audio_url && (
                     <button type="button" onClick={() => handleRemoveQuestionMedia(q.id!, 'audio')} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
@@ -226,8 +243,8 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({ testId, groups
                   <div className="w-40"><MediaPreview url={g.audio_url} type="audio" /></div>
                   <div className="flex items-center gap-2">
                     <label className="cursor-pointer text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-1">
-                      {loadingMedia === `audio-g-${g.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio Nhóm
-                      <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => handleUploadGroupMedia(g.id!, g.part, e, 'audio')} disabled={!!loadingMedia} />
+                      {loading[g.id!] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Audio Nhóm
+                      <input type="file" className="hidden" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(e) => { if (e.target.files?.[0]) handleUploadGroupMedia(g.id!, e.target.files[0], 'audio') }} disabled={loading[g.id!]} />
                     </label>
                     {g.audio_url && (
                       <button type="button" onClick={() => handleRemoveGroupMedia(g.id!, 'audio')} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
