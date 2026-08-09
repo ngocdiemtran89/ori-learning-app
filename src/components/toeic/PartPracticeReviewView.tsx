@@ -8,7 +8,6 @@ import {
   ChevronRight,
   RotateCcw,
   ListFilter,
-  FileText,
   Volume2,
   BookOpen,
   ArrowLeft,
@@ -319,8 +318,8 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                 />
               )}
 
-              {/* MEDIA PLAYER (PRIVATE SIGNED URLS) */}
-              {(mediaContext.audioUrl || mediaContext.imageUrl || isListeningPart) && (
+              {/* FOR PARTS 2-7: TOP MEDIA PLAYER */}
+              {currentQuestion.part !== 'part1' && (mediaContext.audioUrl || mediaContext.imageUrl || isListeningPart) && (
                 <ListeningMedia
                   audioUrl={mediaContext.audioUrl || null}
                   imageUrl={mediaContext.imageUrl || null}
@@ -331,190 +330,311 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                 />
               )}
 
-              {/* QUESTION REVIEW CARD */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
-                {/* QUESTION STATUS HEADER */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <span className="text-base font-extrabold text-slate-900">
-                    Câu {currentQuestion.question_number}
-                  </span>
+              {/* PART 1 COMPARISON LAYOUT VS PARTS 2-7 STANDARD LAYOUT */}
+              {currentQuestion.part === 'part1' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(340px,0.9fr)_minmax(420px,1.1fr)] gap-6 items-start">
+                  {/* LEFT COLUMN: PHOTOGRAPH + COMPACT AUDIO (STICKY ON DESKTOP) */}
+                  <div className="lg:sticky lg:top-20 space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <ListeningMedia
+                      audioUrl={null}
+                      imageUrl={mediaContext.imageUrl || null}
+                      part="part1"
+                      isAudioRequired={false}
+                      showImage={true}
+                      showAudio={false}
+                    />
+                    <ListeningMedia
+                      audioUrl={mediaContext.audioUrl || null}
+                      imageUrl={null}
+                      part="part1"
+                      isAudioRequired={true}
+                      cueStartMs={mediaContext.cueStartMs}
+                      cueEndMs={mediaContext.cueEndMs}
+                      showImage={false}
+                      showAudio={true}
+                      compactAudio={true}
+                    />
+                  </div>
 
-                  <div>
-                    {currentQuestion.student_answer ? (
-                      currentQuestion.is_correct ? (
-                        <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-full flex items-center gap-1">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          ĐÚNG
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-extrabold rounded-full flex items-center gap-1">
-                          <XCircle className="w-4 h-4 text-rose-600" />
-                          SAI
-                        </span>
-                      )
-                    ) : (
-                      <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-extrabold rounded-full flex items-center gap-1">
-                        <AlertCircle className="w-4 h-4 text-slate-400" />
-                        CHƯA TRẢ LỜI
+                  {/* RIGHT COLUMN: QUESTION + BILINGUAL OPTIONS + EXPLANATION */}
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                    {/* QUESTION HEADER & BADGES */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <span className="text-base font-extrabold text-slate-900">
+                        Câu {currentQuestion.question_number}
                       </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* PART 1 PHOTOGRAPH DISPLAY */}
-                {currentQuestion.part === 'part1' && (
-                  <div className="flex flex-col items-center my-3 space-y-2">
-                    {mediaContext.imageUrl ? (
-                      <img
-                        src={mediaContext.imageUrl}
-                        alt={`Bức ảnh cho câu ${currentQuestion.question_number}`}
-                        className="max-h-80 max-w-full rounded-2xl border border-slate-200 shadow-sm object-contain bg-slate-50"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLElement).style.display = 'none';
-                          const fallback = e.currentTarget.nextElementSibling;
-                          if (fallback) fallback.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`p-4 bg-slate-50 text-slate-500 text-xs font-medium rounded-xl border border-slate-200 text-center w-full ${mediaContext.imageUrl ? 'hidden' : ''}`}>
-                      Chưa có hình ảnh cho câu này.
-                    </div>
-                  </div>
-                )}
-
-                {/* QUESTION TEXT */}
-                {currentQuestion.question_text && (
-                  <p className="text-sm font-bold text-slate-800 leading-relaxed">
-                    {currentQuestion.question_text}
-                  </p>
-                )}
-
-                {/* OPTIONS REVIEW */}
-                <div className="space-y-2.5">
-                  {(currentQuestion.options || [
-                    { label: 'A', text: 'Option A' },
-                    { label: 'B', text: 'Option B' },
-                    { label: 'C', text: 'Option C' },
-                    { label: 'D', text: 'Option D' },
-                  ]).map((opt, idx) => {
-                    const isSelected = currentQuestion.student_answer === opt.label;
-                    const isCorrect = currentQuestion.correct_answer === opt.label;
-
-                    let optionBg = 'bg-slate-50 border-slate-200 text-slate-700';
-                    let badge = null;
-
-                    if (isCorrect && isSelected) {
-                      optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
-                      badge = (
-                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                          ✓ Đáp án đúng • Bạn đã chọn
-                        </span>
-                      );
-                    } else if (isCorrect) {
-                      optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
-                      badge = (
-                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                          ✓ Đáp án đúng
-                        </span>
-                      );
-                    } else if (isSelected) {
-                      optionBg = 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold';
-                      badge = (
-                        <span className="text-xs font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                          ✕ Bạn chọn
-                        </span>
-                      );
-                    }
-
-                    // Inline Vietnamese option translation
-                    const optVi = Array.isArray(currentQuestion.options_vi)
-                      ? currentQuestion.options_vi[idx]
-                      : null;
-
-                    return (
-                      <div
-                        key={opt.label}
-                        className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${optionBg}`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span className={`w-7 h-7 shrink-0 rounded-lg font-black text-xs flex items-center justify-center border mt-0.5 ${
-                            isCorrect
-                              ? 'bg-emerald-600 text-white border-emerald-600'
-                              : isSelected
-                              ? 'bg-rose-600 text-white border-rose-600'
-                              : 'bg-white text-slate-600 border-slate-300'
-                          }`}>
-                            {opt.label}
+                      <div>
+                        {currentQuestion.student_answer ? (
+                          currentQuestion.is_correct ? (
+                            <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-full flex items-center gap-1">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              ĐÚNG
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-extrabold rounded-full flex items-center gap-1">
+                              <XCircle className="w-4 h-4 text-rose-600" />
+                              SAI
+                            </span>
+                          )
+                        ) : (
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-extrabold rounded-full flex items-center gap-1">
+                            <AlertCircle className="w-4 h-4 text-slate-400" />
+                            CHƯA TRẢ LỜI
                           </span>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-semibold leading-snug">{opt.text}</span>
-                            {optVi && typeof optVi === 'string' && optVi.trim().length > 0 && (
-                              <span className="text-xs text-slate-500 italic leading-snug">
-                                {optVi}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {badge}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* SCRIPT BLOCK (FOR LISTENING PART 2-4 REVEALED POST-SUBMIT) */}
-                {isListeningPart && currentQuestion.part !== 'part1' && (
-                  <div className="pt-4 border-t border-slate-100 space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 uppercase tracking-wide">
-                      <Volume2 className="w-4 h-4 text-ori-600" />
-                      LISTENING SCRIPT (BẢN DỊCH & THOẠI)
-                    </div>
-
-                    {computedScript ? (
-                      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs leading-relaxed space-y-2">
-                        <div className="font-bold text-slate-800 whitespace-pre-line">
-                          {computedScript}
-                        </div>
-
-                        {computedScriptVi && (
-                          <div className="pt-2 border-t border-slate-200 text-slate-600 italic whitespace-pre-line">
-                            {computedScriptVi}
-                          </div>
                         )}
                       </div>
-                    ) : (
-                      <div className="p-3 bg-amber-50 text-amber-800 text-xs font-medium rounded-xl border border-amber-200">
-                        Chưa có script cho nội dung này.
+                    </div>
+
+                    {/* QUESTION TEXT */}
+                    {currentQuestion.question_text && (
+                      <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                        {currentQuestion.question_text}
+                      </p>
+                    )}
+
+                    {/* INLINE BILINGUAL OPTION CARDS */}
+                    <div className="space-y-2">
+                      {(currentQuestion.options || [
+                        { label: 'A', text: 'Option A' },
+                        { label: 'B', text: 'Option B' },
+                        { label: 'C', text: 'Option C' },
+                        { label: 'D', text: 'Option D' },
+                      ]).map((opt, idx) => {
+                        const isSelected = currentQuestion.student_answer === opt.label;
+                        const isCorrect = currentQuestion.correct_answer === opt.label;
+
+                        let optionBg = 'bg-slate-50 border-slate-200 text-slate-700';
+                        let badge = null;
+
+                        if (isCorrect && isSelected) {
+                          optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
+                          badge = (
+                            <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                              ✓ Đáp án đúng • Bạn đã chọn
+                            </span>
+                          );
+                        } else if (isCorrect) {
+                          optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
+                          badge = (
+                            <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                              ✓ Đáp án đúng
+                            </span>
+                          );
+                        } else if (isSelected) {
+                          optionBg = 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold';
+                          badge = (
+                            <span className="text-[11px] font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                              ✕ Bạn chọn
+                            </span>
+                          );
+                        }
+
+                        const optVi = Array.isArray(currentQuestion.options_vi)
+                          ? currentQuestion.options_vi[idx]
+                          : null;
+
+                        return (
+                          <div
+                            key={opt.label}
+                            className={`p-3 rounded-xl border flex items-start justify-between gap-3 transition-all ${optionBg}`}
+                          >
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <span className={`w-6 h-6 shrink-0 rounded-lg font-black text-xs flex items-center justify-center border mt-0.5 ${
+                                isCorrect
+                                  ? 'bg-emerald-600 text-white border-emerald-600'
+                                  : isSelected
+                                  ? 'bg-rose-600 text-white border-rose-600'
+                                  : 'bg-white text-slate-600 border-slate-300'
+                              }`}>
+                                {opt.label}
+                              </span>
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="text-xs font-semibold leading-snug break-words">{opt.text}</span>
+                                {optVi && typeof optVi === 'string' && optVi.trim().length > 0 && (
+                                  <span className="text-[11px] text-slate-500 italic leading-snug break-words">
+                                    {optVi}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {badge}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* EXPLANATION BLOCK (IF PRESENT) */}
+                    {currentQuestion.explanation && (
+                      <div className="pt-3 border-t border-slate-100 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-slate-700 uppercase">
+                          <BookOpen className="w-3.5 h-3.5 text-ori-600" />
+                          GIẢI THÍCH CHI TIẾT
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                          {currentQuestion.explanation}
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
+                </div>
+              ) : (
+                /* PARTS 2-7 STANDARD REVIEW CARD */
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <span className="text-base font-extrabold text-slate-900">
+                      Câu {currentQuestion.question_number}
+                    </span>
 
-                {/* VIETNAMESE TRANSLATION (IF AVAILABLE FOR P2-P7) */}
-                {currentQuestion.translation_vi && currentQuestion.part !== 'part1' && (
-                  <div className="pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700 uppercase">
-                      <BookOpen className="w-4 h-4 text-ori-600" />
-                      DỊCH CÂU HỎI & ĐÁP ÁN
-                    </div>
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line">
-                      {currentQuestion.translation_vi}
+                    <div>
+                      {currentQuestion.student_answer ? (
+                        currentQuestion.is_correct ? (
+                          <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-extrabold rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            ĐÚNG
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 bg-rose-100 text-rose-800 text-xs font-extrabold rounded-full flex items-center gap-1">
+                            <XCircle className="w-4 h-4 text-rose-600" />
+                            SAI
+                          </span>
+                        )
+                      ) : (
+                        <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-extrabold rounded-full flex items-center gap-1">
+                          <AlertCircle className="w-4 h-4 text-slate-400" />
+                          CHƯA TRẢ LỜI
+                        </span>
+                      )}
                     </div>
                   </div>
-                )}
 
-                {/* EXPLANATION BLOCK (IF AVAILABLE) */}
-                {currentQuestion.explanation && (
-                  <div className="pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700 uppercase">
-                      <FileText className="w-4 h-4 text-ori-600" />
-                      GIẢI THÍCH CHI TIẾT
-                    </div>
-                    <div className="p-4 bg-ori-50/60 rounded-xl border border-ori-100 text-xs text-slate-800 leading-relaxed whitespace-pre-line">
-                      {currentQuestion.explanation}
-                    </div>
+                  {currentQuestion.question_text && (
+                    <p className="text-sm font-bold text-slate-800 leading-relaxed">
+                      {currentQuestion.question_text}
+                    </p>
+                  )}
+
+                  <div className="space-y-2.5">
+                    {(currentQuestion.options || [
+                      { label: 'A', text: 'Option A' },
+                      { label: 'B', text: 'Option B' },
+                      { label: 'C', text: 'Option C' },
+                      { label: 'D', text: 'Option D' },
+                    ]).map((opt, idx) => {
+                      const isSelected = currentQuestion.student_answer === opt.label;
+                      const isCorrect = currentQuestion.correct_answer === opt.label;
+
+                      let optionBg = 'bg-slate-50 border-slate-200 text-slate-700';
+                      let badge = null;
+
+                      if (isCorrect && isSelected) {
+                        optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
+                        badge = (
+                          <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                            ✓ Đáp án đúng • Bạn đã chọn
+                          </span>
+                        );
+                      } else if (isCorrect) {
+                        optionBg = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-extrabold ring-1 ring-emerald-400';
+                        badge = (
+                          <span className="text-xs font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                            ✓ Đáp án đúng
+                          </span>
+                        );
+                      } else if (isSelected) {
+                        optionBg = 'bg-rose-50 border-rose-300 text-rose-900 font-extrabold';
+                        badge = (
+                          <span className="text-xs font-extrabold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                            ✕ Bạn chọn
+                          </span>
+                        );
+                      }
+
+                      const optVi = Array.isArray(currentQuestion.options_vi)
+                        ? currentQuestion.options_vi[idx]
+                        : null;
+
+                      return (
+                        <div
+                          key={opt.label}
+                          className={`p-3.5 rounded-xl border flex items-center justify-between transition-all ${optionBg}`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className={`w-7 h-7 shrink-0 rounded-lg font-black text-xs flex items-center justify-center border mt-0.5 ${
+                              isCorrect
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : isSelected
+                                ? 'bg-rose-600 text-white border-rose-600'
+                                : 'bg-white text-slate-600 border-slate-300'
+                            }`}>
+                              {opt.label}
+                            </span>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-semibold leading-snug">{opt.text}</span>
+                              {optVi && typeof optVi === 'string' && optVi.trim().length > 0 && (
+                                <span className="text-xs text-slate-500 italic leading-snug">
+                                  {optVi}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {badge}
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
+
+                  {isListeningPart && currentQuestion.part !== 'part1' && (
+                    <div className="pt-4 border-t border-slate-100 space-y-3">
+                      <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 uppercase tracking-wide">
+                        <Volume2 className="w-4 h-4 text-ori-600" />
+                        LISTENING SCRIPT (BẢN DỊCH & THOẠI)
+                      </div>
+
+                      {computedScript ? (
+                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs leading-relaxed space-y-2">
+                          <div className="font-bold text-slate-800 whitespace-pre-line">
+                            {computedScript}
+                          </div>
+
+                          {computedScriptVi && (
+                            <div className="pt-2 border-t border-slate-200 text-slate-600 italic whitespace-pre-line">
+                              {computedScriptVi}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-amber-50 text-amber-800 text-xs font-medium rounded-xl border border-amber-200">
+                          Chưa có script cho nội dung này.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {currentQuestion.translation_vi && currentQuestion.part !== 'part1' && (
+                    <div className="pt-4 border-t border-slate-100 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700 uppercase">
+                        <BookOpen className="w-4 h-4 text-ori-600" />
+                        DỊCH CÂU HỎI & ĐÁP ÁN
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line">
+                        {currentQuestion.translation_vi}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentQuestion.explanation && (
+                    <div className="pt-4 border-t border-slate-100 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-extrabold text-slate-700 uppercase">
+                        <BookOpen className="w-4 h-4 text-ori-600" />
+                        GIẢI THÍCH CHI TIẾT
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                        {currentQuestion.explanation}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* NAVIGATION FOOTER */}
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
