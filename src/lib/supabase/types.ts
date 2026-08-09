@@ -120,6 +120,9 @@ export interface StudentToeicQuestion {
   // Translation (part mode only — null in full mode)
   translation_vi?: string | null;
   options_vi?: string[] | null;
+  // Dual listening cues (single_track mode)
+  cue_start_ms?: number | null;
+  cue_end_ms?: number | null;
 }
 
 export interface StudentToeicGroup {
@@ -136,6 +139,10 @@ export interface StudentToeicGroup {
   instruction_vi?: string | null;
   passage_vi?: string | null;
   documents_vi?: any[] | null;
+  transcript_vi?: string | null;
+  // Dual listening cues (single_track mode)
+  cue_start_ms?: number | null;
+  cue_end_ms?: number | null;
 }
 
 export interface StudentToeicTestMeta {
@@ -144,6 +151,8 @@ export interface StudentToeicTestMeta {
   test_code: string | null;
   description: string | null;
   test_type: string;
+  listening_audio_mode?: 'segmented' | 'single_track';
+  listening_audio_url?: string | null;
 }
 
 export interface StudentToeicTestContent {
@@ -159,4 +168,17 @@ export interface PublishedToeicTest {
   description: string | null;
   test_type: string;
   is_published: boolean;
+  listening_audio_mode?: 'segmented' | 'single_track';
+  listening_audio_url?: string | null;
+}
+
+export interface ToeicListeningCue {
+  id: string;
+  test_id: string;
+  question_id: string | null;
+  group_id: string | null;
+  start_ms: number;
+  end_ms: number;
+  created_at?: string;
+  updated_at?: string;
 }

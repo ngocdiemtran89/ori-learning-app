@@ -23,6 +23,8 @@ export interface ToeicTestInput {
   status?: string;
   sort_order?: number;
   is_published?: boolean;
+  listening_audio_mode?: 'segmented' | 'single_track';
+  listening_audio_url?: string | null;
 }
 
 export interface ToeicTestGroupInput {
@@ -40,6 +42,7 @@ export interface ToeicTestGroupInput {
   instruction_vi?: string | null;
   passage_vi?: string | null;
   documents_vi?: any[];
+  transcript_vi?: string | null;
   sort_order?: number;
   is_active?: boolean;
 }
@@ -212,20 +215,25 @@ export function validateToeicTestForPublish(
 
     const normPart = normalizeToeicPart(q.part);
     const g = q.group_id ? groups.find(grp => grp.id === q.group_id) : null;
-    
+    const isSingleTrack = test.listening_audio_mode === 'single_track';
+
+    if (isSingleTrack && !test.listening_audio_url && !errors.includes('Đề thi ở chế độ Single Track chưa có file audio tổng.')) {
+      errors.push('Đề thi ở chế độ Single Track chưa có file audio tổng.');
+    }
+
     if (normPart === 'part1') {
       if (!q.image_url && (!g || !g.image_url)) {
         errors.push(`Câu #${q.question_number} (Part 1): Thiếu hình ảnh (cần có ở cấp độ câu hỏi hoặc nhóm).`);
       }
-      if (!q.audio_url && (!g || !g.audio_url)) {
+      if (!isSingleTrack && !q.audio_url && (!g || !g.audio_url)) {
         errors.push(`Câu #${q.question_number} (Part 1): Thiếu audio (cần có ở cấp độ câu hỏi hoặc nhóm).`);
       }
     } else if (normPart === 'part2') {
-      if (!q.audio_url && (!g || !g.audio_url)) {
+      if (!isSingleTrack && !q.audio_url && (!g || !g.audio_url)) {
         errors.push(`Câu #${q.question_number} (Part 2): Thiếu audio (cần có ở cấp độ câu hỏi hoặc nhóm).`);
       }
     } else if (normPart === 'part3' || normPart === 'part4') {
-      if (!g || !g.audio_url) {
+      if (!isSingleTrack && (!g || !g.audio_url)) {
         errors.push(`Câu #${q.question_number} (${normPart.toUpperCase()}): Nhóm cha bắt buộc phải có audio.`);
       }
     }

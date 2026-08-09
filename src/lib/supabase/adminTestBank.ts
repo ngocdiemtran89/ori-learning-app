@@ -25,6 +25,8 @@ export interface ToeicTestRow {
   status: string;
   sort_order: number;
   is_published: boolean;
+  listening_audio_mode?: 'segmented' | 'single_track';
+  listening_audio_url?: string | null;
   created_at: string;
   updated_at: string;
   questions_count?: number;
@@ -713,5 +715,147 @@ export async function removeGroupMedia(
     return { success: true };
   } catch (err: any) {
     return { success: false, error: 'Lỗi hệ thống khi xóa media nhóm.' };
+  }
+}
+
+/**
+ * Update test listening audio mode
+ */
+export async function updateTestListeningAudioMode(
+  testId: string,
+  mode: 'segmented' | 'single_track',
+  listeningAudioUrl?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const updatePayload: Record<string, any> = {
+      listening_audio_mode: mode,
+      updated_at: new Date().toISOString(),
+    };
+    if (listeningAudioUrl !== undefined) {
+      updatePayload.listening_audio_url = listeningAudioUrl;
+    }
+    const { error } = await supabase
+      .from('toeic_tests')
+      .update(updatePayload)
+      .eq('id', testId);
+
+    if (error) return { success: false, error: 'Không thể cập nhật chế độ audio.' };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: 'Lỗi khi cập nhật chế độ audio.' };
+  }
+}
+
+/**
+ * Upload single listening track file for a test
+ */
+export async function uploadToeicListeningTrack(
+  testId: string,
+  file: File
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  try {
+    const { data: test, error: tErr } = await supabase
+      .from('toeic_tests')
+      .select('listening_audio_url, is_published')
+      .eq('id', testId)
+      .single();
+
+    if (tErr || !test) return { success: false, error: 'Không tìm thấy đề thi.' };
+
+    const oldPath = test.listening_audio_url;
+
+    const uuid = crypto.randomUUID();
+    const prefix = `tests/${testId}/listening/full/${uuid}.mp3`;
+    const uploadRes = await uploadToeicMedia(prefix, file, 'audio');
+    if (!uploadRes.success || !uploadRes.path) {
+      return { success: false, error: uploadRes.error };
+    }
+
+    const newPath = uploadRes.path;
+
+    const { error: updateErr } = await supabase
+      .from('toeic_tests')
+      .update({
+        listening_audio_mode: 'single_track',
+        listening_audio_url: newPath,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', testId);
+
+    if (updateErr) {
+      await deleteToeicMedia(newPath);
+      return { success: false, error: 'Lỗi khi cập nhật cơ sở dữ liệu.' };
+    }
+
+    if (oldPath && oldPath !== newPath) {
+      await deleteToeicMedia(oldPath);
+    }
+
+    return { success: true, path: newPath };
+  } catch (err: any) {
+    return { success: false, error: 'Lỗi khi upload listening track.' };
+  }
+}
+
+/**
+ * Atomic upsert listening cues for a test
+ */
+export async function upsertListeningCues(
+  testId: string,
+  cues: Array<{ question_id?: string | null; group_id?: string | null; start_ms: number; end_ms: number }>
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_upsert_toeic_listening_cues', {
+      p_test_id: testId,
+      p_cues: cues
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, count: data?.count || 0 };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi khi lưu cue map.' };
+  }
+}
+
+/**
+ * Fetch listening cues for a test
+ */
+export async function getListeningCues(
+  testId: string
+): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('toeic_listening_cues')
+      .select('*')
+      .eq('test_id', testId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data || [] };
+  } catch (err: any) {
+    return { success: false, error: 'Lỗi khi lấy thông tin cues.' };
+  }
+}
+
+/**
+ * Import bilingual content for a test
+ */
+export async function importBilingualContent(
+  testId: string,
+  payload: { questions?: any[]; groups?: any[] }
+): Promise<{ success: boolean; updatedQuestions?: number; updatedGroups?: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_import_toeic_bilingual_content', {
+      p_test_id: testId,
+      p_payload: payload
+    });
+
+    if (error) return { success: false, error: error.message };
+    return {
+      success: true,
+      updatedQuestions: data?.updated_questions || 0,
+      updatedGroups: data?.updated_groups || 0
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Lỗi khi import bản dịch.' };
   }
 }

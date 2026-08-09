@@ -116,14 +116,18 @@ export const ToeicTestRunnerPage: React.FC = () => {
   }, [attempt]);
 
   const mediaContext = useMemo(() => {
-    if (!currentQuestion) return { audioUrl: null, imageUrl: null };
+    if (!currentQuestion) return { audioUrl: null, imageUrl: null, cueStartMs: null, cueEndMs: null };
     let audioUrl = currentQuestion.audio_url;
     let imageUrl = currentQuestion.image_url;
+    let cueStartMs = currentQuestion.cue_start_ms ?? null;
+    let cueEndMs = currentQuestion.cue_end_ms ?? null;
     if (currentGroup) {
       if (!audioUrl && currentGroup.audio_url) audioUrl = currentGroup.audio_url;
       if (!imageUrl && currentGroup.image_url) imageUrl = currentGroup.image_url;
+      if (cueStartMs == null && currentGroup.cue_start_ms != null) cueStartMs = currentGroup.cue_start_ms;
+      if (cueEndMs == null && currentGroup.cue_end_ms != null) cueEndMs = currentGroup.cue_end_ms;
     }
-    return { audioUrl, imageUrl };
+    return { audioUrl, imageUrl, cueStartMs, cueEndMs };
   }, [currentQuestion, currentGroup]);
 
   const handleSelectAnswer = useCallback(async (answer: string) => {
@@ -261,6 +265,8 @@ export const ToeicTestRunnerPage: React.FC = () => {
                   imageUrl={mediaContext.imageUrl}
                   part={currentQuestion.part}
                   isAudioRequired={isListeningPart}
+                  cueStartMs={mediaContext.cueStartMs}
+                  cueEndMs={mediaContext.cueEndMs}
                 />
               )}
 

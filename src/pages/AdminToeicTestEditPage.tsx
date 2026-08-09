@@ -44,6 +44,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
   const [testType, setTestType] = useState<'full' | 'mini' | 'custom'>('full');
   const [sortOrder, setSortOrder] = useState<number>(1);
   const [isPublished, setIsPublished] = useState<boolean>(false);
+  const [listeningAudioMode, setListeningAudioMode] = useState<'segmented' | 'single_track'>('segmented');
+  const [listeningAudioUrl, setListeningAudioUrl] = useState<string | null>(null);
 
   // Groups & Questions State
   const [groups, setGroups] = useState<any[]>([]);
@@ -81,7 +83,7 @@ export const AdminToeicTestEditPage: React.FC = () => {
     part: 'part1',
     question_text: '',
     options: ['', '', '', ''],
-    correct_answer: '',
+    correct_answer: 'A',
     explanation: '',
     skill_tag: '',
     topic: '',
@@ -117,6 +119,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
       setTestType((t.test_type as any) || 'full');
       setSortOrder(t.sort_order || 1);
       setIsPublished(t.is_published);
+      setListeningAudioMode(t.listening_audio_mode || 'segmented');
+      setListeningAudioUrl(t.listening_audio_url || null);
       setGroups(gRes.data || []);
       setQuestions(qRes.data || []);
     }
@@ -522,6 +526,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
               {activePart === 'media' && (
                 <MediaManagerTab
                   testId={testId!}
+                  test={{
+                    id: testId,
+                    title,
+                    slug,
+                    is_published: isPublished,
+                    listening_audio_mode: listeningAudioMode,
+                    listening_audio_url: listeningAudioUrl
+                  }}
                   groups={groups}
                   questions={questions}
                   onMediaUpdated={loadTestDetails}

@@ -7,6 +7,8 @@ interface ListeningMediaProps {
   imageUrl: string | null;
   part?: string;
   isAudioRequired?: boolean;
+  cueStartMs?: number | null;
+  cueEndMs?: number | null;
 }
 
 export const ListeningMedia: React.FC<ListeningMediaProps> = ({
@@ -14,6 +16,8 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
   imageUrl,
   part,
   isAudioRequired = false,
+  cueStartMs,
+  cueEndMs,
 }) => {
   const [signedAudio, setSignedAudio] = useState<string | null>(null);
   const [signedImage, setSignedImage] = useState<string | null>(null);
@@ -31,7 +35,6 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
   useEffect(() => {
     let cancelled = false;
 
-    // Only set loading if there is actually a URL to sign
     if (audioUrl || imageUrl) {
       setLoading(true);
     } else {
@@ -58,8 +61,12 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
     return () => { cancelled = true; };
   }, [audioUrl, imageUrl]);
 
+  // Handle initial seek & autoplay when audio or cue changes
   useEffect(() => {
     if (signedAudio && audioRef.current) {
+      if (cueStartMs != null && cueStartMs >= 0) {
+        audioRef.current.currentTime = cueStartMs / 1000;
+      }
       audioRef.current.play().then(() => {
         setIsPlaying(true);
         setAutoplayBlocked(false);
@@ -69,7 +76,20 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
         setAutoplayBlocked(true);
       });
     }
-  }, [signedAudio]);
+  }, [signedAudio, cueStartMs]);
+
+  // Handle cue end boundaries on timeupdate
+  const handleTimeUpdate = () => {
+    if (!audioRef.current || cueEndMs == null) return;
+    const endSec = cueEndMs / 1000;
+    if (audioRef.current.currentTime >= endSec) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+      if (cueStartMs != null) {
+        audioRef.current.currentTime = cueStartMs / 1000;
+      }
+    }
+  };
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -77,6 +97,9 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
+      if (cueEndMs != null && audioRef.current.currentTime >= cueEndMs / 1000) {
+        if (cueStartMs != null) audioRef.current.currentTime = cueStartMs / 1000;
+      }
       audioRef.current.play().then(() => {
         setIsPlaying(true);
         setAutoplayBlocked(false);
@@ -86,7 +109,6 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
     }
   };
 
-  // Only return null if there are no media URLs AND no media errors to display
   if (!audioUrl && !imageUrl && !missingAudio && !missingImage) {
     return null;
   }
@@ -128,6 +150,11 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
             <div>
               <div className="text-xs font-extrabold text-slate-200 flex items-center gap-2">
                 <span>Listening Audio</span>
+                {cueStartMs != null && cueEndMs != null && (
+                  <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 text-[10px] font-mono">
+                    Cue {(cueStartMs / 1000).toFixed(1)}s - {(cueEndMs / 1000).toFixed(1)}s
+                  </span>
+                )}
                 {isPlaying && (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-extrabold">
                     Đang phát
@@ -144,6 +171,7 @@ export const ListeningMedia: React.FC<ListeningMediaProps> = ({
             <audio
               ref={audioRef}
               src={signedAudio}
+              onTimeUpdate={handleTimeUpdate}
               onEnded={() => setIsPlaying(false)}
               onPause={() => setIsPlaying(false)}
               onPlay={() => setIsPlaying(true)}
