@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ImageIcon, Music, Upload, Trash2, CheckCircle2, AlertTriangle, Loader2, FileCode, Layers, Zap } from 'lucide-react';
+import { ImageIcon, Music, Upload, Trash2, CheckCircle2, AlertTriangle, Loader2, FileCode, Layers, Zap, X } from 'lucide-react';
 import JSZip from 'jszip';
 import { ToeicTestGroupInput, ToeicTestQuestionInput, ToeicTestInput } from '../../lib/cms/testBankValidation';
 import { getMediaCompleteness, sortGroupsByQuestionRange, getToeicGroupQuestionRange } from '../../lib/toeic/mediaCompleteness';
@@ -25,6 +25,17 @@ import {
   SequentialMappingResult
 } from '../../lib/cms/sequentialMediaParser';
 
+import {
+  BulkWorkflowMode,
+  Part1ImageSourceMode,
+  FullListeningZoneKey,
+  FULL_LISTENING_ZONES,
+  mapAllFullListeningZones,
+  FullListeningParseResult
+} from '../../lib/cms/fullListeningParser';
+
+import { PdfPart1ExtractorModal } from './PdfPart1ExtractorModal';
+
 interface MediaManagerTabProps {
   testId: string;
   test?: ToeicTestInput;
@@ -47,6 +58,23 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
 
   // Bulk Media Modal & State
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [workflowMode, setWorkflowMode] = useState<BulkWorkflowMode>('per_part');
+  const [part1ImageSource, setPart1ImageSource] = useState<Part1ImageSourceMode>('pdf');
+  const [showPdfModal, setShowPdfModal] = useState(false);
+
+  // Full Listening Multi-Zone State
+  const [zoneFiles, setZoneFiles] = useState<Record<FullListeningZoneKey, Array<{ name: string; file: File }>>>({
+    p1_image: [],
+    p1_audio: [],
+    p2_audio: [],
+    p3_audio: [],
+    p4_audio: [],
+  });
+  const [fullListeningResult, setFullListeningResult] = useState<FullListeningParseResult | null>(null);
+  const [showCombinedPreview, setShowCombinedPreview] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // Single-Part / Sequential State
   const [rawFiles, setRawFiles] = useState<Array<{ name: string; file: File }>>([]);
   const [bulkMatchMode, setBulkMatchMode] = useState<'ori' | 'sequential'>('ori');
   const [sequentialMediaType, setSequentialMediaType] = useState<SequentialMediaType>('p1_image');
@@ -181,6 +209,81 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
     } finally {
       setLoading(prev => ({ ...prev, [groupId]: false }));
     }
+  };
+
+  // ============================================================
+  // FULL LISTENING MULTI-ZONE PARSER & HANDLERS
+  // ============================================================
+  const recalculateFullListening = (currentZoneFiles: Record<FullListeningZoneKey, Array<{ name: string; file: File }>>) => {
+    const isPublished = Boolean(test?.is_published);
+    const getRange = (gId: string) => getToeicGroupQuestionRange(gId, questions);
+    const res = mapAllFullListeningZones(currentZoneFiles, questions, groups, getRange, isPublished);
+    setFullListeningResult(res);
+  };
+
+  const handleAddFilesToZone = async (zoneKey: FullListeningZoneKey, inputFiles: FileList | File[]) => {
+    const fileArray: Array<{ name: string; file: File }> = [];
+
+    for (let i = 0; i < inputFiles.length; i++) {
+      const f = inputFiles[i];
+      if (f.name.endsWith('.zip')) {
+        try {
+          const zip = await JSZip.loadAsync(f);
+          for (const filename of Object.keys(zip.files)) {
+            const zipEntry = zip.files[filename];
+            if (!zipEntry.dir) {
+              const blob = await zipEntry.async('blob');
+              const extractedFile = new File([blob], filename.split('/').pop() || filename);
+              fileArray.push({ name: extractedFile.name, file: extractedFile });
+            }
+          }
+        } catch (err) {
+          console.error('ZIP extract error:', err);
+        }
+      } else {
+        fileArray.push({ name: f.name, file: f });
+      }
+    }
+
+    const nextZones = {
+      ...zoneFiles,
+      [zoneKey]: [...(zoneFiles[zoneKey] || []), ...fileArray],
+    };
+
+    setZoneFiles(nextZones);
+    recalculateFullListening(nextZones);
+  };
+
+  const handleClearZone = (zoneKey: FullListeningZoneKey) => {
+    const nextZones = {
+      ...zoneFiles,
+      [zoneKey]: [],
+    };
+    setZoneFiles(nextZones);
+    recalculateFullListening(nextZones);
+  };
+
+  const handleGlobalClearAll = () => {
+    if (!window.confirm('Bạn có chắc muốn xóa tất cả lựa chọn pending local? (Media trên Supabase/DB sẽ không bị ảnh hưởng)')) return;
+    const emptyZones: Record<FullListeningZoneKey, Array<{ name: string; file: File }>> = {
+      p1_image: [],
+      p1_audio: [],
+      p2_audio: [],
+      p3_audio: [],
+      p4_audio: [],
+    };
+    setZoneFiles(emptyZones);
+    recalculateFullListening(emptyZones);
+  };
+
+  const handlePdfExtractedImages = (files: File[]) => {
+    const extractedList = files.map(f => ({ name: f.name, file: f }));
+    const nextZones = {
+      ...zoneFiles,
+      p1_image: extractedList,
+    };
+    setZoneFiles(nextZones);
+    recalculateFullListening(nextZones);
   };
 
   // ============================================================
@@ -377,6 +480,60 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
         } else {
           setBulkFiles(prev => prev.map(f => f.name === item.name ? { ...f, status: 'failed', error: res.error } : f));
         }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }).map(() => runWorker()));
+    setBulkProcessing(false);
+    onMediaUpdated();
+  };
+
+  const executeFullListeningUpload = async () => {
+    if (!fullListeningResult) return;
+    setBulkProcessing(true);
+    setShowConfirmDialog(false);
+
+    const allMapped = Object.values(fullListeningResult.zoneItems).flat();
+    const toUpload = allMapped.filter(f => f.action === 'upload' && f.status !== 'success' && f.file);
+
+    const queue = [...toUpload];
+    const workerCount = Math.min(3, queue.length);
+
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item || !item.file) break;
+
+        // Update item status to uploading
+        setFullListeningResult(prev => {
+          if (!prev) return null;
+          const nextZoneItems = { ...prev.zoneItems };
+          nextZoneItems[item.zoneKey] = nextZoneItems[item.zoneKey].map(f =>
+            f.rawName === item.rawName ? { ...f, status: 'uploading' } : f
+          );
+          return { ...prev, zoneItems: nextZoneItems };
+        });
+
+        let res;
+        if (!item.targetId) {
+          res = { success: false, error: 'Thiếu ID đối tượng target' };
+        } else if (item.targetType === 'question') {
+          res = await uploadQuestionMedia(item.targetId, item.file, item.type);
+        } else {
+          res = await uploadGroupMedia(item.targetId, item.file, item.type);
+        }
+
+        const finalStatus = res.success ? 'success' : 'failed';
+        const finalError = res.success ? undefined : res.error;
+
+        setFullListeningResult(prev => {
+          if (!prev) return null;
+          const nextZoneItems = { ...prev.zoneItems };
+          nextZoneItems[item.zoneKey] = nextZoneItems[item.zoneKey].map(f =>
+            f.rawName === item.rawName ? { ...f, status: finalStatus, error: finalError } : f
+          );
+          return { ...prev, zoneItems: nextZoneItems };
+        });
       }
     };
 
@@ -852,189 +1009,475 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
       {/* BULK MEDIA CONFIRMATION MODAL */}
       {showBulkModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-4xl w-full space-y-4 max-h-[90vh] flex flex-col shadow-2xl">
+          <div className="bg-white rounded-3xl p-6 max-w-5xl w-full space-y-4 max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between border-b pb-3 border-slate-100">
               <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                 <Zap className="w-5 h-5 text-ori-600" />
-                Xem trước Bulk Media Import ({rawFiles.length} file đã chọn)
+                Bulk Media Ingestion Center
               </h3>
+              <button type="button" onClick={() => setShowBulkModal(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* MATCHING MODE SELECTOR */}
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3 text-xs">
+            {/* WORKFLOW MODE SELECTOR */}
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2 text-xs">
               <div className="flex items-center gap-6 font-bold text-slate-800">
-                <span className="text-slate-500 font-extrabold uppercase text-[11px]">MATCHING MODE:</span>
+                <span className="text-slate-500 font-extrabold uppercase text-[11px]">CÁCH NHẬP MEDIA:</span>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
-                    name="bulkMode"
-                    checked={bulkMatchMode === 'ori'}
-                    onChange={() => handleMatchModeChange('ori')}
+                    name="workflowMode"
+                    checked={workflowMode === 'per_part'}
+                    onChange={() => setWorkflowMode('per_part')}
                     className="text-ori-600 focus:ring-ori-500"
                   />
-                  <span>Tự nhận diện tên chuẩn ORI (q001.jpg, q001.mp3, q032-034.mp3)</span>
+                  <span>Theo từng Part (Single Part / Matching File)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
-                    name="bulkMode"
-                    checked={bulkMatchMode === 'sequential'}
-                    onChange={() => handleMatchModeChange('sequential')}
+                    name="workflowMode"
+                    checked={workflowMode === 'full_listening'}
+                    onChange={() => {
+                      setWorkflowMode('full_listening');
+                      recalculateFullListening(zoneFiles);
+                    }}
                     className="text-ori-600 focus:ring-ori-500"
                   />
-                  <span>File tuần tự / tên gốc (E26-T01-01.mp3, E26-T01-02.mp3...)</span>
+                  <span>Toàn bộ Listening (5 Sections)</span>
                 </label>
               </div>
+            </div>
 
-              {/* SEQUENTIAL MEDIA TYPE SELECTOR */}
-              {bulkMatchMode === 'sequential' && (
-                <div className="pt-2 border-t border-slate-200 space-y-2">
-                  <div className="flex items-center gap-4 flex-wrap font-bold text-slate-700">
-                    <span className="text-slate-500 font-extrabold uppercase text-[11px]">LOẠI MEDIA:</span>
-                    {(
-                      [
-                        { key: 'p1_image', label: 'Part 1 — Hình ảnh (1–6)' },
-                        { key: 'p1_audio', label: 'Part 1 — Audio (1–6)' },
-                        { key: 'p2_audio', label: 'Part 2 — Audio (1–25)' },
-                        { key: 'p3_audio', label: 'Part 3 — Audio nhóm (1–13)' },
-                        { key: 'p4_audio', label: 'Part 4 — Audio nhóm (1–10)' },
-                      ] as const
-                    ).map(item => (
-                      <label key={item.key} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-ori-400">
-                        <input
-                          type="radio"
-                          name="seqType"
-                          checked={sequentialMediaType === item.key}
-                          onChange={() => handleSequentialTypeChange(item.key)}
-                          className="text-ori-600 focus:ring-ori-500"
-                        />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
+            {/* MODE A: SINGLE PART WORKFLOW */}
+            {workflowMode === 'per_part' && (
+              <div className="flex-1 overflow-y-auto space-y-3 flex flex-col">
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-3 text-xs">
+                  <div className="flex items-center gap-6 font-bold text-slate-800">
+                    <span className="text-slate-500 font-extrabold uppercase text-[11px]">MATCHING MODE:</span>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bulkMode"
+                        checked={bulkMatchMode === 'ori'}
+                        onChange={() => handleMatchModeChange('ori')}
+                        className="text-ori-600 focus:ring-ori-500"
+                      />
+                      <span>Tự nhận diện tên chuẩn ORI (q001.jpg, q001.mp3, q032-034.mp3)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="bulkMode"
+                        checked={bulkMatchMode === 'sequential'}
+                        onChange={() => handleMatchModeChange('sequential')}
+                        className="text-ori-600 focus:ring-ori-500"
+                      />
+                      <span>File tuần tự / tên gốc (E26-T01-01.mp3, E26-T01-02.mp3...)</span>
+                    </label>
                   </div>
-                </div>
-              )}
 
-              {/* SMART SUGGESTION BANNER */}
-              {suggestion.message && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between text-amber-800 font-medium">
-                  <span className="flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-amber-600" />
-                    {suggestion.message}
-                  </span>
-                  {suggestion.mediaType && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleMatchModeChange('sequential');
-                        handleSequentialTypeChange(suggestion.mediaType!);
-                      }}
-                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] rounded-lg shadow-sm"
-                    >
-                      Áp dụng Gợi ý
-                    </button>
+                  {bulkMatchMode === 'sequential' && (
+                    <div className="pt-2 border-t border-slate-200 flex items-center gap-4 flex-wrap font-bold text-slate-700">
+                      <span className="text-slate-500 font-extrabold uppercase text-[11px]">LOẠI MEDIA:</span>
+                      {(
+                        [
+                          { key: 'p1_image', label: 'Part 1 — Hình ảnh (1–6)' },
+                          { key: 'p1_audio', label: 'Part 1 — Audio (1–6)' },
+                          { key: 'p2_audio', label: 'Part 2 — Audio (1–25)' },
+                          { key: 'p3_audio', label: 'Part 3 — Audio nhóm (1–13)' },
+                          { key: 'p4_audio', label: 'Part 4 — Audio nhóm (1–10)' },
+                        ] as const
+                      ).map(item => (
+                        <label key={item.key} className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-ori-400">
+                          <input
+                            type="radio"
+                            name="seqType"
+                            checked={sequentialMediaType === item.key}
+                            onChange={() => handleSequentialTypeChange(item.key)}
+                            className="text-ori-600 focus:ring-ori-500"
+                          />
+                          <span>{item.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {suggestion.message && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between text-amber-800 font-medium">
+                      <span className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-600" />
+                        {suggestion.message}
+                      </span>
+                      {suggestion.mediaType && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMatchModeChange('sequential');
+                            handleSequentialTypeChange(suggestion.mediaType!);
+                          }}
+                          className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[11px] rounded-lg shadow-sm"
+                        >
+                          Áp dụng Gợi ý
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {sequentialResult && sequentialResult.counters.missingSequences.length > 0 && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-2 flex items-center gap-2 text-orange-800 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0" />
+                      <span>Cảnh báo: Thiếu các số thứ tự: #{sequentialResult.counters.missingSequences.join(', #')}</span>
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* SUMMARY COUNTERS BAR */}
-            <div className="flex items-center gap-4 text-xs font-bold text-slate-600 bg-slate-100 p-2.5 rounded-xl flex-wrap">
-              <span>Tổng file: <strong className="text-slate-900">{rawFiles.filter(f => !isMacNoiseFile(f.name)).length}</strong></span>
-              <span>Sẵn sàng: <strong className="text-emerald-600">{bulkFiles.filter(f => f.action === 'upload' && f.status !== 'failed').length}</strong></span>
-              <span>Đã có (Bỏ qua): <strong className="text-slate-500">{bulkFiles.filter(f => f.action === 'skip').length}</strong></span>
-              <span>Không hợp lệ: <strong className="text-red-600">{bulkFiles.filter(f => f.status === 'invalid').length}</strong></span>
-              <span>Trùng thứ tự: <strong className="text-amber-600">{bulkFiles.filter(f => f.status === 'conflict').length}</strong></span>
-            </div>
-
-            {/* MISSING SEQUENCES WARNING */}
-            {sequentialResult && sequentialResult.counters.missingSequences.length > 0 && (
-              <div className="bg-orange-50 border border-orange-200 rounded-xl p-2.5 text-xs text-orange-800 font-bold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0" />
-                <span>Cảnh báo: Thiếu các số thứ tự trong dãy: #{sequentialResult.counters.missingSequences.join(', #')}</span>
+                <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 sticky top-0 font-extrabold text-slate-700 border-b border-slate-200">
+                      <tr>
+                        <th className="p-2.5">FILE GỐC</th>
+                        <th className="p-2.5 w-16 text-center">#</th>
+                        <th className="p-2.5">TỰ GẮN VÀO</th>
+                        <th className="p-2.5 text-right">TRẠNG THÁI</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      {bulkFiles.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-6 text-center text-slate-400 italic">Không tìm thấy file nào khớp</td>
+                        </tr>
+                      ) : (
+                        bulkFiles.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80">
+                            <td className="p-2.5 font-bold text-slate-800 break-all">{item.name}</td>
+                            <td className="p-2.5 text-center font-bold text-slate-500">{item.sequence ?? '—'}</td>
+                            <td className="p-2.5 font-extrabold text-ori-600">{item.targetLabel}</td>
+                            <td className="p-2.5 text-right whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'success' ? 'bg-emerald-100 text-emerald-700' : item.status === 'ready' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : item.status === 'skip' ? 'bg-slate-100 text-slate-600' : item.status === 'conflict' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'}`}>
+                                {item.status === 'ready' ? '✓ Sẵn sàng' : item.status === 'skip' ? 'Đã có (Bỏ qua)' : item.status === 'conflict' ? '✕ Trùng thứ tự' : item.status === 'invalid' ? `✕ ${item.error || 'Không hợp lệ'}` : item.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
-            {/* PREVIEW TABLE */}
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl space-y-1">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 sticky top-0 font-extrabold text-slate-700 border-b border-slate-200">
-                  <tr>
-                    <th className="p-2.5">FILE GỐC</th>
-                    <th className="p-2.5 w-16 text-center">#</th>
-                    <th className="p-2.5">TỰ GẮN VÀO</th>
-                    <th className="p-2.5 text-right">TRẠNG THÁI</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-mono">
-                  {bulkFiles.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="p-6 text-center text-slate-400 italic">Không tìm thấy file nào khớp</td>
-                    </tr>
-                  ) : (
-                    bulkFiles.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/80">
-                        <td className="p-2.5 font-bold text-slate-800 break-all">{item.name}</td>
-                        <td className="p-2.5 text-center font-bold text-slate-500">{item.sequence ?? '—'}</td>
-                        <td className="p-2.5 font-extrabold text-ori-600">{item.targetLabel}</td>
-                        <td className="p-2.5 text-right whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              item.status === 'success'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : item.status === 'ready'
-                                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                                : item.status === 'skip'
-                                ? 'bg-slate-100 text-slate-600'
-                                : item.status === 'conflict'
-                                ? 'bg-amber-100 text-amber-800'
-                                : item.status === 'invalid'
-                                ? 'bg-red-100 text-red-700'
-                                : item.status === 'failed'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-slate-200 text-slate-600'
-                            }`}
-                          >
-                            {item.status === 'uploading'
-                              ? 'Đang upload...'
-                              : item.status === 'ready'
-                              ? '✓ Sẵn sàng'
-                              : item.status === 'skip'
-                              ? 'Đã có (Bỏ qua)'
-                              : item.status === 'conflict'
-                              ? '✕ Trùng thứ tự'
-                              : item.status === 'invalid'
-                              ? `✕ ${item.error || 'Không hợp lệ'}`
-                              : item.status}
+            {/* MODE B: FULL LISTENING WORKFLOW (5 SECTIONS) */}
+            {workflowMode === 'full_listening' && (
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {test?.listening_audio_mode === 'single_track' && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800 font-bold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Lưu ý: Đề thi này đang ở chế độ Audio gộp (Single Track). Chế độ Full Listening Bulk Import này dành cho Audio chia nhỏ theo phần (Segmented).</span>
+                  </div>
+                )}
+
+                {/* 5 ZONE CARDS GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {FULL_LISTENING_ZONES.map((zone) => {
+                    const status = fullListeningResult?.zoneStatuses[zone.key];
+                    const currentFiles = zoneFiles[zone.key] || [];
+
+                    return (
+                      <div key={zone.key} className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between border-b pb-2 border-slate-200">
+                          <h4 className="font-extrabold text-xs text-slate-800 uppercase flex items-center gap-1.5">
+                            {zone.type === 'image' ? <ImageIcon className="w-4 h-4 text-ori-600" /> : <Music className="w-4 h-4 text-sky-600" />}
+                            {zone.label}
+                          </h4>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${status?.completed ? 'bg-emerald-100 text-emerald-700' : status?.statusCode === 'conflict' ? 'bg-amber-100 text-amber-800' : status?.statusCode === 'invalid' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-700'}`}>
+                            {status?.actualCount || 0}/{zone.expectedCount} {status?.statusText}
                           </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                        </div>
+
+                        {/* Special controls for Part 1 Images */}
+                        {zone.key === 'p1_image' ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-4 text-xs font-bold text-slate-700 bg-white p-2 rounded-xl border border-slate-200">
+                              <span className="text-slate-400 uppercase text-[10px]">NGUỒN ẢNH:</span>
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="p1Source"
+                                  checked={part1ImageSource === 'files'}
+                                  onChange={() => setPart1ImageSource('files')}
+                                  className="text-ori-600 focus:ring-ori-500"
+                                />
+                                <span>Upload 6 file ảnh</span>
+                              </label>
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name="p1Source"
+                                  checked={part1ImageSource === 'pdf'}
+                                  onChange={() => setPart1ImageSource('pdf')}
+                                  className="text-ori-600 focus:ring-ori-500"
+                                />
+                                <span>Lấy ảnh từ PDF đề</span>
+                              </label>
+                            </div>
+
+                            {part1ImageSource === 'pdf' ? (
+                              <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 text-center">
+                                <p className="text-xs text-slate-500 font-medium">Chọn hoặc mở file PDF để tự động trích xuất & crop 6 ảnh Part 1</p>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPdfModal(true)}
+                                  className="px-4 py-2 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-sm inline-flex items-center gap-2"
+                                >
+                                  <FileCode className="w-4 h-4" />
+                                  <span>Mở công cụ lấy ảnh từ PDF</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs">
+                                <span className="text-slate-500">Đã chọn {currentFiles.length} file ảnh</span>
+                                <div className="flex gap-2">
+                                  <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer">
+                                    Chọn file / ZIP
+                                    <input
+                                      type="file"
+                                      multiple
+                                      accept="image/jpeg,image/png,image/webp,application/zip"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        if (e.target.files?.length) handleAddFilesToZone('p1_image', e.target.files);
+                                      }}
+                                    />
+                                  </label>
+                                  {currentFiles.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearZone('p1_image')}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                                      title="Xóa lựa chọn"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs">
+                            <span className="text-slate-500 font-mono">Đã chọn {currentFiles.length} file</span>
+                            <div className="flex gap-2">
+                              <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer">
+                                Chọn file / ZIP
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,application/zip"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files?.length) handleAddFilesToZone(zone.key, e.target.files);
+                                  }}
+                                />
+                              </label>
+                              {currentFiles.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleClearZone(zone.key)}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                                  title="Xóa phần này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* SUMMARY COUNTERS BAR & GLOBAL COMPLETENESS */}
+                {fullListeningResult && (
+                  <div className="bg-slate-100 p-3 rounded-2xl space-y-2 text-xs font-bold text-slate-700">
+                    <div className="flex items-center justify-between border-b pb-2 border-slate-200">
+                      <span>TỔNG QUAN LISTENING MEDIA:</span>
+                      <div className="flex gap-4">
+                        <span>AUDIO: <strong className={fullListeningResult.globalSummary.audioMatchedCount === 54 ? 'text-emerald-600' : 'text-amber-600'}>{fullListeningResult.globalSummary.audioMatchedCount}/54</strong></span>
+                        <span>HÌNH ẢNH: <strong className={fullListeningResult.globalSummary.imageMatchedCount === 6 ? 'text-emerald-600' : 'text-amber-600'}>{fullListeningResult.globalSummary.imageMatchedCount}/6</strong></span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 flex-wrap text-slate-600">
+                      <span>Sẵn sàng upload: <strong className="text-emerald-600">{fullListeningResult.globalSummary.readyToUploadCount}</strong></span>
+                      <span>Đã có (Bỏ qua): <strong className="text-slate-500">{fullListeningResult.globalSummary.existingSkipCount}</strong></span>
+                      <span>Không hợp lệ: <strong className="text-red-600">{fullListeningResult.globalSummary.invalidCount}</strong></span>
+                      <span>Trùng thứ tự: <strong className="text-amber-600">{fullListeningResult.globalSummary.conflictCount}</strong></span>
+                      <span>Thiếu: <strong className="text-orange-600">{fullListeningResult.globalSummary.missingCount}</strong></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FOOTER ACTIONS BAR */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+              <div>
+                {workflowMode === 'full_listening' && (
+                  <button
+                    type="button"
+                    onClick={handleGlobalClearAll}
+                    className="px-3 py-1.5 text-red-600 hover:bg-red-50 font-bold rounded-xl flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Xóa tất cả lựa chọn
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkModal(false)}
+                  className="px-4 py-2 font-extrabold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+                >
+                  Hủy
+                </button>
+
+                {workflowMode === 'full_listening' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCombinedPreview(true)}
+                    className="px-4 py-2 font-extrabold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center gap-1.5"
+                  >
+                    <Layers className="w-4 h-4" />
+                    Kiểm tra toàn bộ
+                  </button>
+                )}
+
+                {workflowMode === 'per_part' ? (
+                  <button
+                    type="button"
+                    onClick={executeBulkUpload}
+                    disabled={bulkProcessing || bulkFiles.filter(f => f.action === 'upload').length === 0}
+                    className="px-5 py-2 font-extrabold text-white bg-ori-600 rounded-xl hover:bg-ori-500 disabled:opacity-50 flex items-center gap-2 shadow-md"
+                  >
+                    {bulkProcessing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Xác nhận & Upload ({bulkFiles.filter(f => f.action === 'upload').length} items)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmDialog(true)}
+                    disabled={bulkProcessing || !fullListeningResult || fullListeningResult.globalSummary.readyToUploadCount === 0}
+                    className="px-5 py-2 font-extrabold text-white bg-ori-600 rounded-xl hover:bg-ori-500 disabled:opacity-50 flex items-center gap-2 shadow-md"
+                  >
+                    {bulkProcessing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Xác nhận & Upload media sẵn sàng ({fullListeningResult?.globalSummary.readyToUploadCount || 0} items)
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMBINED PREVIEW MODAL */}
+      {showCombinedPreview && fullListeningResult && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-4xl w-full space-y-4 max-h-[88vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3 border-slate-100">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-ori-600" />
+                Bảng Kiểm tra Chi tiết Toàn bộ Listening
+              </h3>
+              <button type="button" onClick={() => setShowCombinedPreview(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl divide-y divide-slate-100">
+              {FULL_LISTENING_ZONES.map(z => {
+                const items = fullListeningResult.zoneItems[z.key] || [];
+                return (
+                  <div key={z.key} className="p-3 space-y-2">
+                    <h4 className="font-extrabold text-xs text-slate-800 uppercase bg-slate-100 p-2 rounded-xl">
+                      {z.label} ({items.length} file)
+                    </h4>
+                    {items.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic px-2">Chưa chọn file</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {items.map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-50 rounded-xl flex items-center justify-between text-xs font-mono">
+                            <span className="font-bold text-slate-800 break-all">{item.rawName}</span>
+                            <span className="font-extrabold text-ori-600 px-3">{item.targetLabel}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.status === 'success' ? 'bg-emerald-100 text-emerald-700' : item.status === 'ready' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : item.status === 'skip' ? 'bg-slate-100 text-slate-600' : 'bg-red-100 text-red-700'}`}>
+                              {item.status === 'ready' ? '✓ Sẵn sàng' : item.status === 'skip' ? 'Đã có (Bỏ qua)' : item.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setShowBulkModal(false)}
+                onClick={() => setShowCombinedPreview(false)}
+                className="px-4 py-2 text-xs font-extrabold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION DIALOG MODAL */}
+      {showConfirmDialog && fullListeningResult && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-center">
+            <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
+            <div className="space-y-1">
+              <h4 className="text-base font-extrabold text-slate-900">Xác nhận Upload Media Listening</h4>
+              <p className="text-xs text-slate-600">
+                Bạn sắp upload <strong className="text-emerald-600">{fullListeningResult.globalSummary.readyToUploadCount}</strong> media mới.<br />
+                <strong className="text-slate-500">{fullListeningResult.globalSummary.existingSkipCount}</strong> media đã tồn tại sẽ được tự động bỏ qua.<br />
+                <span className="text-slate-400 italic">Không có media hiện có nào bị ghi đè.</span>
+              </p>
+            </div>
+
+            <div className="flex justify-center gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmDialog(false)}
                 className="px-4 py-2 text-xs font-extrabold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
               >
                 Hủy
               </button>
               <button
                 type="button"
-                onClick={executeBulkUpload}
-                disabled={bulkProcessing || bulkFiles.filter(f => f.action === 'upload').length === 0}
-                className="px-5 py-2 text-xs font-extrabold text-white bg-ori-600 rounded-xl hover:bg-ori-500 disabled:opacity-50 flex items-center gap-2"
+                onClick={executeFullListeningUpload}
+                className="px-5 py-2 text-xs font-extrabold text-white bg-ori-600 rounded-xl hover:bg-ori-500 shadow-md"
               >
-                {bulkProcessing && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                Xác nhận & Upload ({bulkFiles.filter(f => f.action === 'upload').length} items)
+                Upload {fullListeningResult.globalSummary.readyToUploadCount} media
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* PDF EXTRACTOR MODAL */}
+      {showPdfModal && (
+        <PdfPart1ExtractorModal
+          onConfirmImages={handlePdfExtractedImages}
+          onClose={() => setShowPdfModal(false)}
+        />
       )}
 
       {/* CUE CSV MODAL */}
