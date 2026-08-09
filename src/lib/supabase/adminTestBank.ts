@@ -340,6 +340,9 @@ export async function saveToeicTestGroup(
       audio_url: input.audio_url?.trim() || null,
       image_url: input.image_url?.trim() || null,
       documents: Array.isArray(input.documents) ? input.documents : [],
+      instruction_vi: input.instruction_vi?.trim() || null,
+      passage_vi: input.passage_vi?.trim() || null,
+      documents_vi: Array.isArray(input.documents_vi) ? input.documents_vi : null,
       sort_order: input.sort_order ?? 0,
       is_active: input.is_active ?? true,
       updated_at: new Date().toISOString(),
@@ -425,6 +428,7 @@ export async function saveToeicTestQuestion(
   try {
     const normPart = normalizeToeicPart(input.part);
     const options = Array.isArray(input.options) ? input.options.map((o) => String(o || '').trim()) : [];
+    const options_vi = Array.isArray(input.options_vi) ? input.options_vi.map((o) => String(o || '').trim()) : null;
     const payload = {
       test_id: testId,
       group_id: input.group_id || null,
@@ -439,6 +443,8 @@ export async function saveToeicTestQuestion(
       difficulty: input.difficulty?.trim() || null,
       audio_url: input.audio_url?.trim() || null,
       image_url: input.image_url?.trim() || null,
+      translation_vi: input.translation_vi?.trim() || null,
+      options_vi,
       sort_order: input.sort_order ?? input.question_number,
       is_active: input.is_active ?? true,
       updated_at: new Date().toISOString(),

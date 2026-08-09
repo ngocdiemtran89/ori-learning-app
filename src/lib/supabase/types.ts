@@ -91,7 +91,7 @@ export interface ToeicTestAttempt {
   submitted_at: string | null;
   current_question_number: number;
   elapsed_seconds: number;
-  duration_minutes: number;
+  duration_minutes: number | null;
   created_at: string;
   updated_at: string;
 }

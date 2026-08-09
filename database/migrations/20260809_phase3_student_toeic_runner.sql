@@ -32,8 +32,11 @@ create table if not exists public.toeic_test_attempts (
     check (current_question_number >= 1 and current_question_number <= 200),
   elapsed_seconds integer not null default 0
     check (elapsed_seconds >= 0),
-  duration_minutes integer not null default 120
-    check (duration_minutes > 0),
+  duration_minutes integer default 120
+    check (
+      (mode = 'full' and duration_minutes = 120) or
+      (mode = 'part' and duration_minutes is null)
+    ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -276,7 +279,7 @@ begin
     v_dur := 120;
   else
     v_start_qn := public._toeic_part_start(p_part_number);
-    v_dur := 9999; -- Part practice: no enforced time limit
+    v_dur := null; -- Part practice: no server-enforced time limit
   end if;
 
   -- Try to find existing in-progress attempt
@@ -375,9 +378,11 @@ begin
   from public.toeic_tests where id = v_attempt.test_id;
   if v_test_published is not true then raise exception 'Test is no longer published'; end if;
 
-  -- Check timer expiry (full mode only; part mode has duration_minutes = 9999)
-  if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
-    raise exception 'Test time has expired';
+  -- Check timer expiry (full mode only; part mode has no enforced limit)
+  if v_attempt.duration_minutes is not null then
+    if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
+      raise exception 'Test time has expired';
+    end if;
   end if;
 
   -- Verify question belongs to the attempt's test and is active
@@ -460,8 +465,10 @@ begin
   from public.toeic_tests where id = v_attempt.test_id;
   if v_test_published is not true then raise exception 'Test is no longer published'; end if;
 
-  if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
-    raise exception 'Test time has expired';
+  if v_attempt.duration_minutes is not null then
+    if now() > (v_attempt.started_at + (v_attempt.duration_minutes || ' minutes')::interval) then
+      raise exception 'Test time has expired';
+    end if;
   end if;
 
   -- Scope check for part mode
@@ -493,6 +500,19 @@ alter table public.toeic_test_groups
   add column if not exists instruction_vi text,
   add column if not exists passage_vi text,
   add column if not exists documents_vi jsonb;
+
+-- ============================================================
+-- 15b. SAVED WORDS — SOURCE METADATA COLUMNS
+--      Per-user TOEIC context stored on saved_words, not global vocab.
+--      Existing rows: new fields are NULL.
+--      FKs use ON DELETE SET NULL to preserve learner history.
+-- ============================================================
+alter table public.saved_words
+  add column if not exists source_type text,
+  add column if not exists source_test_id uuid references public.toeic_tests(id) on delete set null,
+  add column if not exists source_question_id uuid references public.toeic_test_questions(id) on delete set null,
+  add column if not exists source_part integer,
+  add column if not exists context_text text;
 
 -- ============================================================
 -- 16. UPDATE: get_student_toeic_test_content (mode-aware translation)
@@ -624,8 +644,9 @@ $$;
 -- ============================================================
 -- 17. RPC: save_toeic_word
 --     Reuses existing vocabulary_items + saved_words system.
---     Creates/finds a global "TOEIC Practice" deck.
---     Upserts word into vocabulary_items, links via saved_words.
+--     Creates/finds a hidden "TOEIC Practice" system deck.
+--     Upserts GLOBAL word into vocabulary_items (no overwrite).
+--     Per-user TOEIC context stored on saved_words (source columns).
 -- ============================================================
 create or replace function public.save_toeic_word(
   p_attempt_id uuid,
@@ -684,18 +705,18 @@ begin
     raise exception 'Question is outside the scope of this part attempt';
   end if;
 
-  -- Find or create "TOEIC Practice" deck
+  -- Find or create hidden "TOEIC Practice" system deck (NOT published as a learning deck)
   select id into v_deck_id
   from public.vocabulary_decks
   where slug = 'toeic-practice';
 
   if v_deck_id is null then
     insert into public.vocabulary_decks (slug, title, description, level, is_published)
-    values ('toeic-practice', 'TOEIC Practice', 'Từ vựng lưu từ luyện TOEIC', 'mixed', true)
+    values ('toeic-practice', 'TOEIC Practice', 'Từ vựng lưu từ luyện TOEIC (hệ thống)', 'mixed', false)
     returning id into v_deck_id;
   end if;
 
-  -- Upsert vocabulary item (global, shared across students)
+  -- Find or create global vocabulary item (DO NOT overwrite existing curated fields)
   select id into v_vocab_id
   from public.vocabulary_items
   where deck_id = v_deck_id and lower(word) = v_normalized_word
@@ -708,18 +729,31 @@ begin
       v_deck_id,
       v_normalized_word,
       coalesce(p_meaning_vi, ''),
-      coalesce(p_context_sentence, ''),
-      'Part ' || v_attempt.part_number,
+      '',
+      'TOEIC',
       array['part' || v_attempt.part_number],
       true
     )
     returning id into v_vocab_id;
   end if;
+  -- If vocab already exists, do NOT overwrite curated meaning_vi, example_en, etc.
 
-  -- Upsert saved_words link for this user
-  insert into public.saved_words (user_id, vocabulary_id)
-  values (v_user_id, v_vocab_id)
-  on conflict (user_id, vocabulary_id) do nothing;
+  -- Upsert saved_words with per-user TOEIC source context
+  -- ON CONFLICT: update source context to most recent explicit save
+  insert into public.saved_words (
+    user_id, vocabulary_id,
+    source_type, source_test_id, source_question_id, source_part, context_text
+  ) values (
+    v_user_id, v_vocab_id,
+    'toeic_test', v_attempt.test_id, p_question_id, v_attempt.part_number,
+    left(coalesce(p_context_sentence, ''), 500)
+  )
+  on conflict (user_id, vocabulary_id) do update set
+    source_type = 'toeic_test',
+    source_test_id = excluded.source_test_id,
+    source_question_id = excluded.source_question_id,
+    source_part = excluded.source_part,
+    context_text = excluded.context_text;
 
   return jsonb_build_object(
     'saved', true,

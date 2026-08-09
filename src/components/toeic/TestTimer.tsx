@@ -3,7 +3,7 @@ import { Clock, Timer } from 'lucide-react';
 
 interface TestTimerProps {
   startedAt: string;
-  durationMinutes: number;
+  durationMinutes: number | null;
   onTimeExpired: () => void;
   /** If true, show elapsed stopwatch instead of countdown */
   isStopwatch?: boolean;
@@ -16,6 +16,7 @@ export const TestTimer: React.FC<TestTimerProps> = ({
   isStopwatch = false,
 }) => {
   const calculateRemaining = useCallback(() => {
+    if (durationMinutes == null) return 0;
     const start = new Date(startedAt).getTime();
     const end = start + durationMinutes * 60 * 1000;
     const now = Date.now();

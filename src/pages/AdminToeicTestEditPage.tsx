@@ -69,6 +69,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
     audio_url: '',
     image_url: '',
     documents: [],
+    instruction_vi: '',
+    passage_vi: '',
   });
 
   // Editing Question modal/form inline state
@@ -86,6 +88,8 @@ export const AdminToeicTestEditPage: React.FC = () => {
     difficulty: '',
     audio_url: '',
     image_url: '',
+    translation_vi: '',
+    options_vi: null,
   });
 
   useEffect(() => {
@@ -703,6 +707,14 @@ export const AdminToeicTestEditPage: React.FC = () => {
                         onChange={(e) => setGroupForm({ ...groupForm, passage: e.target.value })}
                         className="w-full p-3 bg-white border rounded-xl font-mono text-xs"
                       />
+                      <label className="text-slate-700 block mb-1 mt-2">Bản Dịch Đoạn Văn (Passage Translation VI)</label>
+                      <textarea
+                        rows={3}
+                        value={groupForm.passage_vi || ''}
+                        onChange={(e) => setGroupForm({ ...groupForm, passage_vi: e.target.value })}
+                        placeholder="Nhập bản dịch tiếng Việt cho đoạn văn..."
+                        className="w-full p-3 bg-white border rounded-xl text-xs font-medium text-slate-600"
+                      />
                     </div>
                   )}
 
@@ -795,6 +807,17 @@ export const AdminToeicTestEditPage: React.FC = () => {
                       value={questionForm.question_text || ''}
                       onChange={(e) => setQuestionForm({ ...questionForm, question_text: e.target.value })}
                       className="w-full p-3 bg-white border rounded-xl text-xs font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Bản Dịch Câu Hỏi (Question Translation VI)</label>
+                    <textarea
+                      rows={2}
+                      value={questionForm.translation_vi || ''}
+                      onChange={(e) => setQuestionForm({ ...questionForm, translation_vi: e.target.value })}
+                      placeholder="Nhập bản dịch tiếng Việt cho câu hỏi..."
+                      className="w-full p-3 bg-white border rounded-xl text-xs font-medium text-slate-600"
                     />
                   </div>
 

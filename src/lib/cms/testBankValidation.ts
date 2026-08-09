@@ -37,6 +37,9 @@ export interface ToeicTestGroupInput {
   audio_url?: string | null;
   image_url?: string | null;
   documents?: any[];
+  instruction_vi?: string | null;
+  passage_vi?: string | null;
+  documents_vi?: any[];
   sort_order?: number;
   is_active?: boolean;
 }
@@ -56,6 +59,8 @@ export interface ToeicTestQuestionInput {
   difficulty?: string | null;
   audio_url?: string | null;
   image_url?: string | null;
+  translation_vi?: string | null;
+  options_vi?: string[] | null;
   sort_order?: number;
   is_active?: boolean;
 }
