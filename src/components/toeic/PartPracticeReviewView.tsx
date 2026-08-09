@@ -263,11 +263,11 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
       )}
 
       {/* MAIN REVIEW BODY */}
-      <div className="flex-1 flex max-w-7xl mx-auto w-full">
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-6">
+      <div className="flex-1 flex max-w-7xl mx-auto w-full min-w-0">
+        <main className="flex-1 min-w-0 p-4 sm:p-6 overflow-y-auto space-y-6">
           {/* FILTER TABS */}
           <div className="flex items-center justify-between bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex-wrap gap-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <ListFilter className="w-4 h-4 text-slate-400 ml-2 mr-1" />
               <button
                 onClick={() => { setActiveFilter('all'); setCurrentQIndex(0); }}
@@ -309,7 +309,7 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
           </div>
 
           {currentQuestion ? (
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div className={currentQuestion.part === 'part1' ? "w-full max-w-full space-y-6 min-w-0" : "max-w-2xl mx-auto space-y-6"}>
               {/* GROUP PASSAGE OR DOCUMENTS (IF AVAILABLE) */}
               {currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0) || currentGroup.instruction) && (
                 <PassageDisplay
@@ -332,9 +332,9 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
 
               {/* PART 1 COMPARISON LAYOUT VS PARTS 2-7 STANDARD LAYOUT */}
               {currentQuestion.part === 'part1' ? (
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(340px,0.9fr)_minmax(420px,1.1fr)] gap-6 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-5 items-start w-full min-w-0">
                   {/* LEFT COLUMN: PHOTOGRAPH + COMPACT AUDIO (STICKY ON DESKTOP) */}
-                  <div className="lg:sticky lg:top-20 space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="lg:sticky lg:top-20 space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                     <ListeningMedia
                       audioUrl={null}
                       imageUrl={mediaContext.imageUrl || null}
@@ -357,9 +357,9 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                   </div>
 
                   {/* RIGHT COLUMN: QUESTION + BILINGUAL OPTIONS + EXPLANATION */}
-                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4 min-w-0 w-full">
                     {/* QUESTION HEADER & BADGES */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
                       <span className="text-base font-extrabold text-slate-900">
                         Câu {currentQuestion.question_number}
                       </span>
@@ -387,13 +387,13 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
 
                     {/* QUESTION TEXT */}
                     {currentQuestion.question_text && (
-                      <p className="text-xs font-bold text-slate-700 leading-relaxed">
+                      <p className="text-xs font-bold text-slate-700 leading-relaxed break-words whitespace-normal">
                         {currentQuestion.question_text}
                       </p>
                     )}
 
                     {/* INLINE BILINGUAL OPTION CARDS */}
-                    <div className="space-y-2">
+                    <div className="space-y-2.5 w-full min-w-0">
                       {(currentQuestion.options || [
                         { label: 'A', text: 'Option A' },
                         { label: 'B', text: 'Option B' },
@@ -436,9 +436,9 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                         return (
                           <div
                             key={opt.label}
-                            className={`p-3 rounded-xl border flex items-start justify-between gap-3 transition-all ${optionBg}`}
+                            className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 transition-all w-full min-w-0 ${optionBg}`}
                           >
-                            <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
                               <span className={`w-6 h-6 shrink-0 rounded-lg font-black text-xs flex items-center justify-center border mt-0.5 ${
                                 isCorrect
                                   ? 'bg-emerald-600 text-white border-emerald-600'
@@ -448,16 +448,16 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                               }`}>
                                 {opt.label}
                               </span>
-                              <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-xs font-semibold leading-snug break-words">{opt.text}</span>
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <span className="text-xs font-semibold leading-snug break-words whitespace-normal">{opt.text}</span>
                                 {optVi && typeof optVi === 'string' && optVi.trim().length > 0 && (
-                                  <span className="text-[11px] text-slate-500 italic leading-snug break-words">
+                                  <span className="text-[11px] text-slate-500 italic leading-snug break-words whitespace-normal">
                                     {optVi}
                                   </span>
                                 )}
                               </div>
                             </div>
-                            {badge}
+                            {badge && <div className="shrink-0 self-start sm:self-auto">{badge}</div>}
                           </div>
                         );
                       })}
@@ -465,12 +465,12 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
 
                     {/* EXPLANATION BLOCK (IF PRESENT) */}
                     {currentQuestion.explanation && (
-                      <div className="pt-3 border-t border-slate-100 space-y-1.5">
+                      <div className="pt-3 border-t border-slate-100 space-y-1.5 min-w-0">
                         <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-slate-700 uppercase">
                           <BookOpen className="w-3.5 h-3.5 text-ori-600" />
                           GIẢI THÍCH CHI TIẾT
                         </div>
-                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed break-words">
                           {currentQuestion.explanation}
                         </div>
                       </div>
