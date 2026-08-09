@@ -32,6 +32,7 @@ import { Image as ImageIcon } from 'lucide-react';
 import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
+import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
 export class AdminTestEditErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -1037,7 +1038,7 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
 
                       {q.question_text && <p className="text-xs font-bold text-slate-900 mt-2">{q.question_text}</p>}
                       
-                      {(!Array.isArray(q.options) || q.options.length === 0 || q.options.some((o: string) => !o || o.trim() === '')) && (
+                      {(!Array.isArray(q.options) || q.options.length === 0 || q.options.some((o: any) => !hasOptionText(o))) && (
                         <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-bold">
                           ⚠️ Cảnh báo: Câu hỏi này thiếu đáp án hoặc có đáp án rỗng!
                         </div>
@@ -1045,18 +1046,24 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
 
                       <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
                         {Array.isArray(q.options) &&
-                          q.options.map((opt: string, idx: number) => (
-                            <div
-                              key={idx}
-                              className={`p-2 rounded-xl border text-[11px] font-medium ${
-                                q.correct_answer && q.correct_answer.charCodeAt(0) - 65 === idx
-                                  ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900'
-                                  : 'bg-slate-50 border-slate-200 text-slate-700'
-                              }`}
-                            >
-                              {opt}
-                            </div>
-                          ))}
+                          q.options.map((optItem: any, idx: number) => {
+                            const optText = safeOptionText(optItem);
+                            const optLabel = typeof optItem === 'object' && optItem?.label ? optItem.label : String.fromCharCode(65 + idx);
+                            const isCorrect = q.correct_answer === optLabel || (typeof q.correct_answer === 'string' && q.correct_answer.charCodeAt(0) - 65 === idx);
+
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-2 rounded-xl border text-[11px] font-medium ${
+                                  isCorrect
+                                    ? 'bg-emerald-50 border-emerald-300 font-bold text-emerald-900'
+                                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {optText}
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
                   ))}

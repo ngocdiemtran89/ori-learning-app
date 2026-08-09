@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { importToeicLearningContent } from '../../lib/supabase/adminTestBank';
 import { autoDetectAndParseScriptInput, ParsedScriptItem } from '../../lib/cms/scriptBulkParser';
+import { hasText, hasRealOptionText, hasStringArrayContent } from '../../lib/cms/toeicContentCompleteness';
 
 export class ScriptBilingualErrorBoundary extends React.Component<
   { children: React.ReactNode; onClose?: () => void },
@@ -159,19 +160,19 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
       if (!qState) return;
 
       if (q.part === 'part1') {
-        const hasRealEn = qState.options?.some((o: any) => o.text && !/^\([A-D]\)$/.test(o.text.trim()));
+        const hasRealEn = Array.isArray(qState.options) && qState.options.some((o: any) => hasRealOptionText(o));
         if (hasRealEn) p1Script++;
-        if (qState.options_vi?.some((v: string) => v && v.trim().length > 0)) p1Vi++;
+        if (hasStringArrayContent(qState.options_vi)) p1Vi++;
       } else if (q.part === 'part2') {
-        const hasRealEn = qState.question_text || qState.options?.some((o: any) => o.text && !/^\([A-D]\)$/.test(o.text.trim()));
+        const hasRealEn = hasText(qState.question_text) || (Array.isArray(qState.options) && qState.options.some((o: any) => hasRealOptionText(o)));
         if (hasRealEn) p2Script++;
-        if (qState.translation_vi || qState.options_vi?.some((v: string) => v && v.trim().length > 0)) p2Vi++;
+        if (hasText(qState.translation_vi) || hasStringArrayContent(qState.options_vi)) p2Vi++;
       } else if (q.part === 'part5') {
-        if (qState.translation_vi || qState.options_vi?.some((v: string) => v && v.trim().length > 0)) p5Vi++;
+        if (hasText(qState.translation_vi) || hasStringArrayContent(qState.options_vi)) p5Vi++;
       } else if (q.part === 'part6') {
-        if (qState.translation_vi) p6Vi++;
+        if (hasText(qState.translation_vi)) p6Vi++;
       } else if (q.part === 'part7') {
-        if (qState.translation_vi) p7Vi++;
+        if (hasText(qState.translation_vi)) p7Vi++;
       }
     });
 
@@ -180,11 +181,11 @@ export const ScriptBilingualManagerModalContent: React.FC<ScriptBilingualManager
       if (!gState) return;
 
       if (g.part === 'part3') {
-        if (gState.transcript?.trim()) p3En++;
-        if (gState.transcript_vi?.trim()) p3Vi++;
+        if (hasText(gState.transcript)) p3En++;
+        if (hasText(gState.transcript_vi)) p3Vi++;
       } else if (g.part === 'part4') {
-        if (gState.transcript?.trim()) p4En++;
-        if (gState.transcript_vi?.trim()) p4Vi++;
+        if (hasText(gState.transcript)) p4En++;
+        if (hasText(gState.transcript_vi)) p4Vi++;
       }
     });
 
