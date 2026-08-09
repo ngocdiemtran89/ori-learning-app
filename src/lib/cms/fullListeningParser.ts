@@ -5,7 +5,8 @@
 import {
   RawMediaFile,
   mapSequentialMediaFiles,
-  SequentialMediaType
+  SequentialMediaType,
+  Part2NumberingMode
 } from './sequentialMediaParser';
 
 export type BulkWorkflowMode = 'per_part' | 'full_listening';
@@ -21,6 +22,10 @@ export interface ZoneStatus {
   statusText: string;
   statusCode: 'complete' | 'incomplete' | 'invalid' | 'conflict' | 'empty';
   missingSequences: number[];
+  part2Info?: {
+    detectedMode: 'absolute' | 'sequential' | 'ambiguous';
+    message: string;
+  };
 }
 
 export interface FullListeningMappedItem {
@@ -55,6 +60,10 @@ export interface FullListeningParseResult {
     conflictCount: number;
     missingCount: number;
   };
+  part2Info?: {
+    detectedMode: 'absolute' | 'sequential' | 'ambiguous';
+    message: string;
+  };
 }
 
 // 1. ZONE CONFIGURATION
@@ -80,7 +89,8 @@ export function mapFullListeningZone(
   questions: Array<{ id?: string; question_number: number; part: string; image_url?: string | null; audio_url?: string | null }>,
   groups: Array<{ id?: string; part: string; audio_url?: string | null }>,
   getGroupRange: (groupId: string) => { min: number; max: number },
-  isPublished: boolean
+  isPublished: boolean,
+  part2NumberingMode: Part2NumberingMode = 'auto'
 ): { items: FullListeningMappedItem[]; status: ZoneStatus } {
   const zoneConfig = FULL_LISTENING_ZONES.find(z => z.key === zoneKey)!;
 
@@ -91,7 +101,8 @@ export function mapFullListeningZone(
     questions,
     groups,
     getGroupRange,
-    isPublished
+    isPublished,
+    part2NumberingMode
   );
 
   const items: FullListeningMappedItem[] = mappedRes.items.map(item => ({
@@ -142,6 +153,7 @@ export function mapFullListeningZone(
     statusText,
     statusCode,
     missingSequences: mappedRes.counters.missingSequences,
+    part2Info: mappedRes.part2Info,
   };
 
   return { items, status };
@@ -153,14 +165,15 @@ export function mapAllFullListeningZones(
   questions: Array<{ id?: string; question_number: number; part: string; image_url?: string | null; audio_url?: string | null }>,
   groups: Array<{ id?: string; part: string; audio_url?: string | null }>,
   getGroupRange: (groupId: string) => { min: number; max: number },
-  isPublished: boolean
+  isPublished: boolean,
+  part2NumberingMode: Part2NumberingMode = 'auto'
 ): FullListeningParseResult {
   const zoneItems = {} as Record<FullListeningZoneKey, FullListeningMappedItem[]>;
   const zoneStatuses = {} as Record<FullListeningZoneKey, ZoneStatus>;
 
   FULL_LISTENING_ZONES.forEach(z => {
     const raw = zoneRawFiles[z.key] || [];
-    const res = mapFullListeningZone(z.key, raw, questions, groups, getGroupRange, isPublished);
+    const res = mapFullListeningZone(z.key, raw, questions, groups, getGroupRange, isPublished, part2NumberingMode);
     zoneItems[z.key] = res.items;
     zoneStatuses[z.key] = res.status;
   });
@@ -187,5 +200,6 @@ export function mapAllFullListeningZones(
     zoneItems,
     zoneStatuses,
     globalSummary,
+    part2Info: zoneStatuses.p2_audio?.part2Info,
   };
 }

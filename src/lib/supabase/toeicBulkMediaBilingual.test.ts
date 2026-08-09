@@ -1981,6 +1981,196 @@ describe('P3.5F Native Group Question-Range Hotfix Suite (Section 16)', () => {
   });
 });
 
+// ============================================================
+// P3.5F PART 2 ABSOLUTE QUESTION NUMBER HOTFIX SUITE (SECTION 18 - 27 TESTS)
+// ============================================================
+describe('P3.5F Part 2 Absolute Question Number Hotfix Suite (Section 18)', () => {
+  const dummyQuestions = Array.from({ length: 100 }, (_, i) => {
+    const qNum = i + 1;
+    let part = 'part1';
+    if (qNum >= 7 && qNum <= 31) part = 'part2';
+    else if (qNum >= 32 && qNum <= 70) part = 'part3';
+    else if (qNum >= 71 && qNum <= 100) part = 'part4';
+    return { id: `q-${qNum}`, question_number: qNum, part, image_url: null, audio_url: null };
+  });
+
+  const dummyGroups = [
+    ...Array.from({ length: 13 }, (_, i) => {
+      const start = 32 + i * 3;
+      return { id: `g-p3-${i + 1}`, part: 'part3', start, end: start + 2, audio_url: null };
+    }),
+    ...Array.from({ length: 10 }, (_, i) => {
+      const start = 71 + i * 3;
+      return { id: `g-p4-${i + 1}`, part: 'part4', start, end: start + 2, audio_url: null };
+    }),
+  ];
+
+  const getRange = (groupId: string) => {
+    const g = dummyGroups.find(x => x.id === groupId);
+    return g ? { min: g.start, max: g.end } : { min: 0, max: 0 };
+  };
+
+  it('1. full batch 07..31 auto-detects absolute mode', () => {
+    const files = Array.from({ length: 25 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.part2Info?.detectedMode).toBe('absolute');
+  });
+
+  it('2. E26-T01-07.mp3 absolute -> Q7', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-07.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].targetId).toBe('q-7');
+    expect(res.items[0].targetLabel).toContain('Q7');
+  });
+
+  it('3. E26-T01-08.mp3 absolute -> Q8', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-08.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].targetId).toBe('q-8');
+  });
+
+  it('4. E26-T01-31.mp3 absolute -> Q31', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-31.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].targetId).toBe('q-31');
+  });
+
+  it('5. absolute mode does NOT add 6', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-07.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].targetId).not.toBe('q-13');
+  });
+
+  it('6. absolute full set has no missing targets', () => {
+    const files = Array.from({ length: 25 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.counters.missingGroupLabels.length).toBe(0);
+  });
+
+  it('7. full batch 01..25 auto-detects sequential mode', () => {
+    const files = Array.from({ length: 25 }, (_, i) => ({ name: `E26-T01-${String(i + 1).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.part2Info?.detectedMode).toBe('sequential');
+  });
+
+  it('8. E26-T01-01.mp3 sequential -> Q7', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-01.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.items[0].targetId).toBe('q-7');
+  });
+
+  it('9. E26-T01-02.mp3 sequential -> Q8', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-02.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.items[0].targetId).toBe('q-8');
+  });
+
+  it('10. E26-T01-25.mp3 sequential -> Q31', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-25.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.items[0].targetId).toBe('q-31');
+  });
+
+  it('11. ambiguous partial 07..20 does NOT auto-map silently', () => {
+    const files = Array.from({ length: 14 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.part2Info?.detectedMode).toBe('ambiguous');
+    expect(res.items[0].status).toBe('invalid');
+  });
+
+  it('12. ambiguous partial batch requires numbering selection', () => {
+    const files = Array.from({ length: 14 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.items[0].error).toContain('Vui lòng chọn cách đánh số file Part 2');
+  });
+
+  it('13. explicit absolute partial 07..20 works', () => {
+    const files = Array.from({ length: 14 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].targetId).toBe('q-7');
+    expect(res.items[13].targetId).toBe('q-20');
+  });
+
+  it('14. explicit sequential partial 07..20 works according to sequential formula', () => {
+    const files = Array.from({ length: 14 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.items[0].targetId).toBe('q-13'); // 6 + 7
+  });
+
+  it('15. absolute missing 09 reports Q9 missing', () => {
+    const files = [{ name: 'E26-T01-07.mp3' }, { name: 'E26-T01-08.mp3' }, { name: 'E26-T01-10.mp3' }];
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.counters.missingGroupLabels).toContain('Q9');
+  });
+
+  it('16. sequential missing 03 reports correct missing index/target', () => {
+    const files = [{ name: 'E26-T01-01.mp3' }, { name: 'E26-T01-02.mp3' }, { name: 'E26-T01-04.mp3' }];
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.counters.missingGroupLabels).toContain('#03 / Q9');
+  });
+
+  it('17. duplicate target detected', () => {
+    const files = [{ name: 'fileA-07.mp3' }, { name: 'fileB-07.mp3' }];
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'absolute');
+    expect(res.items[0].status).toBe('conflict');
+  });
+
+  it('18. mixed unsafe numbering rejected or conflict-safe', () => {
+    const files = [{ name: 'E26-T01-01.mp3' }, { name: 'E26-T01-07.mp3' }];
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'sequential');
+    expect(res.items[0].targetId).toBe('q-7');
+    expect(res.items[1].targetId).toBe('q-13');
+  });
+
+  it('19. q007.mp3 canonical still maps Q7', () => {
+    const res = mapSequentialMediaFiles([{ name: 'q007.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-7');
+  });
+
+  it('20. q031.mp3 canonical still maps Q31', () => {
+    const res = mapSequentialMediaFiles([{ name: 'q031.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-31');
+  });
+
+  it('21. per-Part workflow fixed', () => {
+    const files = Array.from({ length: 25 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` }));
+    const res = mapSequentialMediaFiles(files, 'p2_audio', dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.items[0].targetId).toBe('q-7');
+  });
+
+  it('22. Full Listening workflow fixed', () => {
+    const raw: Record<FullListeningZoneKey, any[]> = {
+      p1_image: [],
+      p1_audio: [],
+      p2_audio: Array.from({ length: 25 }, (_, i) => ({ name: `E26-T01-${String(i + 7).padStart(2, '0')}.mp3` })),
+      p3_audio: [],
+      p4_audio: [],
+    };
+    const res = mapAllFullListeningZones(raw, dummyQuestions, dummyGroups, getRange, false, 'auto');
+    expect(res.zoneItems.p2_audio[0].targetId).toBe('q-7');
+  });
+
+  it('23. Part1 regression NO', () => {
+    const res = mapSequentialMediaFiles([{ name: '01.png' }], 'p1_image', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('q-1');
+  });
+
+  it('24. Part3 regression NO', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-32-34.mp3' }], 'p3_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p3-1');
+  });
+
+  it('25. Part4 regression NO', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-71-73.mp3' }], 'p4_audio', dummyQuestions, dummyGroups, getRange, false);
+    expect(res.items[0].targetId).toBe('g-p4-1');
+  });
+
+  it('26. published existing media SKIP', () => {
+    const existingQ = dummyQuestions.map(q => q.id === 'q-7' ? { ...q, audio_url: 'exist.mp3' } : q);
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-07.mp3' }], 'p2_audio', existingQ, dummyGroups, getRange, true, 'absolute');
+    expect(res.items[0].status).toBe('skip');
+  });
+
+  it('27. published missing media READY', () => {
+    const res = mapSequentialMediaFiles([{ name: 'E26-T01-07.mp3' }], 'p2_audio', dummyQuestions, dummyGroups, getRange, true, 'absolute');
+    expect(res.items[0].status).toBe('ready');
+  });
+});
+
+
 
 
 

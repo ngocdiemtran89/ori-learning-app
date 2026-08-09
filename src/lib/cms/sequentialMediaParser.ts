@@ -3,6 +3,7 @@
 // ============================================================
 
 export type SequentialMediaType = 'p1_image' | 'p1_audio' | 'p2_audio' | 'p3_audio' | 'p4_audio';
+export type Part2NumberingMode = 'auto' | 'absolute' | 'sequential';
 
 export interface RawMediaFile {
   name: string;
@@ -59,6 +60,10 @@ export interface SequentialMappingResult {
   suggestion: {
     mediaType: SequentialMediaType | null;
     message: string | null;
+  };
+  part2Info?: {
+    detectedMode: 'absolute' | 'sequential' | 'ambiguous';
+    message: string;
   };
 }
 
@@ -283,13 +288,10 @@ export function mapSequentialMediaFiles(
   questions: Array<{ id?: string; question_number: number; part: string; image_url?: string | null; audio_url?: string | null }>,
   groups: Array<{ id?: string; part: string; audio_url?: string | null }>,
   getGroupRange: (groupId: string) => { min: number; max: number },
-  isPublished: boolean
+  isPublished: boolean,
+  part2NumberingMode: Part2NumberingMode = 'auto'
 ): SequentialMappingResult {
   const filtered = rawFiles.filter(f => !isMacNoiseFile(f.name));
-  const isGroupAudio = selectedMediaType === 'p3_audio' || selectedMediaType === 'p4_audio';
-
-  const isImageMode = selectedMediaType === 'p1_image';
-  const validExtensions = isImageMode ? ['jpg', 'jpeg', 'png', 'webp'] : ['mp3', 'wav', 'ogg', 'm4a'];
 
   const allowedRanges: Record<SequentialMediaType, { min: number; max: number }> = {
     p1_image: { min: 1, max: 6 },
@@ -298,16 +300,14 @@ export function mapSequentialMediaFiles(
     p3_audio: { min: 1, max: 13 },
     p4_audio: { min: 1, max: 10 },
   };
-  const range = allowedRanges[selectedMediaType];
 
-  // For group audio, parse using parseGroupAudioFilename
-  if (isGroupAudio) {
+  // A. PART 3 & PART 4 GROUP AUDIO MAPPING
+  if (selectedMediaType === 'p3_audio' || selectedMediaType === 'p4_audio') {
     const groupParsed = filtered.map(f => ({
       ...f,
       parsedGroup: parseGroupAudioFilename(f.name, selectedMediaType as 'p3_audio' | 'p4_audio'),
     }));
 
-    // Sort by sequence or startQ
     groupParsed.sort((a, b) => {
       const seqA = a.parsedGroup.sequence ?? Number.MAX_SAFE_INTEGER;
       const seqB = b.parsedGroup.sequence ?? Number.MAX_SAFE_INTEGER;
@@ -315,7 +315,6 @@ export function mapSequentialMediaFiles(
       return a.name.localeCompare(b.name);
     });
 
-    // Check duplicate target ranges (e.g. Q32–34 mapped twice)
     const targetGroupCounts = new Map<string, number>();
     groupParsed.forEach(item => {
       if (item.parsedGroup.isValidRange && item.parsedGroup.startQ !== null && item.parsedGroup.endQ !== null) {
@@ -331,7 +330,7 @@ export function mapSequentialMediaFiles(
     groupParsed.forEach(item => {
       const { rawName, extension, sequence, startQ, endQ, isValidRange, invalidReason } = item.parsedGroup;
 
-      if (!validExtensions.includes(extension)) {
+      if (!['mp3', 'wav', 'ogg', 'm4a'].includes(extension)) {
         mappedItems.push({
           name: rawName,
           file: item.file,
@@ -365,7 +364,6 @@ export function mapSequentialMediaFiles(
 
       const targetGroupKey = `Q${startQ}–${endQ}`;
 
-      // Duplicate Check across TARGET GROUPS
       if ((targetGroupCounts.get(targetGroupKey) || 0) > 1) {
         mappedItems.push({
           name: rawName,
@@ -382,7 +380,6 @@ export function mapSequentialMediaFiles(
         return;
       }
 
-      // Group DB lookup
       const matchingGroups = groups.filter(g => {
         if (!g.id) return false;
         const r = getGroupRange(g.id);
@@ -475,7 +472,297 @@ export function mapSequentialMediaFiles(
     };
   }
 
-  // Single Question mapping (Part 1 Image, Part 1 Audio, Part 2 Audio)
+  // B. PART 2 AUDIO SPECIAL DUAL-MODE MAPPER
+  if (selectedMediaType === 'p2_audio') {
+    const validAudioExts = ['mp3', 'wav', 'ogg', 'm4a'];
+
+    const parsedP2 = filtered.map(f => {
+      const basename = (f.name.split('/').pop() || f.name).trim();
+      const extMatch = basename.match(/\.([a-zA-Z0-9]+)$/);
+      const ext = extMatch ? extMatch[1].toLowerCase() : '';
+      const nameWithoutExt = extMatch ? basename.substring(0, extMatch.index) : basename;
+
+      // Check canonical ORI format: q007.mp3, q031.mp3
+      const oriMatch = basename.match(/^q0*([7-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/);
+      if (oriMatch) {
+        const qNum = parseInt(oriMatch[1], 10);
+        return {
+          rawName: f.name,
+          file: f.file,
+          extension: ext,
+          token: qNum,
+          isOriCanonical: true,
+          oriTargetQ: qNum,
+        };
+      }
+
+      const tokens = nameWithoutExt
+        .split(/[^0-9]+/)
+        .filter(Boolean)
+        .map(t => parseInt(t, 10));
+
+      const finalToken = tokens.length > 0 ? tokens[tokens.length - 1] : null;
+
+      return {
+        rawName: f.name,
+        file: f.file,
+        extension: ext,
+        token: finalToken,
+        isOriCanonical: false,
+        oriTargetQ: null,
+      };
+    });
+
+    // Auto-detection logic for non-ORI files
+    const nativeTokens = parsedP2.filter(p => !p.isOriCanonical && p.token !== null).map(p => p.token!);
+    let detectedMode: 'absolute' | 'sequential' | 'ambiguous' = 'ambiguous';
+    let modeMessage = '';
+
+    if (part2NumberingMode === 'absolute') {
+      detectedMode = 'absolute';
+      modeMessage = 'Chế độ đã chọn: Theo số câu thật Q7–Q31.';
+    } else if (part2NumberingMode === 'sequential') {
+      detectedMode = 'sequential';
+      modeMessage = 'Chế độ đã chọn: Theo thứ tự file 01–25.';
+    } else {
+      // Auto mode evaluation
+      if (nativeTokens.length > 0) {
+        const hasAbove25 = nativeTokens.some(t => t > 25);
+        const hasBelow7 = nativeTokens.some(t => t <= 6);
+        const allInOverlapRange = nativeTokens.every(t => t >= 7 && t <= 25);
+
+        if (hasAbove25 && !hasBelow7) {
+          detectedMode = 'absolute';
+          modeMessage = 'Đã nhận diện: file được đánh theo số câu thật Q7–Q31.';
+        } else if (hasBelow7 && !hasAbove25) {
+          detectedMode = 'sequential';
+          modeMessage = 'Đã nhận diện: file được đánh theo thứ tự 01–25.';
+        } else if (allInOverlapRange && nativeTokens.length > 1) {
+          detectedMode = 'ambiguous';
+          modeMessage = 'Không thể xác định chắc chắn cách đánh số Part 2. Vui lòng chọn: • Theo số câu thật • Theo thứ tự file';
+        } else {
+          detectedMode = 'sequential';
+          modeMessage = 'Chế độ tự động Part 2 (Theo thứ tự file)';
+        }
+      } else {
+        detectedMode = 'absolute';
+        modeMessage = 'Chế độ nhận diện Part 2';
+      }
+    }
+
+    // Resolve target questions for all items
+    const targetQCounts = new Map<number, number>();
+    parsedP2.forEach(item => {
+      let resolvedQ: number | null = null;
+      if (item.isOriCanonical) {
+        resolvedQ = item.oriTargetQ;
+      } else if (item.token !== null) {
+        if (detectedMode === 'absolute') {
+          if (item.token >= 7 && item.token <= 31) resolvedQ = item.token;
+        } else if (detectedMode === 'sequential') {
+          if (item.token >= 1 && item.token <= 25) resolvedQ = 6 + item.token;
+        }
+      }
+      if (resolvedQ !== null) {
+        targetQCounts.set(resolvedQ, (targetQCounts.get(resolvedQ) || 0) + 1);
+      }
+    });
+
+    const presentTargetQNums = new Set<number>();
+    const presentSequences = new Set<number>();
+    const mappedItems: SequentialMappedItem[] = [];
+
+    parsedP2.forEach(item => {
+      if (!validAudioExts.includes(item.extension)) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: item.token,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: 'Không khớp loại media',
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: 'File không phải là audio (mp3, wav...)',
+        });
+        return;
+      }
+
+      if (item.token === null && !item.isOriCanonical) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: null,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: 'Thiếu số thứ tự',
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: 'Tên file không chứa số thứ tự hợp lệ',
+        });
+        return;
+      }
+
+      if (detectedMode === 'ambiguous' && !item.isOriCanonical) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: item.token,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: `File #${item.token}`,
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: 'Vui lòng chọn cách đánh số file Part 2 (Theo số câu thật hoặc Theo thứ tự file)',
+        });
+        return;
+      }
+
+      let resolvedQ: number | null = null;
+      let displaySeq: number | null = item.token;
+
+      if (item.isOriCanonical) {
+        resolvedQ = item.oriTargetQ;
+        displaySeq = item.oriTargetQ;
+      } else if (detectedMode === 'absolute') {
+        if (item.token! >= 7 && item.token! <= 31) {
+          resolvedQ = item.token;
+          displaySeq = item.token;
+        }
+      } else if (detectedMode === 'sequential') {
+        if (item.token! >= 1 && item.token! <= 25) {
+          resolvedQ = 6 + item.token!;
+          displaySeq = item.token;
+        }
+      }
+
+      if (resolvedQ === null) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: item.token,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: `Ngoài phạm vi (#${item.token})`,
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: detectedMode === 'absolute'
+            ? `Số câu #${item.token} nằm ngoài phạm vi Q7–Q31 cho Part 2`
+            : `Số thứ tự #${item.token} nằm ngoài phạm vi 1–25 cho Part 2`,
+        });
+        return;
+      }
+
+      // Check Target Question Duplicate Conflict
+      if ((targetQCounts.get(resolvedQ) || 0) > 1) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: displaySeq,
+          type: 'audio',
+          targetType: 'none',
+          targetLabel: `Trùng câu Q${resolvedQ}`,
+          currentExists: false,
+          action: 'conflict',
+          status: 'conflict',
+          error: `Phát hiện nhiều file cùng gán vào câu hỏi Q${resolvedQ}`,
+        });
+        return;
+      }
+
+      const q = questions.find(x => x.question_number === resolvedQ);
+      if (!q || !q.id) {
+        mappedItems.push({
+          name: item.rawName,
+          file: item.file,
+          sequence: displaySeq,
+          type: 'audio',
+          targetType: 'question',
+          targetLabel: `Q${resolvedQ}`,
+          currentExists: false,
+          action: 'invalid',
+          status: 'invalid',
+          error: `Không tìm thấy câu hỏi Q${resolvedQ} trong đề thi`,
+        });
+        return;
+      }
+
+      const currentExists = Boolean(q.audio_url);
+      const action = isPublished && currentExists ? 'skip' : 'upload';
+
+      presentTargetQNums.add(resolvedQ);
+      if (displaySeq !== null) presentSequences.add(displaySeq);
+
+      mappedItems.push({
+        name: item.rawName,
+        file: item.file,
+        sequence: displaySeq,
+        type: 'audio',
+        targetType: 'question',
+        targetId: q.id,
+        targetLabel: `Q${resolvedQ} (Audio)`,
+        currentExists,
+        action,
+        status: action === 'skip' ? 'skip' : 'ready',
+      });
+    });
+
+    // Calculate Missing Items according to detected mode
+    const missingGroupLabels: string[] = [];
+    const missingSequences: number[] = [];
+
+    if (detectedMode === 'absolute') {
+      for (let qNum = 7; qNum <= 31; qNum++) {
+        if (!presentTargetQNums.has(qNum)) {
+          missingGroupLabels.push(`Q${qNum}`);
+          missingSequences.push(qNum);
+        }
+      }
+    } else {
+      for (let seq = 1; seq <= 25; seq++) {
+        const expectedQ = 6 + seq;
+        if (!presentTargetQNums.has(expectedQ)) {
+          missingGroupLabels.push(`#${seq < 10 ? '0' + seq : seq} / Q${expectedQ}`);
+          missingSequences.push(seq);
+        }
+      }
+    }
+
+    const ready = mappedItems.filter(i => i.status === 'ready').length;
+    const existingMedia = mappedItems.filter(i => i.status === 'skip').length;
+    const invalid = mappedItems.filter(i => i.status === 'invalid').length;
+    const conflict = mappedItems.filter(i => i.status === 'conflict').length;
+
+    return {
+      items: mappedItems,
+      counters: {
+        totalFiles: filtered.length,
+        matched: ready + existingMedia,
+        missingSequences,
+        missingGroupLabels,
+        invalid,
+        conflict,
+        existingMedia,
+        ready,
+      },
+      suggestion: detectSequentialMediaSuggestion(rawFiles),
+      part2Info: {
+        detectedMode,
+        message: modeMessage,
+      },
+    };
+  }
+
+  // C. PART 1 IMAGE & PART 1 AUDIO MAPPER
+  const isImageMode = selectedMediaType === 'p1_image';
+  const validExtensions = isImageMode ? ['jpg', 'jpeg', 'png', 'webp'] : ['mp3', 'wav', 'ogg', 'm4a'];
+
+  const range = allowedRanges[selectedMediaType];
+
   const parsedFiles = filtered.map(f => ({
     ...f,
     parsed: parseNativeFilename(f.name),
@@ -567,47 +854,39 @@ export function mapSequentialMediaFiles(
 
     presentSequences.add(sequence);
 
-    let targetQNum: number | null = null;
-    if (selectedMediaType === 'p1_image' || selectedMediaType === 'p1_audio') {
-      targetQNum = sequence;
-    } else if (selectedMediaType === 'p2_audio') {
-      targetQNum = 6 + sequence;
-    }
-
-    if (targetQNum !== null) {
-      const q = questions.find(item => item.question_number === targetQNum);
-      if (!q || !q.id) {
-        mappedItems.push({
-          name: rawName,
-          file: item.file,
-          sequence,
-          type: isImageMode ? 'image' : 'audio',
-          targetType: 'question',
-          targetLabel: `Q${targetQNum}`,
-          currentExists: false,
-          action: 'invalid',
-          status: 'invalid',
-          error: `Không tìm thấy câu hỏi Q${targetQNum} trong đề thi`,
-        });
-        return;
-      }
-
-      const currentExists = isImageMode ? Boolean(q.image_url) : Boolean(q.audio_url);
-      const action = isPublished && currentExists ? 'skip' : 'upload';
-
+    const targetQNum = sequence;
+    const q = questions.find(x => x.question_number === targetQNum);
+    if (!q || !q.id) {
       mappedItems.push({
         name: rawName,
         file: item.file,
         sequence,
         type: isImageMode ? 'image' : 'audio',
         targetType: 'question',
-        targetId: q.id,
-        targetLabel: `Q${targetQNum} (${isImageMode ? 'Hình ảnh' : 'Audio'})`,
-        currentExists,
-        action,
-        status: action === 'skip' ? 'skip' : 'ready',
+        targetLabel: `Q${targetQNum}`,
+        currentExists: false,
+        action: 'invalid',
+        status: 'invalid',
+        error: `Không tìm thấy câu hỏi Q${targetQNum} trong đề thi`,
       });
+      return;
     }
+
+    const currentExists = isImageMode ? Boolean(q.image_url) : Boolean(q.audio_url);
+    const action = isPublished && currentExists ? 'skip' : 'upload';
+
+    mappedItems.push({
+      name: rawName,
+      file: item.file,
+      sequence,
+      type: isImageMode ? 'image' : 'audio',
+      targetType: 'question',
+      targetId: q.id,
+      targetLabel: `Q${targetQNum} (${isImageMode ? 'Hình ảnh' : 'Audio'})`,
+      currentExists,
+      action,
+      status: action === 'skip' ? 'skip' : 'ready',
+    });
   });
 
   const missingSequences: number[] = [];

@@ -19,6 +19,7 @@ import type { ToeicListeningCue } from '../../lib/supabase/types';
 
 import {
   SequentialMediaType,
+  Part2NumberingMode,
   mapSequentialMediaFiles,
   detectSequentialMediaSuggestion,
   isMacNoiseFile,
@@ -78,6 +79,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
   const [rawFiles, setRawFiles] = useState<Array<{ name: string; file: File }>>([]);
   const [bulkMatchMode, setBulkMatchMode] = useState<'ori' | 'sequential'>('ori');
   const [sequentialMediaType, setSequentialMediaType] = useState<SequentialMediaType>('p1_image');
+  const [part2NumberingMode, setPart2NumberingMode] = useState<Part2NumberingMode>('auto');
   const [suggestion, setSuggestion] = useState<{ mediaType: SequentialMediaType | null; message: string | null }>({ mediaType: null, message: null });
   const [sequentialResult, setSequentialResult] = useState<SequentialMappingResult | null>(null);
   const [bulkFiles, setBulkFiles] = useState<Array<{ name: string; file: File; sequence?: number | null; type: 'image' | 'audio'; targetType: 'question' | 'group' | 'none'; targetId?: string; targetLabel: string; currentExists: boolean; action: 'upload' | 'skip' | 'invalid' | 'conflict'; status: 'pending' | 'ready' | 'skip' | 'invalid' | 'conflict' | 'uploading' | 'success' | 'failed'; error?: string }>>([]);
@@ -214,10 +216,13 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
   // ============================================================
   // FULL LISTENING MULTI-ZONE PARSER & HANDLERS
   // ============================================================
-  const recalculateFullListening = (currentZoneFiles: Record<FullListeningZoneKey, Array<{ name: string; file: File }>>) => {
+  const recalculateFullListening = (
+    currentZoneFiles: Record<FullListeningZoneKey, Array<{ name: string; file: File }>>,
+    p2Mode: Part2NumberingMode = part2NumberingMode
+  ) => {
     const isPublished = Boolean(test?.is_published);
     const getRange = (gId: string) => getToeicGroupQuestionRange(gId, questions);
-    const res = mapAllFullListeningZones(currentZoneFiles, questions, groups, getRange, isPublished);
+    const res = mapAllFullListeningZones(currentZoneFiles, questions, groups, getRange, isPublished, p2Mode);
     setFullListeningResult(res);
   };
 
@@ -292,7 +297,8 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
   const updateBulkMatches = (
     files: Array<{ name: string; file: File }>,
     mode: 'ori' | 'sequential',
-    seqType: SequentialMediaType
+    seqType: SequentialMediaType,
+    p2Mode: Part2NumberingMode = part2NumberingMode
   ) => {
     const isPublished = Boolean(test?.is_published);
     const getRange = (gId: string) => getToeicGroupQuestionRange(gId, questions);
@@ -392,7 +398,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
       setBulkFiles(matchedItems);
       setSequentialResult(null);
     } else {
-      const result = mapSequentialMediaFiles(files, seqType, questions, groups, getRange, isPublished);
+      const result = mapSequentialMediaFiles(files, seqType, questions, groups, getRange, isPublished, p2Mode);
       setSequentialResult(result);
       setBulkFiles(result.items as any);
     }
@@ -1104,6 +1110,58 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
                     </div>
                   )}
 
+                  {bulkMatchMode === 'sequential' && sequentialMediaType === 'p2_audio' && (
+                    <div className="pt-2 border-t border-slate-200 flex items-center gap-4 flex-wrap font-bold text-slate-700">
+                      <span className="text-slate-500 font-extrabold uppercase text-[11px]">CÁCH ĐÁNH SỐ FILE PART 2:</span>
+                      <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-slate-200 hover:border-ori-400">
+                        <input
+                          type="radio"
+                          name="p2NumMode"
+                          checked={part2NumberingMode === 'auto'}
+                          onChange={() => {
+                            setPart2NumberingMode('auto');
+                            updateBulkMatches(rawFiles, bulkMatchMode, sequentialMediaType, 'auto');
+                          }}
+                          className="text-ori-600 focus:ring-ori-500"
+                        />
+                        <span>Tự nhận diện</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-slate-200 hover:border-ori-400">
+                        <input
+                          type="radio"
+                          name="p2NumMode"
+                          checked={part2NumberingMode === 'absolute'}
+                          onChange={() => {
+                            setPart2NumberingMode('absolute');
+                            updateBulkMatches(rawFiles, bulkMatchMode, sequentialMediaType, 'absolute');
+                          }}
+                          className="text-ori-600 focus:ring-ori-500"
+                        />
+                        <span>Theo số câu thật (07 → Q7, 31 → Q31)</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-slate-200 hover:border-ori-400">
+                        <input
+                          type="radio"
+                          name="p2NumMode"
+                          checked={part2NumberingMode === 'sequential'}
+                          onChange={() => {
+                            setPart2NumberingMode('sequential');
+                            updateBulkMatches(rawFiles, bulkMatchMode, sequentialMediaType, 'sequential');
+                          }}
+                          className="text-ori-600 focus:ring-ori-500"
+                        />
+                        <span>Theo thứ tự file (01 → Q7, 25 → Q31)</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {sequentialResult?.part2Info?.message && sequentialMediaType === 'p2_audio' && (
+                    <div className={`p-2.5 rounded-xl border flex items-center gap-2 font-bold text-xs ${sequentialResult.part2Info.detectedMode === 'ambiguous' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}>
+                      <Zap className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>{sequentialResult.part2Info.message}</span>
+                    </div>
+                  )}
+
                   {suggestion.message && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between text-amber-800 font-medium">
                       <span className="flex items-center gap-2">
@@ -1128,7 +1186,7 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
                   {sequentialResult && sequentialResult.counters.missingSequences.length > 0 && (
                     <div className="bg-orange-50 border border-orange-200 rounded-xl p-2 flex items-center gap-2 text-orange-800 font-bold">
                       <AlertTriangle className="w-4 h-4 text-orange-600 shrink-0" />
-                      <span>Cảnh báo: Thiếu các số thứ tự: #{sequentialResult.counters.missingSequences.join(', #')}</span>
+                      <span>Cảnh báo: Thiếu các mục target: {sequentialResult.counters.missingGroupLabels.join(', ')}</span>
                     </div>
                   )}
                 </div>
@@ -1266,31 +1324,84 @@ export const MediaManagerTab: React.FC<MediaManagerTabProps> = ({
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs">
-                            <span className="text-slate-500 font-mono">Đã chọn {currentFiles.length} file</span>
-                            <div className="flex gap-2">
-                              <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer">
-                                Chọn file / ZIP
-                                <input
-                                  type="file"
-                                  multiple
-                                  accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,application/zip"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    if (e.target.files?.length) handleAddFilesToZone(zone.key, e.target.files);
-                                  }}
-                                />
-                              </label>
-                              {currentFiles.length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleClearZone(zone.key)}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
-                                  title="Xóa phần này"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                          <div className="space-y-2">
+                            {zone.key === 'p2_audio' && (
+                              <div className="flex items-center gap-3 text-xs font-bold text-slate-700 bg-white p-2 rounded-xl border border-slate-200 flex-wrap">
+                                <span className="text-slate-400 uppercase text-[10px]">ĐÁNH SỐ PART 2:</span>
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="p2NumModeFull"
+                                    checked={part2NumberingMode === 'auto'}
+                                    onChange={() => {
+                                      setPart2NumberingMode('auto');
+                                      recalculateFullListening(zoneFiles, 'auto');
+                                    }}
+                                    className="text-ori-600 focus:ring-ori-500"
+                                  />
+                                  <span>Tự nhận diện</span>
+                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="p2NumModeFull"
+                                    checked={part2NumberingMode === 'absolute'}
+                                    onChange={() => {
+                                      setPart2NumberingMode('absolute');
+                                      recalculateFullListening(zoneFiles, 'absolute');
+                                    }}
+                                    className="text-ori-600 focus:ring-ori-500"
+                                  />
+                                  <span>Số câu thật (07 → Q7)</span>
+                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name="p2NumModeFull"
+                                    checked={part2NumberingMode === 'sequential'}
+                                    onChange={() => {
+                                      setPart2NumberingMode('sequential');
+                                      recalculateFullListening(zoneFiles, 'sequential');
+                                    }}
+                                    className="text-ori-600 focus:ring-ori-500"
+                                  />
+                                  <span>Thứ tự file (01 → Q7)</span>
+                                </label>
+                              </div>
+                            )}
+
+                            {zone.key === 'p2_audio' && status?.part2Info?.message && (
+                              <div className={`p-2 rounded-xl border text-[11px] font-bold ${status.part2Info.detectedMode === 'ambiguous' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}>
+                                {status.part2Info.message}
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 text-xs">
+                              <span className="text-slate-500 font-mono">Đã chọn {currentFiles.length} file</span>
+                              <div className="flex gap-2">
+                                <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer">
+                                  Chọn file / ZIP
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,application/zip"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      if (e.target.files?.length) handleAddFilesToZone(zone.key, e.target.files);
+                                    }}
+                                  />
+                                </label>
+                                {currentFiles.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearZone(zone.key)}
+                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                                    title="Xóa phần này"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}
