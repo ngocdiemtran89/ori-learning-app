@@ -96,7 +96,7 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
   isPublished,
   targetPart,
   existingQuestions = [],
-  existingGroups: _existingGroups = [],
+  existingGroups = [],
   onUpdated,
 }) => {
   const normPart = targetPart || 'part3';
@@ -206,10 +206,20 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
     setSaving(true);
     setServerError(null);
 
+    const mappedGroups = (parseResult.groups || []).map(g => {
+      const existingG = (existingGroups || []).find(
+        exG => exG && exG.part === normPart && exG.start_question === g.start_question && exG.end_question === g.end_question
+      );
+      if (existingG && existingG.id) {
+        return { ...g, id: existingG.id };
+      }
+      return g;
+    });
+
     const payload = {
       import_answers: importAnswers,
       questions: parseResult.questions,
-      groups: parseResult.groups,
+      groups: mappedGroups,
     };
 
     const res = await importToeicPartContent(testId, normPart, payload);
