@@ -25,6 +25,7 @@ import {
   PartParseResult,
 } from '../../lib/cms/partContentBulkParser';
 import { CanonicalToeicPart, TOEIC_FULL_TEST_STRUCTURE } from '../../lib/toeic/testStructure';
+import { isDebugPart6Enabled, generatePart6DebugSnapshot } from '../../lib/cms/part6DiagnosticUtils';
 
 export class PartContentErrorBoundary extends React.Component<
   { children: React.ReactNode; onClose: () => void },
@@ -160,6 +161,30 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
       viTranscriptInput
     );
   }, [enQuestionInput, viQuestionInput, enTranscriptInput, viTranscriptInput, combinedInput, mainTab, normPart]);
+
+  const showPart6Debug = useMemo(() => normPart === 'part6' && isDebugPart6Enabled(), [normPart]);
+  const [copySuccess, setCopySuccess] = useState<boolean>(false);
+
+  const debugSnapshot = useMemo(() => {
+    if (!showPart6Debug) return null;
+    return generatePart6DebugSnapshot(
+      enQuestionInput,
+      viQuestionInput,
+      enTranscriptInput,
+      viTranscriptInput,
+      combinedInput,
+      mainTab,
+      normPart,
+      parseResult
+    );
+  }, [showPart6Debug, enQuestionInput, viQuestionInput, enTranscriptInput, viTranscriptInput, combinedInput, mainTab, normPart, parseResult]);
+
+  const handleCopyDebugSnapshot = () => {
+    if (!debugSnapshot) return;
+    navigator.clipboard.writeText(JSON.stringify(debugSnapshot, null, 2));
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
 
   // Map existing questions by question_number
   const existingQMap = useMemo(() => {
@@ -361,6 +386,97 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
           {hasExistingAnswers && !importAnswers && (
             <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs font-medium rounded-xl">
               ℹ️ Đề hiện đã có Answer Key. Mặc định hệ thống giữ nguyên đáp án đúng để tránh ghi đè nhầm. Tích chọn "Cập nhật Answer Key" nếu muốn cập nhật từ file này.
+            </div>
+          )}
+
+          {/* READ-ONLY PART 6 DIAGNOSTIC PANEL */}
+          {showPart6Debug && debugSnapshot && (
+            <div className="p-4 bg-amber-50/90 border-2 border-amber-400 rounded-2xl space-y-3 text-xs font-mono text-slate-800 shadow-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-amber-300">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 bg-amber-600 text-white font-black rounded-lg text-xs tracking-wider">
+                    PART6 DEBUG BUILD: P6-RUNTIME-01
+                  </span>
+                  <span className="font-extrabold text-amber-900">
+                    [Read-Only Runtime Diagnostic Panel]
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyDebugSnapshot}
+                  className="px-3 py-1.5 bg-amber-800 hover:bg-amber-900 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                >
+                  {copySuccess ? '✓ COPIED SNAPSHOT JSON!' : '📋 COPY PART6 DEBUG SNAPSHOT'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* PARSE SUMMARY TABLE */}
+                <div className="space-y-2">
+                  <span className="font-black text-slate-900 block text-[11px] uppercase">
+                    INDEPENDENT PANEL PARSE COUNTS:
+                  </span>
+                  <table className="w-full text-left border-collapse bg-white rounded-xl overflow-hidden border border-amber-300">
+                    <thead>
+                      <tr className="bg-amber-100 text-amber-900 text-[10px] uppercase font-black">
+                        <th className="p-1.5 border-b border-amber-200">SOURCE PANEL</th>
+                        <th className="p-1.5 border-b border-amber-200 text-center">GROUPS</th>
+                        <th className="p-1.5 border-b border-amber-200 text-center">QUESTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[11px]">
+                      <tr className="border-b border-amber-100">
+                        <td className="p-1.5 font-bold">EN Question (Tab 1)</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.enQuestion.groupsCount}</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.enQuestion.questionsCount}</td>
+                      </tr>
+                      <tr className="border-b border-amber-100">
+                        <td className="p-1.5 font-bold">VI Question (Tab 1)</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.viQuestion.groupsCount}</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.viQuestion.questionsCount}</td>
+                      </tr>
+                      <tr className="border-b border-amber-100">
+                        <td className="p-1.5 font-bold">EN Passage (Tab 2)</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.enTranscript.groupsCount}</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.enTranscript.questionsCount}</td>
+                      </tr>
+                      <tr className="border-b border-amber-100">
+                        <td className="p-1.5 font-bold">VI Passage (Tab 2)</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.viTranscript.groupsCount}</td>
+                        <td className="p-1.5 text-center font-bold">{debugSnapshot.independentParses.viTranscript.questionsCount}</td>
+                      </tr>
+                      <tr className="bg-amber-100/80 font-black text-amber-950">
+                        <td className="p-1.5">MERGED RESULT</td>
+                        <td className="p-1.5 text-center">{debugSnapshot.mergedResult.groupsCount}</td>
+                        <td className="p-1.5 text-center">{debugSnapshot.mergedResult.questionsCount}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* DETECTED QUESTION NUMBERS & LINE MATCH DIAGNOSTICS */}
+                <div className="space-y-2">
+                  <span className="font-black text-slate-900 block text-[11px] uppercase">
+                    DETECTED QUESTION NUMBERS & CANDIDATES:
+                  </span>
+                  <div className="p-2.5 bg-white rounded-xl border border-amber-300 space-y-1.5 max-h-40 overflow-y-auto">
+                    <div>
+                      <span className="font-bold text-slate-500">Merged Q Numbers: </span>
+                      <span className="font-black text-amber-900">
+                        [{debugSnapshot.mergedResult.questionNumbers.join(', ') || 'NONE'}]
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-500">Candidate Lines Analyzed: </span>
+                      <span className="font-bold text-slate-800">{debugSnapshot.candidateLineDiagnostics.length} lines</span>
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-500">Number Context Snippets: </span>
+                      <span className="font-bold text-slate-800">{debugSnapshot.numberContexts.length} occurrences</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
