@@ -3,7 +3,13 @@ import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle, Clipboard 
 import { supabase } from '../../lib/supabase/client';
 import { parseFourOptions } from '../../lib/cms/fourOptionsParser';
 import { parsePart6GroupBlock } from '../../lib/cms/part6GroupBlockParser';
-import { buildGroupPatchPayload, normalizeToeicOptions, GroupSnapshot, QuestionSnapshot } from '../../lib/cms/part6WorkbenchPatchBuilder';
+import {
+  buildGroupPatchPayload,
+  normalizeToeicOptions,
+  resolvePart6GroupForRange,
+  GroupSnapshot,
+  QuestionSnapshot,
+} from '../../lib/cms/part6WorkbenchPatchBuilder';
 
 export interface Part6ManualGroupEditorModalProps {
   isOpen: boolean;
@@ -57,26 +63,13 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
   const activeRange = PART6_RANGES[selectedRangeIndex];
 
-  // Find target group for active range
-  const targetGroup = useMemo(() => {
-    if (!existingGroups || existingGroups.length === 0) return null;
-    return existingGroups.find(g => {
-      if (g.part !== 'part6') return false;
-      if (typeof g.start_question === 'number') {
-        return g.start_question === activeRange.start;
-      }
-      if (g.range === `${activeRange.start}-${activeRange.end}`) return true;
-      return false;
-    }) || existingGroups.find(g => g.part === 'part6') || null;
-  }, [existingGroups, activeRange]);
+  // Resolve target group and questions deterministically for active range
+  const resolved = useMemo(() => {
+    return resolvePart6GroupForRange(existingGroups || [], existingQuestions || [], activeRange);
+  }, [existingGroups, existingQuestions, activeRange]);
 
-  // Find target questions for active range
-  const targetQuestions = useMemo(() => {
-    if (!existingQuestions || existingQuestions.length === 0) return [];
-    return existingQuestions
-      .filter(q => q.part === 'part6' && q.question_number >= activeRange.start && q.question_number <= activeRange.end)
-      .sort((a, b) => a.question_number - b.question_number);
-  }, [existingQuestions, activeRange]);
+  const targetGroup = resolved.group;
+  const targetQuestions = resolved.questions;
 
   // Initialize form state when targetGroup or range changes
   useEffect(() => {
@@ -280,6 +273,22 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
     if (questionsState.some(q => !q.id)) {
       setErrorMsg(`Không tìm thấy đủ 4 câu hỏi (${activeRange.label}) trong hệ thống.`);
+      return;
+    }
+
+    // Strict pre-save validation: verify question numbers and group match active range
+    const expectedQNums = [activeRange.start, activeRange.start + 1, activeRange.start + 2, activeRange.end];
+    const currentQNums = questionsState.map(q => q.question_number).sort((a, b) => a - b);
+    const qNumsMatch = expectedQNums.length === currentQNums.length &&
+      expectedQNums.every((num, idx) => num === currentQNums[idx]);
+
+    if (!qNumsMatch) {
+      setErrorMsg('Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.');
+      return;
+    }
+
+    if (targetQuestions.some(q => q.group_id && q.group_id !== targetGroup.id)) {
+      setErrorMsg('Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.');
       return;
     }
 

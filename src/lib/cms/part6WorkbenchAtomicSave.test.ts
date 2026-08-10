@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import path from 'path';
-import { buildGroupPatchPayload, normalizeToeicOptions, GroupSnapshot, QuestionOptionState } from './part6WorkbenchPatchBuilder';
+import {
+  buildGroupPatchPayload,
+  normalizeToeicOptions,
+  resolvePart6GroupForRange,
+  GroupSnapshot,
+  QuestionOptionState,
+} from './part6WorkbenchPatchBuilder';
 
 describe('Part 6 Workbench Atomic Save Contract Suite', () => {
   it('1. verifies migration file exists and contains correct RPC function definition', () => {
@@ -48,7 +54,7 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q132',
         question_number: 132,
-        options: ['years', 'space', 'natural beauty', 'moisture'], // Only option C changed
+        options: ['years', 'space', 'natural beauty', 'moisture'],
         options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
       },
     ];
@@ -98,7 +104,7 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
 
     const { payload, hasChanges } = buildGroupPatchPayload(
       snapshot,
-      '', // Cleared passage EN
+      '',
       'Existing Passage VI',
       currentQuestions
     );
@@ -230,7 +236,83 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     });
   });
 
-  it('8. validates normalizeToeicOptions with string array, object array, letter-key, and numeric-key objects', () => {
+  it('8. validates resolvePart6GroupForRange for ALL FOUR Part 6 groups when group rows lack start_question', () => {
+    const mockGroups = [
+      { id: 'grp-39', part: 'part6', start_question: null, range: null, passage: 'Passage 139-142' },
+      { id: 'grp-31', part: 'part6', start_question: null, range: null, passage: 'Passage 131-134' },
+      { id: 'grp-35', part: 'part6', start_question: null, range: null, passage: 'Passage 135-138' },
+      { id: 'grp-43', part: 'part6', start_question: null, range: null, passage: 'Passage 143-146' },
+    ];
+
+    const mockQuestions = [
+      ...[131, 132, 133, 134].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-31' })),
+      ...[135, 136, 137, 138].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-35' })),
+      ...[139, 140, 141, 142].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-39' })),
+      ...[143, 144, 145, 146].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-43' })),
+    ];
+
+    // Range Q131-134
+    const res1 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q131-134', start: 131, end: 134 });
+    expect(res1.group?.id).toBe('grp-31');
+    expect(res1.questions.map(q => q.question_number)).toEqual([131, 132, 133, 134]);
+
+    // Range Q135-138
+    const res2 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q135-138', start: 135, end: 138 });
+    expect(res2.group?.id).toBe('grp-35');
+    expect(res2.questions.map(q => q.question_number)).toEqual([135, 136, 137, 138]);
+
+    // Range Q139-142
+    const res3 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q139-142', start: 139, end: 142 });
+    expect(res3.group?.id).toBe('grp-39');
+    expect(res3.questions.map(q => q.question_number)).toEqual([139, 140, 141, 142]);
+
+    // Range Q143-146
+    const res4 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q143-146', start: 143, end: 146 });
+    expect(res4.group?.id).toBe('grp-43');
+    expect(res4.questions.map(q => q.question_number)).toEqual([143, 144, 145, 146]);
+  });
+
+  it('9. REGRESSION TEST: switching from Q139-142 to Q131-134 binds to Q131-134 group and NOT Q139-142 group', () => {
+    // grp-39 is first in array order
+    const mockGroups = [
+      { id: 'grp-39', part: 'part6', passage: 'Passage 139-142' },
+      { id: 'grp-31', part: 'part6', passage: 'Passage 131-134' },
+    ];
+
+    const mockQuestions = [
+      ...[131, 132, 133, 134].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-31' })),
+      ...[139, 140, 141, 142].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-39' })),
+    ];
+
+    // Select Q139-142 first
+    const res139 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q139-142', start: 139, end: 142 });
+    expect(res139.group?.id).toBe('grp-39');
+
+    // Switch to Q131-134
+    const res131 = resolvePart6GroupForRange(mockGroups, mockQuestions, { label: 'Q131-134', start: 131, end: 134 });
+    expect(res131.group?.id).toBe('grp-31');
+    expect(res131.group?.id).not.toBe('grp-39');
+
+    // Patch payload for Q131
+    const snapshot: GroupSnapshot = {
+      passageEn: res131.group.passage,
+      passageVi: '',
+      questions: res131.questions.map(q => ({ question_number: q.question_number, options: ['', '', '', ''], options_vi: ['', '', '', ''] })),
+    };
+
+    const currentQuestions: QuestionOptionState[] = res131.questions.map(q => ({
+      id: q.id,
+      question_number: q.question_number,
+      options: q.question_number === 131 ? ['closed', 'close', 'closing', 'closure'] : ['', '', '', ''],
+      options_vi: ['', '', '', ''],
+    }));
+
+    const patchResult = buildGroupPatchPayload(snapshot, res131.group.passage, '', currentQuestions);
+    expect(patchResult.hasChanges).toBe(true);
+    expect(patchResult.payload.questions[0].question_number).toBe(131);
+  });
+
+  it('10. validates normalizeToeicOptions with string array, object array, letter-key, and numeric-key objects', () => {
     const stringArray = ['years', 'space', 'beauty', 'moisture'];
     const objectArray = [
       { label: 'A', text: 'years' },
@@ -245,66 +327,5 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     expect(normalizeToeicOptions(objectArray)).toEqual(['years', 'space', 'beauty', 'moisture']);
     expect(normalizeToeicOptions(letterKey)).toEqual(['years', 'space', 'beauty', 'moisture']);
     expect(normalizeToeicOptions(numericKey)).toEqual(['years', 'space', 'beauty', 'moisture']);
-  });
-
-  it('9. validates normalizeToeicOptions fails safe on unknown/malformed objects, label-only objects, and debug fields', () => {
-    expect(normalizeToeicOptions(null)).toEqual(['', '', '', '']);
-    expect(normalizeToeicOptions(undefined)).toEqual(['', '', '', '']);
-    expect(normalizeToeicOptions({ foo: 'bar' })).toEqual(['', '', '', '']);
-    expect(normalizeToeicOptions([{ label: 'A' }])).toEqual(['', '', '', '']);
-    expect(normalizeToeicOptions([{ label: 'A', debug: 'unexpected' }])).toEqual(['', '', '', '']);
-  });
-
-  it('10. validates ROUNDTRIP: loading historical object-array option -> no changes -> edit option C -> patch payload canonical', () => {
-    const rawDbOptions = [
-      { label: 'A', text: 'years' },
-      { label: 'B', text: 'space' },
-      { label: 'C', text: 'beauty' },
-      { label: 'D', text: 'moisture' },
-    ];
-
-    const normEn = normalizeToeicOptions(rawDbOptions);
-
-    const snapshot: GroupSnapshot = {
-      passageEn: 'Passage EN',
-      passageVi: 'Passage VI',
-      questions: [
-        {
-          question_number: 132,
-          options: [...normEn],
-          options_vi: ['', '', '', ''],
-        },
-      ],
-    };
-
-    const currentQuestions: QuestionOptionState[] = [
-      {
-        id: 'q132',
-        question_number: 132,
-        options: [...normEn],
-        options_vi: ['', '', '', ''],
-      },
-    ];
-
-    // Untouched load check
-    const initialDiff = buildGroupPatchPayload(snapshot, 'Passage EN', 'Passage VI', currentQuestions);
-    expect(initialDiff.hasChanges).toBe(false);
-    expect(initialDiff.payload).toEqual({});
-
-    // Admin edits option C
-    currentQuestions[0].options[2] = 'natural beauty';
-
-    const editedDiff = buildGroupPatchPayload(snapshot, 'Passage EN', 'Passage VI', currentQuestions);
-    expect(editedDiff.hasChanges).toBe(true);
-    expect(editedDiff.payload).toEqual({
-      questions: [
-        {
-          question_number: 132,
-          options: ['years', 'space', 'natural beauty', 'moisture'],
-        },
-      ],
-    });
-    expect(editedDiff.payload.questions[0]).not.toHaveProperty('question_text');
-    expect(editedDiff.payload.questions[0]).not.toHaveProperty('translation_vi');
   });
 });

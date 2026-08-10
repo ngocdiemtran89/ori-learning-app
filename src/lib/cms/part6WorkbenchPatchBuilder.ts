@@ -26,6 +26,82 @@ export interface QuestionOptionState {
   options_vi: [string, string, string, string];
 }
 
+export interface Part6Range {
+  label: string;
+  start: number;
+  end: number;
+}
+
+export interface Part6GroupResolverResult {
+  group: any | null;
+  questions: any[];
+  error?: string;
+}
+
+/**
+ * Single Deterministic Resolver for Part 6 Groups & Questions
+ * Derives target group primarily from question membership for the exact canonical 4-question range.
+ * Eliminates arbitrary group fallback bug.
+ */
+export function resolvePart6GroupForRange(
+  existingGroups: any[],
+  existingQuestions: any[],
+  activeRange: Part6Range
+): Part6GroupResolverResult {
+  if (!existingGroups || existingGroups.length === 0) {
+    return { group: null, questions: [], error: 'Không tìm thấy dữ liệu nhóm Part 6.' };
+  }
+
+  // 1. Filter questions belonging to this canonical 4-question range
+  const rangeQuestions = (existingQuestions || [])
+    .filter(q => {
+      const isP6 = q.part === 'part6' || (typeof q.part === 'string' && q.part.toLowerCase() === 'part6');
+      return isP6 && q.question_number >= activeRange.start && q.question_number <= activeRange.end && q.is_active !== false;
+    })
+    .sort((a, b) => a.question_number - b.question_number);
+
+  // 2. Derive group_id from questions
+  let derivedGroupId: string | null = null;
+  if (rangeQuestions.length > 0) {
+    const groupIds = Array.from(new Set(rangeQuestions.map(q => q.group_id).filter(Boolean)));
+    if (groupIds.length === 1) {
+      derivedGroupId = groupIds[0] as string;
+    }
+  }
+
+  // 3. Find target group by derivedGroupId first
+  let targetGroup: any = null;
+  if (derivedGroupId) {
+    targetGroup = existingGroups.find(g => g.id === derivedGroupId) || null;
+  }
+
+  // 4. Fallback: match start_question or range field
+  if (!targetGroup) {
+    targetGroup = existingGroups.find(g => {
+      if (g.part !== 'part6' && typeof g.part === 'string' && g.part.toLowerCase() !== 'part6') return false;
+      if (typeof g.start_question === 'number' && g.start_question === activeRange.start) return true;
+      if (typeof g.range === 'string' && (g.range === `${activeRange.start}-${activeRange.end}` || g.range.includes(String(activeRange.start)))) return true;
+      return false;
+    }) || null;
+  }
+
+  // Verify targetGroup matches questions if targetGroup is found
+  if (targetGroup && rangeQuestions.length > 0) {
+    const mismatch = rangeQuestions.some(q => q.group_id && q.group_id !== targetGroup.id);
+    if (mismatch) {
+      const matchingGroup = existingGroups.find(g => g.id === rangeQuestions[0].group_id);
+      if (matchingGroup) {
+        targetGroup = matchingGroup;
+      }
+    }
+  }
+
+  return {
+    group: targetGroup,
+    questions: rangeQuestions,
+  };
+}
+
 /**
  * Strict Canonical Option Normalizer for TOEIC Questions
  * Safely converts any DB/historical options shape into [string, string, string, string].
@@ -56,7 +132,6 @@ export function normalizeToeicOptions(rawInput: any): [string, string, string, s
     if (typeof item === 'string') return item;
     if (typeof item === 'number' || typeof item === 'boolean') return String(item);
     if (typeof item === 'object') {
-      // Proven historical shape: item.text (string)
       if (typeof item.text === 'string') {
         return item.text;
       }
