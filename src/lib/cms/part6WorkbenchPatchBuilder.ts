@@ -27,47 +27,52 @@ export interface QuestionOptionState {
 }
 
 /**
- * Canonical Option Normalizer for TOEIC Questions
+ * Strict Canonical Option Normalizer for TOEIC Questions
  * Safely converts any DB/historical options shape into [string, string, string, string].
- * Supports:
- * - Plain string array: ["years", "space", "beauty", "moisture"]
- * - Object array: [{"label":"A","text":"years"}, ...] or [{"text":"years"}, ...] or [{"value":"years"}, ...]
- * - Letter-key object: {"A":"years", "B":"space", "C":"beauty", "D":"moisture"}
- * - Numeric-key object: {"0":"years", "1":"space", "2":"beauty", "3":"moisture"}
- * - Null / undefined / malformed -> ["", "", "", ""]
  *
- * NEVER calls String(object) directly on a raw object.
+ * Supported Shapes (based strictly on repository evidence):
+ * A. Plain string array: ["years", "space", "beauty", "moisture"]
+ * B. Object array with text: [{"label":"A", "text":"years"}, {"label":"B", "text":"space"}, ...] or [{"text":"years"}, ...]
+ *    - If label ("A", "B", "C", "D") exists, maps deterministically to slot 0, 1, 2, 3.
+ *    - If label is missing, maps by array position.
+ * C. Letter-key object: {"A":"years", "B":"space", "C":"beauty", "D":"moisture"}
+ * D. Numeric-key object: {"0":"years", "1":"space", "2":"beauty", "3":"moisture"}
+ * E. Null / Undefined / Malformed / Unknown Object -> ["", "", "", ""]
+ *
+ * STRICT CONSTRAINTS:
+ * - NO speculative property guessing (val.value, val.content, val.option, etc. REMOVED).
+ * - NO arbitrary string-property fallback looping.
+ * - NO label-only text conversion ({"label":"A"} -> "" NOT "A").
+ * - NO raw object stringification (never returns "[object Object]").
  */
 export function normalizeToeicOptions(rawInput: any): [string, string, string, string] {
   const result: [string, string, string, string] = ['', '', '', ''];
   if (!rawInput) return result;
 
-  const extractString = (val: any): string => {
-    if (val === null || val === undefined) return '';
-    if (typeof val === 'string') return val;
-    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-    if (typeof val === 'object') {
-      if (typeof val.text === 'string') return val.text;
-      if (typeof val.value === 'string') return val.value;
-      if (typeof val.content === 'string') return val.content;
-      if (typeof val.option === 'string') return val.option;
-      if (typeof val.label === 'string' && val.text) return String(val.text);
-      
-      const keys = Object.keys(val);
-      for (const k of keys) {
-        if (k !== 'label' && typeof val[k] === 'string') {
-          return val[k];
-        }
+  const letterMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, a: 0, b: 1, c: 2, d: 3 };
+
+  const extractTextFromItem = (item: any): string => {
+    if (item === null || item === undefined) return '';
+    if (typeof item === 'string') return item;
+    if (typeof item === 'number' || typeof item === 'boolean') return String(item);
+    if (typeof item === 'object') {
+      // Proven historical shape: item.text (string)
+      if (typeof item.text === 'string') {
+        return item.text;
       }
     }
     return '';
   };
 
-  // Shape 1: Array (string array or object array)
+  // Shape 1: Array
   if (Array.isArray(rawInput)) {
-    for (let i = 0; i < 4; i++) {
-      if (i < rawInput.length) {
-        result[i] = extractString(rawInput[i]);
+    for (let i = 0; i < rawInput.length; i++) {
+      const item = rawInput[i];
+      if (item && typeof item === 'object' && typeof item.label === 'string' && item.label.trim() in letterMap) {
+        const slot = letterMap[item.label.trim()];
+        result[slot] = extractTextFromItem(item);
+      } else if (i < 4) {
+        result[i] = extractTextFromItem(item);
       }
     }
     return result;
@@ -75,13 +80,12 @@ export function normalizeToeicOptions(rawInput: any): [string, string, string, s
 
   // Shape 2: Object
   if (typeof rawInput === 'object') {
-    const letterMap: Record<string, number> = { A: 0, B: 1, C: 2, D: 3, a: 0, b: 1, c: 2, d: 3 };
     let foundLetterKey = false;
     for (const [key, val] of Object.entries(rawInput)) {
       const cleanKey = key.trim();
       if (cleanKey in letterMap) {
         foundLetterKey = true;
-        result[letterMap[cleanKey]] = extractString(val);
+        result[letterMap[cleanKey]] = extractTextFromItem(val);
       }
     }
     if (foundLetterKey) return result;
@@ -89,7 +93,7 @@ export function normalizeToeicOptions(rawInput: any): [string, string, string, s
     for (let i = 0; i < 4; i++) {
       const strIdx = String(i);
       if (strIdx in rawInput) {
-        result[i] = extractString(rawInput[strIdx]);
+        result[i] = extractTextFromItem(rawInput[strIdx]);
       }
     }
     return result;
