@@ -105,6 +105,7 @@ export function parseSingleLanguagePartText(
 
   let currentGroup: SingleLanguageGroup | null = null;
   let rawGroupLines: string[] = [];
+  let inQuestionSectionForGroup = false;
 
   let currentDocs: Array<{ title?: string; content: string }> = [];
   let currentDocContent: string[] = [];
@@ -113,13 +114,17 @@ export function parseSingleLanguagePartText(
   let rawQuestionTextLines: string[] = [];
   let rawExplanationLines: string[] = [];
   let rawOptionsMap: Map<string, string> = new Map();
+  let currentOptionLabel: string | null = null;
   let inExplanation = false;
 
   const finalizeQuestion = () => {
     if (!currentQuestion) return;
 
     if (rawQuestionTextLines.length > 0) {
-      currentQuestion.text = rawQuestionTextLines.join('\n').trim();
+      const textVal = rawQuestionTextLines.join('\n').trim();
+      if (textVal) {
+        currentQuestion.text = textVal;
+      }
     }
     if (rawExplanationLines.length > 0) {
       currentQuestion.explanation = rawExplanationLines.join('\n').trim();
@@ -150,6 +155,7 @@ export function parseSingleLanguagePartText(
     rawQuestionTextLines = [];
     rawExplanationLines = [];
     rawOptionsMap = new Map();
+    currentOptionLabel = null;
     inExplanation = false;
   };
 
@@ -178,6 +184,7 @@ export function parseSingleLanguagePartText(
     rawGroupLines = [];
     currentDocs = [];
     currentDocContent = [];
+    inQuestionSectionForGroup = false;
   };
 
   const ensureAutoGroup = (qNum: number) => {
@@ -234,9 +241,9 @@ export function parseSingleLanguagePartText(
 
     if (/^(?:PART\s*[1-7]|PHẦN\s*[1-7])$/i.test(cleanHeader)) continue;
 
-    // Check Question Range Header (e.g. ## CÂU 32–34, CÂU 32-34)
-    const normalizedHeader = cleanHeader.replace(/[\u2013\u2014–—~]/g, '-');
-    const rangeMatch = normalizedHeader.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)\s*-\s*(\d+)/i);
+    // 1. Check Question Range Header (e.g. QUESTIONS 131-134, QUESTIONS 131 TO 134, CÂU 32–34)
+    const normalizedHeader = cleanHeader.replace(/[\u2013\u2014–—~]/g, '-').replace(/\bTO\b/gi, '-');
+    const rangeMatch = normalizedHeader.match(/^(?:CÂU|CAU|Q|QUESTIONS?)\s*#?\s*(\d+)\s*-\s*(\d+)/i);
     if (rangeMatch) {
       finalizeQuestion();
       finalizeGroup();
@@ -253,7 +260,7 @@ export function parseSingleLanguagePartText(
       continue;
     }
 
-    // Check Part 7 Document Header (e.g. DOCUMENT 1)
+    // 2. Check Part 7 Document Header (e.g. DOCUMENT 1)
     if (currentGroup) {
       const docMatch = cleanHeader.match(/^(?:DOCUMENT|PASSAGE|BÀI\s*ĐỌC|BẢN\s*VĂN)\s*#?\s*(\d*)\s*[-–—:]?\s*(.*)$/i);
       if (docMatch && normTargetPart === 'part7') {
@@ -268,45 +275,79 @@ export function parseSingleLanguagePartText(
       }
     }
 
-    // Check Single Question Header (e.g. CÂU 32, QUESTION 32, Q32)
-    const qMatch = normalizedHeader.match(/^(?:QUESTION|CÂU|CAU)\s*#?\s*(\d+)\b\s*[:\.]?\s*(.*)$/i) ||
-                   normalizedHeader.match(/^Q\s*#?\s*(\d+)\b\s*[:\.]?\s*$/i);
-    if (qMatch) {
-      finalizeQuestion();
-      const num = parseInt(qMatch[1], 10);
-      const initialText = qMatch[2]?.trim() || '';
+    // 3. Check Single Question Header (e.g. CÂU 32, QUESTION 32, Q32, 131., 131)
+    let qNumMatch: number | null = null;
+    let initialQText = '';
 
-      ensureAutoGroup(num);
+    const explicitQMatch = normalizedHeader.match(/^(?:QUESTIONS?|CÂU|CAU)\s*#?\s*(\d+)\b\s*[:\.]?\s*$/i) ||
+                           normalizedHeader.match(/^Q\s*#?\s*(\d+)\b\s*[:\.]?\s*$/i) ||
+                           normalizedHeader.match(/^(?:QUESTIONS?|CÂU|CAU)\s*#?\s*(\d+)\b\s*[:\.]?\s+(.*)$/i);
+
+    if (explicitQMatch) {
+      qNumMatch = parseInt(explicitQMatch[1], 10);
+      initialQText = explicitQMatch[2]?.trim() || '';
+    } else {
+      // Standalone bare question number (e.g. "131." or "131" or "131)")
+      const bareQMatch = trimmed.match(/^\s*(\d{1,3})\s*[\.\)]?\s*$/);
+      if (bareQMatch) {
+        const n = parseInt(bareQMatch[1], 10);
+        if (n >= partRange.startNumber && n <= partRange.endNumber) {
+          qNumMatch = n;
+        }
+      }
+    }
+
+    if (qNumMatch !== null) {
+      if (currentQuestion && currentQuestion.question_number === qNumMatch) {
+        if (initialQText) {
+          rawQuestionTextLines.push(initialQText);
+        }
+        continue;
+      }
+
+      finalizeQuestion();
+      inQuestionSectionForGroup = true;
+
+      ensureAutoGroup(qNumMatch);
 
       currentQuestion = {
-        question_number: num,
+        question_number: qNumMatch,
         part: normTargetPart,
       };
-      if (initialText) {
-        rawQuestionTextLines.push(initialText);
+      if (initialQText) {
+        rawQuestionTextLines.push(initialQText);
       }
       continue;
     }
 
-    // Check Explanation Header
+    // 4. Check Explanation Header
     if (currentQuestion) {
       const isExplanationHeader = /^(?:EXPLANATION|GIẢI\s*THÍCH|LỜI\s*GIẢI)$/i.test(cleanHeader);
       if (isExplanationHeader) {
         inExplanation = true;
+        currentOptionLabel = null;
         continue;
       }
 
-      // Check Option line (e.g. (A) Candy,  (B) Cheese, A. Bread, A) Pasta, A: Candy)
-      const optMatch = trimmed.match(/^\s*(?:[\(\[]?([A-D])[\)\]\.\:\s]+)(.*)$/i);
+      // 5. Check Option line (e.g. (A) Candy, (B) Cheese, A. Bread, A) Pasta, A: Candy)
+      const optMatch = trimmed.match(/^\s*(?:[\(\[]?([A-D])[\)\]\.\:]\s*|\b([A-D])\.\s+)(.*)$/i);
       if (optMatch) {
-        const label = optMatch[1].toUpperCase();
-        const optText = optMatch[2].replace(/^[\*\_\s]+/, '').replace(/[\*\_\s]+$/, '').trim();
+        const label = (optMatch[1] || optMatch[2]).toUpperCase();
+        const optText = optMatch[3].replace(/^[\*\_\s]+/, '').replace(/[\*\_\s]+$/, '').trim();
         rawOptionsMap.set(label, optText);
+        currentOptionLabel = label;
+        continue;
+      }
+
+      // 6. Multiline Option Continuation vs Question Text
+      if (currentOptionLabel && rawOptionsMap.has(currentOptionLabel) && !inExplanation) {
+        const existingOpt = rawOptionsMap.get(currentOptionLabel)!;
+        rawOptionsMap.set(currentOptionLabel, `${existingOpt} ${trimmed.trim()}`);
         continue;
       }
     }
 
-    // Accumulate content
+    // 7. Accumulate Passage/Transcript or Question Content
     if (currentQuestion) {
       const cleanLine = trimmed.replace(/^\*\*([A-Za-z0-9\s\u00C0-\u1EF9]+:)\*\*\s*/gi, '$1 ');
       if (inExplanation) {
@@ -314,7 +355,7 @@ export function parseSingleLanguagePartText(
       } else {
         rawQuestionTextLines.push(cleanLine);
       }
-    } else if (currentGroup) {
+    } else if (currentGroup && !inQuestionSectionForGroup) {
       const cleanLine = trimmed.replace(/^\*\*([A-Za-z0-9\s\u00C0-\u1EF9]+:)\*\*\s*/gi, '$1 ');
       if (normTargetPart === 'part7') {
         currentDocContent.push(cleanLine);
@@ -412,29 +453,18 @@ export function parseSeparateBilingualPartContent(
   });
 
   // Calculate Metrics
-  let hasQuestionEnCount = 0;
-  let hasQuestionViCount = 0;
-  let hasOptionsEnCount = 0;
-  let hasOptionsViCount = 0;
-  let hasAnswersCount = 0;
-  let invalidOptionCount = 0;
-
-  questions.forEach(q => {
-    if (q.question_text) hasQuestionEnCount++;
-    if (q.translation_vi) hasQuestionViCount++;
-    if (q.options && q.options.length > 0) hasOptionsEnCount++;
-    if (q.options_vi && q.options_vi.some(v => v)) hasOptionsViCount++;
-    if (q.correct_answer) hasAnswersCount++;
-    const optCount = q.options?.length || 0;
-    if (optCount < 3 || optCount > 4) invalidOptionCount++;
-  });
-
-  let hasTranscriptEnCount = 0;
-  let hasTranscriptViCount = 0;
-  groups.forEach(g => {
-    if (g.transcript || g.passage || (g.documents && g.documents.length > 0)) hasTranscriptEnCount++;
-    if (g.transcript_vi || g.passage_vi || (g.documents_vi && g.documents_vi.length > 0)) hasTranscriptViCount++;
-  });
+  const metrics = {
+    groupCount: groups.length,
+    questionCount: questions.length,
+    hasQuestionEnCount: questions.filter(q => q.question_text).length,
+    hasQuestionViCount: questions.filter(q => q.translation_vi).length,
+    hasOptionsEnCount: questions.filter(q => q.options && q.options.length === 4).length,
+    hasOptionsViCount: questions.filter(q => q.options_vi && q.options_vi.length === 4).length,
+    hasTranscriptEnCount: groups.filter(g => g.transcript || g.passage).length,
+    hasTranscriptViCount: groups.filter(g => g.transcript_vi || g.passage_vi).length,
+    hasAnswersCount: questions.filter(q => q.correct_answer).length,
+    invalidOptionCount: questions.filter(q => q.options && q.options.length !== 4).length,
+  };
 
   return {
     detectedFormat: 'txt',
@@ -443,153 +473,26 @@ export function parseSeparateBilingualPartContent(
     questions,
     outOfPartErrors,
     validationErrors,
-    metrics: {
-      groupCount: groups.length,
-      questionCount: questions.length,
-      hasQuestionEnCount,
-      hasQuestionViCount,
-      hasOptionsEnCount,
-      hasOptionsViCount,
-      hasTranscriptEnCount,
-      hasTranscriptViCount,
-      hasAnswersCount,
-      invalidOptionCount,
-    },
+    metrics,
   };
 }
 
-export function parsePartContentText(
-  input: string,
-  targetPart: CanonicalToeicPart
-): PartParseResult {
-  return parseSeparateBilingualPartContent(input, '', targetPart);
-}
-
-/**
- * JSON & Auto Parser for Bilingual Part Content
- */
 export function autoParsePartContentInput(
   input: string,
   targetPart: CanonicalToeicPart
 ): PartParseResult {
-  const trimmed = input.trim();
-  if (!trimmed) {
-    return {
-      detectedFormat: 'txt',
-      targetPart,
-      groups: [],
-      questions: [],
-      outOfPartErrors: [],
-      validationErrors: ['Vui lòng nhập hoặc dán nội dung.'],
-      metrics: {
-        groupCount: 0,
-        questionCount: 0,
-        hasQuestionEnCount: 0,
-        hasQuestionViCount: 0,
-        hasOptionsEnCount: 0,
-        hasOptionsViCount: 0,
-        hasTranscriptEnCount: 0,
-        hasTranscriptViCount: 0,
-        hasAnswersCount: 0,
-        invalidOptionCount: 0,
-      },
-    };
-  }
-
-  // Try JSON
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      const obj = JSON.parse(trimmed);
-      const parsedObj = parsePartJsonObject(obj, targetPart);
-      if (parsedObj.questions.length > 0 || parsedObj.groups.length > 0) {
-        return parsedObj;
-      }
-    } catch {
-      // Fallback to text
-    }
-  }
-
-  return parsePartContentText(trimmed, targetPart);
-}
-
-function parsePartJsonObject(obj: any, targetPart: CanonicalToeicPart): PartParseResult {
   const normTargetPart = normalizeToeicPart(targetPart);
-  const groups: ParsedPartGroup[] = [];
-  const questions: ParsedPartQuestion[] = [];
 
-  const rawQuestions = Array.isArray(obj.questions) ? obj.questions : Array.isArray(obj) ? obj : [];
-  const rawGroups = Array.isArray(obj.groups) ? obj.groups : [];
+  // Detect bilingual split headers like "TIẾNG ANH", "TIẾNG VIỆT"
+  const viHeaderRegex = /(?:^|\n)\s*(?:---|\*\*\*|___)?\s*(?:BẢN\s*DỊCH\s*TIẾNG\s*VIỆT|TIẾNG\s*VIỆT|VIETNAMESE|BẢN\s*DỊCH)\s*(?:---|\*\*\*|___)?\s*(?:\n|$)/i;
+  const match = input.match(viHeaderRegex);
 
-  rawGroups.forEach((g: any) => {
-    if (g && typeof g === 'object') {
-      const start = parseInt(g.start_question || g.startQuestion, 10);
-      const end = parseInt(g.end_question || g.endQuestion, 10);
-      if (!isNaN(start) && !isNaN(end)) {
-        groups.push({
-          start_question: start,
-          end_question: end,
-          range: `${start}-${end}`,
-          part: normTargetPart,
-          group_type: g.group_type,
-          title: g.title,
-          instruction: g.instruction,
-          instruction_vi: g.instruction_vi,
-          passage: g.passage,
-          passage_vi: g.passage_vi,
-          transcript: g.transcript,
-          transcript_vi: g.transcript_vi,
-          documents: Array.isArray(g.documents) ? g.documents : [],
-          documents_vi: Array.isArray(g.documents_vi) ? g.documents_vi : [],
-        });
-      }
-    }
-  });
+  if (match && typeof match.index === 'number') {
+    const enText = input.substring(0, match.index).replace(/(?:^|\n)\s*(?:---|\*\*\*|___)?\s*(?:TIẾNG\s*ANH|ENGLISH)\s*(?:---|\*\*\*|___)?\s*(?:\n|$)/gi, '\n').trim();
+    const viText = input.substring(match.index + match[0].length).trim();
+    return parseSeparateBilingualPartContent(enText, viText, normTargetPart);
+  }
 
-  rawQuestions.forEach((q: any) => {
-    if (q && typeof q === 'object') {
-      const num = parseInt(q.question_number || q.number, 10);
-      if (!isNaN(num)) {
-        const opts = Array.isArray(q.options)
-          ? q.options.map((o: any, idx: number) => {
-              if (typeof o === 'string') {
-                return { label: String.fromCharCode(65 + idx) as any, text: o };
-              }
-              return { label: (o.label || String.fromCharCode(65 + idx)) as any, text: o.text || '' };
-            })
-          : [];
-
-        questions.push({
-          question_number: num,
-          part: normTargetPart,
-          question_text: q.question_text,
-          translation_vi: q.translation_vi,
-          options: opts,
-          options_vi: q.options_vi,
-          correct_answer: q.correct_answer,
-          explanation: q.explanation,
-        });
-      }
-    }
-  });
-
-  return {
-    detectedFormat: 'json',
-    targetPart: normTargetPart,
-    groups,
-    questions,
-    outOfPartErrors: [],
-    validationErrors: [],
-    metrics: {
-      groupCount: groups.length,
-      questionCount: questions.length,
-      hasQuestionEnCount: questions.filter(q => q.question_text).length,
-      hasQuestionViCount: questions.filter(q => q.translation_vi).length,
-      hasOptionsEnCount: questions.filter(q => q.options && q.options.length > 0).length,
-      hasOptionsViCount: questions.filter(q => q.options_vi && q.options_vi.some(v => v)).length,
-      hasTranscriptEnCount: groups.filter(g => g.transcript || g.passage || (g.documents && g.documents.length > 0)).length,
-      hasTranscriptViCount: groups.filter(g => g.transcript_vi || g.passage_vi || (g.documents_vi && g.documents_vi.length > 0)).length,
-      hasAnswersCount: questions.filter(q => q.correct_answer).length,
-      invalidOptionCount: questions.filter(q => (q.options?.length || 0) < 3).length,
-    },
-  };
+  // Single panel parse
+  return parseSeparateBilingualPartContent(input, '', normTargetPart);
 }

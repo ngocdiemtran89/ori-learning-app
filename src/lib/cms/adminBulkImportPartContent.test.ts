@@ -1,6 +1,6 @@
 // ============================================================
 // Phase P3.5J Final Release Gate TOEIC Part Content Importer Test Suite
-// Full Restoration of 4f3e03e Suite (28 Tests) + Release Gate Patch Tests (14 Tests) = 42 Tests Total
+// Full Restoration of 4f3e03e Suite (28 Tests) + Release Gate Patch Tests (14 Tests) + Part 6 Real Format Tests (2 Tests) = 44 Tests Total
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -10,7 +10,7 @@ import {
   autoParsePartContentInput,
 } from './partContentBulkParser';
 
-describe('Admin Bulk Import Final Release Gate Suite (42 Tests)', () => {
+describe('Admin Bulk Import Final Release Gate Suite (44 Tests)', () => {
 
   const enInput21 = `CÂU 32
 What type of food product does the speakers’ company sell?
@@ -303,6 +303,134 @@ Công ty của những người nói bán loại thực phẩm nào?
     it('42. invalid import_answers type blocked cleanly', () => {
       const payload: any = { import_answers: 'yes' };
       expect(typeof payload.import_answers === 'boolean').toBe(false);
+    });
+  });
+
+  // --- Part 6 Real TOEIC Text Completion Format Suite (2 Tests) ---
+
+  describe('Part 6 Real TOEIC Text Completion Format Suite (2 Tests)', () => {
+    const p6EnInput = `QUESTIONS 131-134
+
+Look to Riessler Landscaping for your Garden Needs
+
+Riessler Landscaping has everything you need to create your dream garden. We will listen to your ideas and offer suggestions that match your gardening desires. ------- 131. The nursery here at Riessler Landscaping includes plants of many varieties and sizes that burst with eye-catching colors year-round. You are guaranteed to find something that will add ------- 132. to your garden. We are ------- 133. equipped to construct small ponds or other water features. And as our name suggests, we can take on more ambitious landscaping projects—whatever you need! With more than 40 years in the landscape-design business, ------- 134. expertise is unmatched.
+
+131.
+
+(A) Staff members have written articles for the local newspaper.
+(B) Installing lights can enhance the effect
+of a well-designed garden.
+(C) Local competitors cannot beat the prices we charge.
+(D) Riessler Landscaping’s goal is to make your vision a reality.
+
+132.
+
+(A) years
+(B) space
+(C) beauty
+(D) moisture
+
+133.
+
+(A) also
+(B) rarely
+(C) somehow
+(D) nevertheless
+
+134.
+
+(A) its
+(B) our
+(C) others
+(D) their`;
+
+    const p6ViInput = `CÂU 131-134
+
+Hãy tìm đến Riessler Landscaping cho mọi nhu cầu về khu vườn của bạn
+
+Riessler Landscaping có mọi thứ bạn cần để tạo nên khu vườn trong mơ. Chúng tôi sẽ lắng nghe ý tưởng của bạn và đưa ra những gợi ý phù hợp với mong muốn làm vườn của bạn. ------- 131. Vườn ươm tại Riessler Landscaping có nhiều loại cây với đa dạng chủng loại và kích thước, khoe sắc bắt mắt quanh năm. Bạn chắc chắn sẽ tìm được thứ gì đó giúp tăng thêm ------- 132. cho khu vườn của mình. Chúng tôi ------- 133. được trang bị đầy đủ để xây dựng các hồ nhỏ hoặc những tiểu cảnh nước khác. Và đúng như tên gọi của mình, chúng tôi còn có thể đảm nhận những dự án cảnh quan tham vọng hơn—bất cứ điều gì bạn cần! Với hơn 40 năm hoạt động trong lĩnh vực thiết kế cảnh quan, chuyên môn ------- 134. là không ai sánh kịp.
+
+131.
+
+(A) Các nhân viên đã viết bài cho tờ báo địa phương.
+(B) Việc lắp đặt đèn có thể làm tăng hiệu quả thẩm mỹ của một khu vườn được thiết kế đẹp.
+(C) Các đối thủ cạnh tranh trong khu vực không thể đưa ra mức giá tốt hơn mức giá chúng tôi cung cấp.
+(D) Mục tiêu của Riessler Landscaping là biến ý tưởng của bạn thành hiện thực.
+
+132.
+
+(A) năm
+(B) không gian
+(C) vẻ đẹp
+(D) độ ẩm
+
+133.
+
+(A) cũng
+(B) hiếm khi
+(C) bằng cách nào đó
+(D) tuy nhiên
+
+134.
+
+(A) của nó
+(B) của chúng tôi
+(C) của những người khác
+(D) của họ`;
+
+    it('43. exact Riessler Landscaping Part 6 fixture parsing', () => {
+      const res = parseSeparateBilingualPartContent(p6EnInput, p6ViInput, 'part6');
+
+      expect(res.groups.length).toBe(1);
+      const g = res.groups[0];
+      expect(g.start_question).toBe(131);
+      expect(g.end_question).toBe(134);
+
+      expect(g.passage).toContain('------- 131.');
+      expect(g.passage).toContain('------- 132.');
+      expect(g.passage).toContain('------- 133.');
+      expect(g.passage).toContain('------- 134.');
+
+      expect(g.passage_vi).toContain('------- 131.');
+      expect(g.passage_vi).toContain('------- 132.');
+      expect(g.passage_vi).toContain('------- 133.');
+      expect(g.passage_vi).toContain('------- 134.');
+
+      expect(res.questions.length).toBe(4);
+      expect(res.questions.map(q => q.question_number)).toEqual([131, 132, 133, 134]);
+
+      res.questions.forEach(q => {
+        expect(q.options?.length).toBe(4);
+        expect(q.options_vi?.length).toBe(4);
+      });
+
+      const q131 = res.questions.find(q => q.question_number === 131)!;
+      const q132 = res.questions.find(q => q.question_number === 132)!;
+      const q133 = res.questions.find(q => q.question_number === 133)!;
+      const q134 = res.questions.find(q => q.question_number === 134)!;
+
+      expect(q131.options?.find(o => o.label === 'D')?.text).toBe('Riessler Landscaping’s goal is to make your vision a reality.');
+      expect(q131.options?.find(o => o.label === 'B')?.text).toBe('Installing lights can enhance the effect of a well-designed garden.');
+      expect(q132.options?.find(o => o.label === 'C')?.text).toBe('beauty');
+      expect(q133.options?.find(o => o.label === 'A')?.text).toBe('also');
+      expect(q134.options?.find(o => o.label === 'B')?.text).toBe('our');
+    });
+
+    it('44. test all Part 6 ranges (131-134, 135-138, 139-142, 143-146)', () => {
+      const ranges = [
+        { start: 131, end: 134 },
+        { start: 135, end: 138 },
+        { start: 139, end: 142 },
+        { start: 143, end: 146 },
+      ];
+
+      ranges.forEach(({ start, end }) => {
+        const text = `QUESTIONS ${start}-${end}\nPassage content ------- ${start}.\n\n${start}.\n(A) a\n(B) b\n(C) c\n(D) d\n`;
+        const res = parseSeparateBilingualPartContent(text, '', 'part6');
+        expect(res.groups[0].start_question).toBe(start);
+        expect(res.groups[0].end_question).toBe(end);
+        expect(res.questions[0].question_number).toBe(start);
+      });
     });
   });
 
