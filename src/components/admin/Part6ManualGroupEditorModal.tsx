@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle, Clipboard } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
+import { parseFourOptions } from '../../lib/cms/fourOptionsParser';
 
 export interface Part6ManualGroupEditorModalProps {
   isOpen: boolean;
@@ -144,6 +145,56 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
       return updated;
     });
     setIsDirty(true);
+  };
+
+  const handleApplyBulkOptions = (qIndex: number, lang: 'en' | 'vi', parsed: [string, string, string, string]) => {
+    setQuestionsState(prev => {
+      const updated = [...prev];
+      const q = { ...updated[qIndex] };
+      if (lang === 'en') {
+        q.options = [...parsed];
+      } else {
+        q.options_vi = [...parsed];
+      }
+      updated[qIndex] = q;
+      return updated;
+    });
+    setIsDirty(true);
+  };
+
+  const handleBulkTextareaChange = (qIndex: number, lang: 'en' | 'vi', rawText: string) => {
+    if (!rawText.trim()) return;
+    const parsed = parseFourOptions(rawText);
+    if (!parsed) return;
+
+    const currentOpts = lang === 'en' ? questionsState[qIndex].options : questionsState[qIndex].options_vi;
+    const isNonEmpty = currentOpts.some(o => o.trim() !== '');
+
+    if (isNonEmpty) {
+      const confirmReplace = window.confirm('Thay thế 4 lựa chọn hiện tại?');
+      if (!confirmReplace) return;
+    }
+
+    handleApplyBulkOptions(qIndex, lang, parsed);
+  };
+
+  const handleSmartPasteOptionA = (e: React.ClipboardEvent, qIndex: number, lang: 'en' | 'vi') => {
+    const clipboardText = e.clipboardData?.getData('text');
+    if (!clipboardText || !clipboardText.trim()) return;
+
+    const parsed = parseFourOptions(clipboardText);
+    if (parsed) {
+      e.preventDefault();
+      const currentOpts = lang === 'en' ? questionsState[qIndex].options : questionsState[qIndex].options_vi;
+      const isNonEmpty = currentOpts.some(o => o.trim() !== '');
+
+      if (isNonEmpty) {
+        const confirmReplace = window.confirm('Thay thế 4 lựa chọn hiện tại?');
+        if (!confirmReplace) return;
+      }
+
+      handleApplyBulkOptions(qIndex, lang, parsed);
+    }
   };
 
   const handleSave = async () => {
@@ -334,26 +385,70 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
           {/* SECTION 2: 4 QUESTIONS CHOICES EDITOR */}
           <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-              LỰA CHỌN ĐÁP ÁN SONG NGỮ CHO 4 CÂU ({activeRange.label})
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                LỰA CHỌN ĐÁP ÁN SONG NGỮ CHO 4 CÂU ({activeRange.label})
+              </h4>
+              <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+                ✨ Dán 4 đáp án 1 lần hoặc dán thông minh vào ô (A)
+              </span>
+            </div>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               {questionsState.map((qState, qIdx) => (
                 <div
                   key={qState.question_number}
-                  className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3"
+                  className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-4"
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="font-extrabold text-sm text-purple-900">
-                      Câu {qState.question_number}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <span className="font-black text-sm text-purple-900 flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-lg">Câu {qState.question_number}</span>
                     </span>
                     <span className="text-[11px] font-medium text-slate-400">
-                      (Không bắt buộc nhập question_text)
+                      (Tự động chia A, B, C, D khi dán block 4 câu)
                     </span>
                   </div>
 
-                  <div className="space-y-2">
+                  {/* BULK PASTE TEXTAREAS FOR QUESTION */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/80">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black text-slate-700 flex items-center gap-1.5 uppercase">
+                        <Clipboard className="w-3.5 h-3.5 text-purple-600" />
+                        <span>🇬🇧 4 ĐÁP ÁN EN — DÁN 1 LẦN</span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        onChange={e => {
+                          handleBulkTextareaChange(qIdx, 'en', e.target.value);
+                          e.target.value = '';
+                        }}
+                        placeholder="Dán block (A)... (B)... (C)... (D)... vào đây"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all placeholder:text-slate-400 placeholder:font-sans"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-black text-slate-700 flex items-center gap-1.5 uppercase">
+                        <Clipboard className="w-3.5 h-3.5 text-purple-600" />
+                        <span>🇻🇳 4 ĐÁP ÁN VI — DÁN 1 LẦN</span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        onChange={e => {
+                          handleBulkTextareaChange(qIdx, 'vi', e.target.value);
+                          e.target.value = '';
+                        }}
+                        placeholder="Dán block bản dịch (A)... (B)... (C)... (D)... vào đây"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-800 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all placeholder:text-slate-400 placeholder:font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  {/* INDIVIDUAL CORRECTION GRID */}
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
+                      BẢNG KIỂM TRA & HIỆU CHỈNH CHI TIẾT (A - D)
+                    </span>
                     {optionLabels.map((lbl, optIdx) => (
                       <div key={lbl} className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
                         {/* EN CHOICE */}
@@ -365,7 +460,8 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                             type="text"
                             value={qState.options[optIdx]}
                             onChange={e => handleOptionChange(qIdx, 'en', optIdx, e.target.value)}
-                            placeholder={`English choice (${lbl})...`}
+                            onPaste={optIdx === 0 ? e => handleSmartPasteOptionA(e, qIdx, 'en') : undefined}
+                            placeholder={optIdx === 0 ? `(A) English choice (hoặc dán 4 câu ở đây)...` : `English choice (${lbl})...`}
                             className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
                           />
                         </div>
@@ -379,7 +475,8 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                             type="text"
                             value={qState.options_vi[optIdx]}
                             onChange={e => handleOptionChange(qIdx, 'vi', optIdx, e.target.value)}
-                            placeholder={`Bản dịch tiếng Việt (${lbl})...`}
+                            onPaste={optIdx === 0 ? e => handleSmartPasteOptionA(e, qIdx, 'vi') : undefined}
+                            placeholder={optIdx === 0 ? `(A) Bản dịch VI (hoặc dán 4 câu ở đây)...` : `Bản dịch tiếng Việt (${lbl})...`}
                             className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
                           />
                         </div>
