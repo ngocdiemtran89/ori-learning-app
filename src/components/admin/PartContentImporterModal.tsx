@@ -556,8 +556,8 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
                       const existing = existingQMap.get(q.question_number);
                       const isUpdate = Boolean(existing);
 
-                      const hasEn = Boolean(q.question_text && q.options && q.options.length > 0);
-                      const hasVi = Boolean(q.translation_vi && q.options_vi && q.options_vi.some(v => v));
+                      const hasEn = Boolean((q.question_text || (q.options && q.options.length > 0)) && q.options && q.options.length > 0);
+                      const hasVi = Boolean((q.translation_vi || (q.options_vi && q.options_vi.some(v => Boolean(v)))) && q.options_vi && q.options_vi.some(v => Boolean(v)));
 
                       return (
                         <div

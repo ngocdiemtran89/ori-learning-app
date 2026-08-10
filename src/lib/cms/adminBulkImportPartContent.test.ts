@@ -432,6 +432,28 @@ Riessler Landscaping có mọi thứ bạn cần để tạo nên khu vườn tr
         expect(res.questions[0].question_number).toBe(start);
       });
     });
+
+    it('45. real modal workflow test when passage/transcript panel is used for Part 6', () => {
+      // Admin inputs text into enTranscriptInput & viTranscriptInput (Tab 2: Script / Passage)
+      const res = parseSeparateBilingualPartContent('', '', 'part6', p6EnInput, p6ViInput);
+
+      expect(res.questions.length).toBe(4);
+      expect(res.questions.map(q => q.question_number)).toEqual([131, 132, 133, 134]);
+      expect(res.groups.length).toBe(1);
+      expect(res.groups[0].range).toBe('131-134');
+      expect(res.groups[0].passage).toBeDefined();
+      expect(res.groups[0].passage_vi).toBeDefined();
+
+      res.questions.forEach(q => {
+        expect(q.options?.length).toBe(4);
+        expect(q.options_vi?.length).toBe(4);
+      });
+
+      const isSaveEnabled = res.questions.length > 0 && res.outOfPartErrors.length === 0;
+      expect(isSaveEnabled).toBe(true);
+      expect(res.metrics.hasQuestionEnCount).toBe(4);
+      expect(res.metrics.hasQuestionViCount).toBe(4);
+    });
   });
 
 });

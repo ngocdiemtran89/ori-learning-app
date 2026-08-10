@@ -383,8 +383,8 @@ export function parseSeparateBilingualPartContent(
   const enParsed = parseSingleLanguagePartText(enInput, 'en', normTargetPart);
   const viParsed = parseSingleLanguagePartText(viInput, 'vi', normTargetPart);
 
-  let enTranscriptParsed = { groups: [] as SingleLanguageGroup[] };
-  let viTranscriptParsed = { groups: [] as SingleLanguageGroup[] };
+  let enTranscriptParsed = { groups: [] as SingleLanguageGroup[], questions: [] as SingleLanguageQuestion[], outOfPartErrors: [] as string[] };
+  let viTranscriptParsed = { groups: [] as SingleLanguageGroup[], questions: [] as SingleLanguageQuestion[], outOfPartErrors: [] as string[] };
   if (enTranscriptInput && enTranscriptInput.trim()) {
     enTranscriptParsed = parseSingleLanguagePartText(enTranscriptInput, 'en', normTargetPart);
   }
@@ -392,7 +392,12 @@ export function parseSeparateBilingualPartContent(
     viTranscriptParsed = parseSingleLanguagePartText(viTranscriptInput, 'vi', normTargetPart);
   }
 
-  const outOfPartErrors = Array.from(new Set([...enParsed.outOfPartErrors, ...viParsed.outOfPartErrors]));
+  const outOfPartErrors = Array.from(new Set([
+    ...enParsed.outOfPartErrors,
+    ...viParsed.outOfPartErrors,
+    ...enTranscriptParsed.outOfPartErrors,
+    ...viTranscriptParsed.outOfPartErrors,
+  ]));
   const validationErrors: string[] = [];
 
   // Match Groups by Range
@@ -418,24 +423,26 @@ export function parseSeparateBilingualPartContent(
       part: normTargetPart,
       transcript: gTrEn?.transcript || gEn?.transcript,
       transcript_vi: gTrVi?.transcript || gVi?.transcript,
-      passage: gEn?.passage,
-      passage_vi: gVi?.passage,
+      passage: gEn?.passage || gTrEn?.passage,
+      passage_vi: gVi?.passage || gTrVi?.passage,
       documents: gEn?.documents,
       documents_vi: gVi?.documents,
     });
   });
 
-  // Match Questions Strictly by Question Number
+  // Match Questions Strictly by Question Number across ALL input panels
   const qNumSet = new Set<number>();
   enParsed.questions.forEach(q => qNumSet.add(q.question_number));
   viParsed.questions.forEach(q => qNumSet.add(q.question_number));
+  enTranscriptParsed.questions.forEach(q => qNumSet.add(q.question_number));
+  viTranscriptParsed.questions.forEach(q => qNumSet.add(q.question_number));
 
   const sortedQNums = Array.from(qNumSet).sort((a, b) => a - b);
   const questions: ParsedPartQuestion[] = [];
 
   sortedQNums.forEach(qNum => {
-    const qEn = enParsed.questions.find(q => q.question_number === qNum);
-    const qVi = viParsed.questions.find(q => q.question_number === qNum);
+    const qEn = enParsed.questions.find(q => q.question_number === qNum) || enTranscriptParsed.questions.find(q => q.question_number === qNum);
+    const qVi = viParsed.questions.find(q => q.question_number === qNum) || viTranscriptParsed.questions.find(q => q.question_number === qNum);
 
     const optsViArr = qVi?.options
       ? ['A', 'B', 'C', 'D'].map(lbl => qVi.options?.find(o => o.label === lbl)?.text || '')
@@ -456,8 +463,8 @@ export function parseSeparateBilingualPartContent(
   const metrics = {
     groupCount: groups.length,
     questionCount: questions.length,
-    hasQuestionEnCount: questions.filter(q => q.question_text).length,
-    hasQuestionViCount: questions.filter(q => q.translation_vi).length,
+    hasQuestionEnCount: questions.filter(q => q.question_text || (q.options && q.options.length > 0)).length,
+    hasQuestionViCount: questions.filter(q => q.translation_vi || (q.options_vi && q.options_vi.some(v => Boolean(v)))).length,
     hasOptionsEnCount: questions.filter(q => q.options && q.options.length === 4).length,
     hasOptionsViCount: questions.filter(q => q.options_vi && q.options_vi.length === 4).length,
     hasTranscriptEnCount: groups.filter(g => g.transcript || g.passage).length,
