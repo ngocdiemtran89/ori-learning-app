@@ -282,36 +282,57 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
     setSaving(true);
     try {
-      // 1. Update Group passage & passage_vi
-      const { error: groupErr } = await supabase
-        .from('toeic_test_groups')
-        .update({
-          passage: passageEn.trim() || null,
-          passage_vi: passageVi.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', targetGroup.id);
+      const payload = {
+        passage: passageEn.trim() || null,
+        passage_vi: passageVi.trim() || null,
+        questions: questionsState.map(q => ({
+          question_number: q.question_number,
+          question_text: q.question_text?.trim() || null,
+          translation_vi: q.translation_vi?.trim() || null,
+          options: q.options,
+          options_vi: q.options_vi,
+        })),
+      };
 
-      if (groupErr) {
-        throw new Error(`Lỗi cập nhật đoạn văn nhóm: ${groupErr.message}`);
-      }
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_update_toeic_part6_group', {
+        p_test_id: targetGroup.test_id || _testId,
+        p_group_id: targetGroup.id,
+        p_payload: payload,
+      });
 
-      // 2. Update 4 Questions options, options_vi, question_text, translation_vi
-      for (const qState of questionsState) {
-        const { error: qErr } = await supabase
-          .from('toeic_test_questions')
-          .update({
-            question_text: qState.question_text?.trim() || null,
-            translation_vi: qState.translation_vi?.trim() || null,
-            options: qState.options,
-            options_vi: qState.options_vi,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', qState.id);
+      if (rpcErr) {
+        if (rpcErr.message?.includes('function') && rpcErr.message?.includes('does not exist')) {
+          console.warn('[Part6ManualGroupEditor] RPC not found in local DB environment. Fallback to client sequence.');
+          const { error: groupErr } = await supabase
+            .from('toeic_test_groups')
+            .update({
+              passage: passageEn.trim() || null,
+              passage_vi: passageVi.trim() || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', targetGroup.id);
 
-        if (qErr) {
-          throw new Error(`Lỗi cập nhật đáp án câu #${qState.question_number}: ${qErr.message}`);
+          if (groupErr) throw new Error(`Lỗi cập nhật đoạn văn nhóm: ${groupErr.message}`);
+
+          for (const qState of questionsState) {
+            const { error: qErr } = await supabase
+              .from('toeic_test_questions')
+              .update({
+                question_text: qState.question_text?.trim() || null,
+                translation_vi: qState.translation_vi?.trim() || null,
+                options: qState.options,
+                options_vi: qState.options_vi,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', qState.id);
+
+            if (qErr) throw new Error(`Lỗi cập nhật đáp án câu #${qState.question_number}: ${qErr.message}`);
+          }
+        } else {
+          throw new Error(rpcErr.message || 'Lỗi từ Database khi cập nhật nhóm Part 6.');
         }
+      } else if (rpcData && rpcData.success !== true) {
+        throw new Error(rpcData.error || 'Lỗi không xác định khi lưu nhóm Part 6.');
       }
 
       setIsDirty(false);
