@@ -454,6 +454,44 @@ Riessler Landscaping có mọi thứ bạn cần để tạo nên khu vườn tr
       expect(res.metrics.hasQuestionEnCount).toBe(4);
       expect(res.metrics.hasQuestionViCount).toBe(4);
     });
+
+    it('46. full Part 6 acceptance test (4 groups, Q131-Q146, 16 questions with formatted bold headers)', () => {
+      let fullEn = '';
+      let fullVi = '';
+      const ranges = [
+        { start: 131, end: 134 },
+        { start: 135, end: 138 },
+        { start: 139, end: 142 },
+        { start: 143, end: 146 },
+      ];
+
+      ranges.forEach(({ start, end }) => {
+        fullEn += `QUESTIONS ${start}-${end}\nPassage content for group ${start}-${end} ------- ${start}.\n\n`;
+        fullVi += `CÂU ${start}-${end}\nNội dung đoạn văn cho nhóm ${start}-${end} ------- ${start}.\n\n`;
+
+        for (let q = start; q <= end; q++) {
+          fullEn += `**${q}.**\n(A) Option A EN for ${q}\n(B) Option B EN for ${q}\n(C) Option C EN for ${q}\n(D) Option D EN for ${q}\n\n`;
+          fullVi += `**${q}.**\n(A) Đáp án A VI cho ${q}\n(B) Đáp án B VI cho ${q}\n(C) Đáp án C VI cho ${q}\n(D) Đáp án D VI cho ${q}\n\n`;
+        }
+      });
+
+      const res = parseSeparateBilingualPartContent('', '', 'part6', fullEn, fullVi);
+
+      expect(res.groups.length).toBe(4);
+      expect(res.questions.length).toBe(16);
+      expect(res.outOfPartErrors.length).toBe(0);
+
+      const qNums = res.questions.map(q => q.question_number);
+      expect(qNums).toEqual(Array.from({ length: 16 }, (_, i) => 131 + i));
+
+      res.questions.forEach(q => {
+        expect(q.options?.length).toBe(4);
+        expect(q.options_vi?.length).toBe(4);
+      });
+
+      const isSaveEnabled = res.questions.length > 0 && res.outOfPartErrors.length === 0;
+      expect(isSaveEnabled).toBe(true);
+    });
   });
 
 });

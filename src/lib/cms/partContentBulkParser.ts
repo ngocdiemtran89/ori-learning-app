@@ -287,12 +287,22 @@ export function parseSingleLanguagePartText(
       qNumMatch = parseInt(explicitQMatch[1], 10);
       initialQText = explicitQMatch[2]?.trim() || '';
     } else {
-      // Standalone bare question number (e.g. "131." or "131" or "131)")
-      const bareQMatch = trimmed.match(/^\s*(\d{1,3})\s*[\.\)]?\s*$/);
+      // Standalone bare question number (e.g. "**131.**", "131.", "131", "131)")
+      const bareQMatch = normalizedHeader.match(/^\s*(\d{1,3})\s*[\.\)]?\s*$/);
       if (bareQMatch) {
         const n = parseInt(bareQMatch[1], 10);
         if (n >= partRange.startNumber && n <= partRange.endNumber) {
           qNumMatch = n;
+        }
+      } else {
+        // Question number on same line as choice (A) (e.g. "131. (A) text")
+        const sameLineOptMatch = normalizedHeader.match(/^\s*(\d{1,3})\s*[\.\)]?\s*(?=(?:\(?[A-D][\)\.\:\s]))/i);
+        if (sameLineOptMatch) {
+          const n = parseInt(sameLineOptMatch[1], 10);
+          if (n >= partRange.startNumber && n <= partRange.endNumber) {
+            qNumMatch = n;
+            initialQText = normalizedHeader.replace(/^\s*\d{1,3}\s*[\.\)]?\s*/, '').trim();
+          }
         }
       }
     }
@@ -315,7 +325,15 @@ export function parseSingleLanguagePartText(
         part: normTargetPart,
       };
       if (initialQText) {
-        rawQuestionTextLines.push(initialQText);
+        const inlineOpt = initialQText.match(/^\s*(?:[\(\[]?([A-D])[\)\]\.\:]\s*|\b([A-D])\.\s+)(.*)$/i);
+        if (inlineOpt) {
+          const label = (inlineOpt[1] || inlineOpt[2]).toUpperCase();
+          const optText = inlineOpt[3].replace(/^[\*\_\s]+/, '').replace(/[\*\_\s]+$/, '').trim();
+          rawOptionsMap.set(label, optText);
+          currentOptionLabel = label;
+        } else {
+          rawQuestionTextLines.push(initialQText);
+        }
       }
       continue;
     }
