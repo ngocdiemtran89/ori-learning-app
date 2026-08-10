@@ -3,6 +3,7 @@ import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle, Clipboard 
 import { supabase } from '../../lib/supabase/client';
 import { parseFourOptions } from '../../lib/cms/fourOptionsParser';
 import { parsePart6GroupBlock } from '../../lib/cms/part6GroupBlockParser';
+import { buildGroupPatchPayload, GroupSnapshot, QuestionSnapshot } from '../../lib/cms/part6WorkbenchPatchBuilder';
 
 export interface Part6ManualGroupEditorModalProps {
   isOpen: boolean;
@@ -21,7 +22,7 @@ const PART6_RANGES = [
   { label: 'Q143–146', start: 143, end: 146 },
 ];
 
-interface QuestionOptionState {
+export interface QuestionOptionState {
   id: string;
   question_number: number;
   question_text: string;
@@ -43,6 +44,7 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
   const [passageEn, setPassageEn] = useState<string>('');
   const [passageVi, setPassageVi] = useState<string>('');
   const [questionsState, setQuestionsState] = useState<QuestionOptionState[]>([]);
+  const [originalSnapshot, setOriginalSnapshot] = useState<GroupSnapshot | null>(null);
   
   // Group-level paste textareas
   const [groupTextEn, setGroupTextEn] = useState<string>('');
@@ -86,37 +88,59 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
     setGroupTextVi('');
 
     // Initialize group passage
-    setPassageEn(targetGroup?.passage || '');
-    setPassageVi(targetGroup?.passage_vi || '');
+    const initPassageEn = targetGroup?.passage || '';
+    const initPassageVi = targetGroup?.passage_vi || '';
+    setPassageEn(initPassageEn);
+    setPassageVi(initPassageVi);
 
     // Initialize questions
     const qStates: QuestionOptionState[] = [];
+    const qSnapshots: QuestionSnapshot[] = [];
+
     for (let qNum = activeRange.start; qNum <= activeRange.end; qNum++) {
       const q = targetQuestions.find(item => item.question_number === qNum);
       const enOptsArr = Array.isArray(q?.options) ? q.options : [];
       const viOptsArr = Array.isArray(q?.options_vi) ? q.options_vi : [];
 
+      const qText = q?.question_text || '';
+      const transVi = q?.translation_vi || '';
+      const opts: [string, string, string, string] = [
+        String(enOptsArr[0] || ''),
+        String(enOptsArr[1] || ''),
+        String(enOptsArr[2] || ''),
+        String(enOptsArr[3] || ''),
+      ];
+      const optsVi: [string, string, string, string] = [
+        String(viOptsArr[0] || ''),
+        String(viOptsArr[1] || ''),
+        String(viOptsArr[2] || ''),
+        String(viOptsArr[3] || ''),
+      ];
+
       qStates.push({
         id: q?.id || '',
         question_number: qNum,
-        question_text: q?.question_text || '',
-        translation_vi: q?.translation_vi || '',
-        options: [
-          String(enOptsArr[0] || ''),
-          String(enOptsArr[1] || ''),
-          String(enOptsArr[2] || ''),
-          String(enOptsArr[3] || ''),
-        ],
-        options_vi: [
-          String(viOptsArr[0] || ''),
-          String(viOptsArr[1] || ''),
-          String(viOptsArr[2] || ''),
-          String(viOptsArr[3] || ''),
-        ],
+        question_text: qText,
+        translation_vi: transVi,
+        options: opts,
+        options_vi: optsVi,
+      });
+
+      qSnapshots.push({
+        question_number: qNum,
+        question_text: qText,
+        translation_vi: transVi,
+        options: [...opts],
+        options_vi: [...optsVi],
       });
     }
 
     setQuestionsState(qStates);
+    setOriginalSnapshot({
+      passageEn: initPassageEn,
+      passageVi: initPassageVi,
+      questions: qSnapshots,
+    });
     setIsDirty(false);
   }, [isOpen, selectedRangeIndex, targetGroup, targetQuestions]);
 
@@ -280,20 +304,26 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
       return;
     }
 
+    if (!originalSnapshot) {
+      setErrorMsg('Không tìm thấy dữ liệu gốc để so sánh thay đổi.');
+      return;
+    }
+
+    const { payload, hasChanges } = buildGroupPatchPayload(
+      originalSnapshot,
+      passageEn,
+      passageVi,
+      questionsState
+    );
+
+    if (!hasChanges) {
+      setSuccessMsg('Không có thay đổi cần lưu.');
+      setIsDirty(false);
+      return;
+    }
+
     setSaving(true);
     try {
-      const payload = {
-        passage: passageEn.trim() || null,
-        passage_vi: passageVi.trim() || null,
-        questions: questionsState.map(q => ({
-          question_number: q.question_number,
-          question_text: q.question_text?.trim() || null,
-          translation_vi: q.translation_vi?.trim() || null,
-          options: q.options,
-          options_vi: q.options_vi,
-        })),
-      };
-
       const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_update_toeic_part6_group', {
         p_test_id: targetGroup.test_id || _testId,
         p_group_id: targetGroup.id,
@@ -302,38 +332,26 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
       if (rpcErr) {
         if (rpcErr.message?.includes('function') && rpcErr.message?.includes('does not exist')) {
-          console.warn('[Part6ManualGroupEditor] RPC not found in local DB environment. Fallback to client sequence.');
-          const { error: groupErr } = await supabase
-            .from('toeic_test_groups')
-            .update({
-              passage: passageEn.trim() || null,
-              passage_vi: passageVi.trim() || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', targetGroup.id);
-
-          if (groupErr) throw new Error(`Lỗi cập nhật đoạn văn nhóm: ${groupErr.message}`);
-
-          for (const qState of questionsState) {
-            const { error: qErr } = await supabase
-              .from('toeic_test_questions')
-              .update({
-                question_text: qState.question_text?.trim() || null,
-                translation_vi: qState.translation_vi?.trim() || null,
-                options: qState.options,
-                options_vi: qState.options_vi,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', qState.id);
-
-            if (qErr) throw new Error(`Lỗi cập nhật đáp án câu #${qState.question_number}: ${qErr.message}`);
-          }
-        } else {
-          throw new Error(rpcErr.message || 'Lỗi từ Database khi cập nhật nhóm Part 6.');
+          throw new Error('Chức năng lưu Part 6 chưa được cài đặt trên database. Vui lòng áp dụng migration Part 6 Workbench.');
         }
-      } else if (rpcData && rpcData.success !== true) {
+        throw new Error(rpcErr.message || 'Lỗi từ Database khi cập nhật nhóm Part 6.');
+      }
+
+      if (rpcData && rpcData.success !== true) {
         throw new Error(rpcData.error || 'Lỗi không xác định khi lưu nhóm Part 6.');
       }
+
+      setOriginalSnapshot({
+        passageEn,
+        passageVi,
+        questions: questionsState.map(q => ({
+          question_number: q.question_number,
+          question_text: q.question_text,
+          translation_vi: q.translation_vi,
+          options: [...q.options],
+          options_vi: [...q.options_vi],
+        })),
+      });
 
       setIsDirty(false);
       setSuccessMsg(`Lưu thành công nội dung nhóm ${activeRange.label}!`);
