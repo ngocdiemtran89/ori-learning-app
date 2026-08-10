@@ -1,6 +1,6 @@
 // ============================================================
-// Phase P3.5J Hotfix: Admin Bulk Import TOEIC Questions By Part Parser (Compact Bilingual EN + VI)
-// Parses human text, markdown, JSON, CSV, and PDF text per TOEIC Part (1–7) with full EN + VI support
+// Phase P3.5J Redesign: Admin Bulk Import TOEIC Questions By Part Parser
+// Supports Separate EN / VI Panels, Strict Matching by Question Number, & Single-Pass Bilingual Updates
 // ============================================================
 
 import {
@@ -72,68 +72,67 @@ export const CANONICAL_PART6_GROUPS = [
   '131-134', '135-138', '139-142', '143-146'
 ];
 
-export function parsePartContentText(
+export interface SingleLanguageQuestion {
+  question_number: number;
+  part: string;
+  text?: string;
+  options?: Array<{ label: 'A' | 'B' | 'C' | 'D'; text: string }>;
+  explanation?: string;
+}
+
+export interface SingleLanguageGroup {
+  start_question: number;
+  end_question: number;
+  range: string;
+  part: string;
+  transcript?: string;
+  passage?: string;
+  documents?: Array<{ title?: string; content: string }>;
+}
+
+export function parseSingleLanguagePartText(
   input: string,
+  _lang: 'en' | 'vi',
   targetPart: CanonicalToeicPart
-): PartParseResult {
+): { groups: SingleLanguageGroup[]; questions: SingleLanguageQuestion[]; outOfPartErrors: string[] } {
   const normTargetPart = normalizeToeicPart(targetPart);
   const partRange = TOEIC_FULL_TEST_STRUCTURE[normTargetPart];
 
   const lines = input.split('\n');
-  const groups: ParsedPartGroup[] = [];
-  const questions: ParsedPartQuestion[] = [];
+  const groups: SingleLanguageGroup[] = [];
+  const questions: SingleLanguageQuestion[] = [];
   const outOfPartErrors: string[] = [];
-  const validationErrors: string[] = [];
 
-  let currentGroup: ParsedPartGroup | null = null;
-  let groupSection: 'transcript_en' | 'transcript_vi' | 'passage_en' | 'passage_vi' | null = null;
-  let rawGroupEnLines: string[] = [];
-  let rawGroupViLines: string[] = [];
+  let currentGroup: SingleLanguageGroup | null = null;
+  let rawGroupLines: string[] = [];
 
-  let currentDocsEn: Array<{ title?: string; content: string }> = [];
-  let currentDocsVi: Array<{ title?: string; content: string }> = [];
-  let currentDocEnContent: string[] = [];
-  let currentDocViContent: string[] = [];
-  let currentDocMode: 'en' | 'vi' = 'en';
+  let currentDocs: Array<{ title?: string; content: string }> = [];
+  let currentDocContent: string[] = [];
 
-  let currentQuestion: ParsedPartQuestion | null = null;
-  let questionSection: 'q_en' | 'q_vi' | 'opt_en' | 'opt_vi' | 'explanation' | null = null;
-  let rawQuestionEnLines: string[] = [];
-  let rawQuestionViLines: string[] = [];
+  let currentQuestion: SingleLanguageQuestion | null = null;
+  let rawQuestionTextLines: string[] = [];
   let rawExplanationLines: string[] = [];
-
-  let rawOptionsEnMap: Map<string, string> = new Map();
-  let rawOptionsViMap: Map<string, string> = new Map();
-  let lastOptionLabel: string | null = null;
+  let rawOptionsMap: Map<string, string> = new Map();
+  let inExplanation = false;
 
   const finalizeQuestion = () => {
     if (!currentQuestion) return;
 
-    if (rawQuestionEnLines.length > 0) {
-      currentQuestion.question_text = rawQuestionEnLines.join('\n').trim();
-    }
-    if (rawQuestionViLines.length > 0) {
-      currentQuestion.translation_vi = rawQuestionViLines.join('\n').trim();
+    if (rawQuestionTextLines.length > 0) {
+      currentQuestion.text = rawQuestionTextLines.join('\n').trim();
     }
     if (rawExplanationLines.length > 0) {
       currentQuestion.explanation = rawExplanationLines.join('\n').trim();
     }
 
-    if (rawOptionsEnMap.size > 0) {
+    if (rawOptionsMap.size > 0) {
       const opts: Array<{ label: 'A' | 'B' | 'C' | 'D'; text: string }> = [];
-      const optsViArr: string[] = ['', '', '', ''];
-
-      ['A', 'B', 'C', 'D'].forEach((lbl, idx) => {
-        if (rawOptionsEnMap.has(lbl)) {
-          opts.push({ label: lbl as any, text: rawOptionsEnMap.get(lbl)! });
-        }
-        if (rawOptionsViMap.has(lbl)) {
-          optsViArr[idx] = rawOptionsViMap.get(lbl)!;
+      ['A', 'B', 'C', 'D'].forEach(lbl => {
+        if (rawOptionsMap.has(lbl)) {
+          opts.push({ label: lbl as any, text: rawOptionsMap.get(lbl)! });
         }
       });
-
       if (opts.length > 0) currentQuestion.options = opts;
-      if (rawOptionsViMap.size > 0) currentQuestion.options_vi = optsViArr;
     }
 
     if (
@@ -148,47 +147,37 @@ export function parsePartContentText(
     }
 
     currentQuestion = null;
-    questionSection = null;
-    rawQuestionEnLines = [];
-    rawQuestionViLines = [];
+    rawQuestionTextLines = [];
     rawExplanationLines = [];
-    rawOptionsEnMap = new Map();
-    rawOptionsViMap = new Map();
-    lastOptionLabel = null;
+    rawOptionsMap = new Map();
+    inExplanation = false;
   };
 
   const finalizeGroup = () => {
     if (!currentGroup) return;
 
-    if (currentDocEnContent.length > 0 && currentDocsEn.length > 0) {
-      currentDocsEn[currentDocsEn.length - 1].content = currentDocEnContent.join('\n').trim();
-      currentDocEnContent = [];
-    }
-    if (currentDocViContent.length > 0 && currentDocsVi.length > 0) {
-      currentDocsVi[currentDocsVi.length - 1].content = currentDocViContent.join('\n').trim();
-      currentDocViContent = [];
+    if (currentDocContent.length > 0 && currentDocs.length > 0) {
+      currentDocs[currentDocs.length - 1].content = currentDocContent.join('\n').trim();
+      currentDocContent = [];
     }
 
-    if (currentDocsEn.length > 0) currentGroup.documents = currentDocsEn;
-    if (currentDocsVi.length > 0) currentGroup.documents_vi = currentDocsVi;
+    if (currentDocs.length > 0) {
+      currentGroup.documents = currentDocs;
+    }
 
-    if (normTargetPart === 'part3' || normTargetPart === 'part4') {
-      if (rawGroupEnLines.length > 0) currentGroup.transcript = rawGroupEnLines.join('\n').trim();
-      if (rawGroupViLines.length > 0) currentGroup.transcript_vi = rawGroupViLines.join('\n').trim();
-    } else if (normTargetPart === 'part6') {
-      if (rawGroupEnLines.length > 0) currentGroup.passage = rawGroupEnLines.join('\n').trim();
-      if (rawGroupViLines.length > 0) currentGroup.passage_vi = rawGroupViLines.join('\n').trim();
+    if (rawGroupLines.length > 0) {
+      if (normTargetPart === 'part3' || normTargetPart === 'part4') {
+        currentGroup.transcript = rawGroupLines.join('\n').trim();
+      } else if (normTargetPart === 'part6') {
+        currentGroup.passage = rawGroupLines.join('\n').trim();
+      }
     }
 
     groups.push(currentGroup);
     currentGroup = null;
-    groupSection = null;
-    rawGroupEnLines = [];
-    rawGroupViLines = [];
-    currentDocsEn = [];
-    currentDocsVi = [];
-    currentDocEnContent = [];
-    currentDocViContent = [];
+    rawGroupLines = [];
+    currentDocs = [];
+    currentDocContent = [];
   };
 
   const ensureAutoGroup = (qNum: number) => {
@@ -227,7 +216,6 @@ export function parsePartContentText(
         range: rangeStr,
         part: normTargetPart,
       };
-      groupSection = normTargetPart === 'part6' ? 'passage_en' : 'transcript_en';
     }
   };
 
@@ -236,24 +224,17 @@ export function parsePartContentText(
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
 
-    // Ignore horizontal markdown separators
-    if (/^(?:---|\*\*\*|___)\s*$/.test(trimmed)) {
-      continue;
-    }
+    if (/^(?:---|\*\*\*|___)\s*$/.test(trimmed)) continue;
 
-    // Clean structural Markdown markers (#, ##, **, __)
     const cleanHeader = trimmed
       .replace(/^[#\s]+/, '')
       .replace(/^[\*\_\s]+/, '')
       .replace(/[\*\_\s]+$/, '')
       .trim();
 
-    // Ignore Part section metadata (e.g. # PART 3, PART 3)
-    if (/^(?:PART\s*[1-7]|PHẦN\s*[1-7])$/i.test(cleanHeader)) {
-      continue;
-    }
+    if (/^(?:PART\s*[1-7]|PHẦN\s*[1-7])$/i.test(cleanHeader)) continue;
 
-    // Check Question Range Header (e.g. ## CÂU 32–34, CÂU 32-34, Q32-34)
+    // Check Question Range Header (e.g. ## CÂU 32–34, CÂU 32-34)
     const normalizedHeader = cleanHeader.replace(/[\u2013\u2014–—~]/g, '-');
     const rangeMatch = normalizedHeader.match(/^(?:CÂU|CAU|Q|QUESTION)\s*#?\s*(\d+)\s*-\s*(\d+)/i);
     if (rangeMatch) {
@@ -269,52 +250,25 @@ export function parsePartContentText(
         range: `${start}-${end}`,
         part: normTargetPart,
       };
-      groupSection = normTargetPart === 'part6' ? 'passage_en' : 'transcript_en';
       continue;
     }
 
-    // Check Group Headings (Transcript / Passage / Document EN & VI)
+    // Check Part 7 Document Header (e.g. DOCUMENT 1)
     if (currentGroup) {
-      const isTranscriptEn = /^(?:SCRIPT\s*TIẾNG\s*ANH|SCRIPT\s*EN|TRANSCRIPT\s*EN|ENGLISH\s*SCRIPT|PASSAGE\s*TIẾNG\s*ANH|PASSAGE\s*EN)$/i.test(cleanHeader);
-      if (isTranscriptEn) {
-        groupSection = normTargetPart === 'part6' ? 'passage_en' : 'transcript_en';
-        continue;
-      }
-
-      const isTranscriptVi = /^(?:BẢN\s*DỊCH\s*TIẾNG\s*VIỆT|BẢN\s*DỊCH|TRANSCRIPT\s*VI|SCRIPT\s*VI|BẢN\s*DỊCH\s*ĐOẠN\s*VĂN|PASSAGE\s*VI)$/i.test(cleanHeader);
-      if (isTranscriptVi) {
-        groupSection = normTargetPart === 'part6' ? 'passage_vi' : 'transcript_vi';
-        continue;
-      }
-
-      // Check Part 7 Document Headings (e.g. DOCUMENT 1 — EN, DOCUMENT 1 — VI)
       const docMatch = cleanHeader.match(/^(?:DOCUMENT|PASSAGE|BÀI\s*ĐỌC|BẢN\s*VĂN)\s*#?\s*(\d*)\s*[-–—:]?\s*(.*)$/i);
       if (docMatch && normTargetPart === 'part7') {
-        const docNum = docMatch[1] || '1';
-        const suffix = (docMatch[2] || '').toUpperCase();
-        const isVi = suffix.includes('VI') || suffix.includes('VIỆT');
+        const docNum = docMatch[1] || `${currentDocs.length + 1}`;
         const docTitle = `Document ${docNum}`;
-
-        if (isVi) {
-          if (currentDocViContent.length > 0 && currentDocsVi.length > 0) {
-            currentDocsVi[currentDocsVi.length - 1].content = currentDocViContent.join('\n').trim();
-            currentDocViContent = [];
-          }
-          currentDocsVi.push({ title: docTitle, content: '' });
-          currentDocMode = 'vi';
-        } else {
-          if (currentDocEnContent.length > 0 && currentDocsEn.length > 0) {
-            currentDocsEn[currentDocsEn.length - 1].content = currentDocEnContent.join('\n').trim();
-            currentDocEnContent = [];
-          }
-          currentDocsEn.push({ title: docTitle, content: '' });
-          currentDocMode = 'en';
+        if (currentDocContent.length > 0 && currentDocs.length > 0) {
+          currentDocs[currentDocs.length - 1].content = currentDocContent.join('\n').trim();
+          currentDocContent = [];
         }
+        currentDocs.push({ title: docTitle, content: '' });
         continue;
       }
     }
 
-    // Check Single Question Header (e.g. QUESTION 32, CÂU 32, Q32, Q32:)
+    // Check Single Question Header (e.g. CÂU 32, QUESTION 32, Q32)
     const qMatch = normalizedHeader.match(/^(?:QUESTION|CÂU|CAU)\s*#?\s*(\d+)\b\s*[:\.]?\s*(.*)$/i) ||
                    normalizedHeader.match(/^Q\s*#?\s*(\d+)\b\s*[:\.]?\s*$/i);
     if (qMatch) {
@@ -328,100 +282,44 @@ export function parsePartContentText(
         question_number: num,
         part: normTargetPart,
       };
-      questionSection = 'q_en';
       if (initialText) {
-        rawQuestionEnLines.push(initialText);
+        rawQuestionTextLines.push(initialText);
       }
       continue;
     }
 
-    // Check Question Level EN vs VI Headings
+    // Check Explanation Header
     if (currentQuestion) {
-      const isQEnHeader = /^(?:TIẾNG\s*ANH|TIENG\s*ANH|EN|ENGLISH|QUESTION\s*EN|CÂU\s*HỎI\s*TIẾNG\s*ANH|ENGLISH\s*QUESTION|QUESTION)$/i.test(cleanHeader);
-      if (isQEnHeader) {
-        questionSection = 'q_en';
-        continue;
-      }
-
-      const isQViHeader = /^(?:TIẾNG\s*VIỆT|TIENG\s*VIET|VI|VIETNAMESE|QUESTION\s*VI|CÂU\s*HỎI\s*TIẾNG\s*VIỆT|BẢN\s*DỊCH\s*CÂU\s*HỎI|VIETNAMESE\s*QUESTION|BẢN\s*DỊCH)$/i.test(cleanHeader);
-      if (isQViHeader) {
-        questionSection = 'q_vi';
-        continue;
-      }
-
       const isExplanationHeader = /^(?:EXPLANATION|GIẢI\s*THÍCH|LỜI\s*GIẢI)$/i.test(cleanHeader);
       if (isExplanationHeader) {
-        questionSection = 'explanation';
+        inExplanation = true;
         continue;
       }
 
-      // Check Answer Key Line (e.g. ANSWER: B, ĐÁP ÁN: B)
-      const ansMatch = cleanHeader.match(/^(?:ANSWER|CORRECT\s*ANSWER|ĐÁP\s*ÁN|DAP\s*AN)\s*:\s*([A-D])/i);
-      if (ansMatch) {
-        currentQuestion.correct_answer = ansMatch[1].toUpperCase();
-        continue;
-      }
-
-      // Check Options lines in multi-format syntax
-      // 1. Vietnamese Option Line under English (e.g. VI: text, -> text, (A-VI) text)
-      const viOptMatch = trimmed.match(/^\s*(?:VI\s*:|→|->|(?:\(?([A-D])-VI\)?))\s*(.*)$/i);
-      if (viOptMatch && lastOptionLabel) {
-        const textVal = (viOptMatch[2] || viOptMatch[1] || '').trim();
-        rawOptionsViMap.set(lastOptionLabel, textVal);
-        continue;
-      }
-
-      // 2. Option EN / VI explicit line (e.g. A EN: text, A VI: text)
-      const labelEnViMatch = trimmed.match(/^\s*([A-D])\s*(EN|VI)\s*:\s*(.*)$/i);
-      if (labelEnViMatch) {
-        const lbl = labelEnViMatch[1].toUpperCase();
-        const lang = labelEnViMatch[2].toUpperCase();
-        const txt = labelEnViMatch[3].trim();
-        if (lang === 'EN') rawOptionsEnMap.set(lbl, txt);
-        else rawOptionsViMap.set(lbl, txt);
-        lastOptionLabel = lbl;
-        continue;
-      }
-
-      // 3. Normal Option Line (e.g. (A) Option text, A. Option text, A) Option text, A: Option text)
+      // Check Option line (e.g. (A) Candy,  (B) Cheese, A. Bread, A) Pasta, A: Candy)
       const optMatch = trimmed.match(/^\s*(?:[\(\[]?([A-D])[\)\]\.\:\s]+)(.*)$/i);
       if (optMatch) {
         const label = optMatch[1].toUpperCase();
         const optText = optMatch[2].replace(/^[\*\_\s]+/, '').replace(/[\*\_\s]+$/, '').trim();
-
-        if ((questionSection as string) === 'opt_vi' || questionSection === 'q_vi' || (rawOptionsEnMap.has(label) && rawOptionsEnMap.size >= 4)) {
-          rawOptionsViMap.set(label, optText);
-          questionSection = 'opt_vi';
-        } else {
-          rawOptionsEnMap.set(label, optText);
-          questionSection = 'opt_en';
-        }
-        lastOptionLabel = label;
+        rawOptionsMap.set(label, optText);
         continue;
       }
     }
 
-    // Accumulate text content lines into active question or group sections
+    // Accumulate content
     if (currentQuestion) {
       const cleanLine = trimmed.replace(/^\*\*([A-Za-z0-9\s\u00C0-\u1EF9]+:)\*\*\s*/gi, '$1 ');
-      if (questionSection === 'q_vi') {
-        rawQuestionViLines.push(cleanLine);
-      } else if (questionSection === 'explanation') {
+      if (inExplanation) {
         rawExplanationLines.push(cleanLine);
       } else {
-        rawQuestionEnLines.push(cleanLine);
+        rawQuestionTextLines.push(cleanLine);
       }
     } else if (currentGroup) {
       const cleanLine = trimmed.replace(/^\*\*([A-Za-z0-9\s\u00C0-\u1EF9]+:)\*\*\s*/gi, '$1 ');
       if (normTargetPart === 'part7') {
-        if (currentDocMode === 'vi') currentDocViContent.push(cleanLine);
-        else currentDocEnContent.push(cleanLine);
+        currentDocContent.push(cleanLine);
       } else {
-        if (groupSection === 'transcript_vi' || groupSection === 'passage_vi') {
-          rawGroupViLines.push(cleanLine);
-        } else {
-          rawGroupEnLines.push(cleanLine);
-        }
+        rawGroupLines.push(cleanLine);
       }
     }
   }
@@ -429,35 +327,89 @@ export function parsePartContentText(
   finalizeQuestion();
   finalizeGroup();
 
-  // Validate Canonical Groups
-  if (normTargetPart === 'part3') {
-    groups.forEach(g => {
-      if (!CANONICAL_PART3_GROUPS.includes(g.range)) {
-        validationErrors.push(`Nhóm câu hỏi Q${g.range} không thuộc dải chuẩn của Part 3 (VD: 32–34, 35–37...).`);
-      }
-    });
-  } else if (normTargetPart === 'part4') {
-    groups.forEach(g => {
-      if (!CANONICAL_PART4_GROUPS.includes(g.range)) {
-        validationErrors.push(`Nhóm câu hỏi Q${g.range} không thuộc dải chuẩn của Part 4 (VD: 71–73, 74–76...).`);
-      }
-    });
-  } else if (normTargetPart === 'part6') {
-    groups.forEach(g => {
-      if (!CANONICAL_PART6_GROUPS.includes(g.range)) {
-        validationErrors.push(`Nhóm câu hỏi Q${g.range} không thuộc dải chuẩn của Part 6 (VD: 131–134, 135–138...).`);
-      }
-    });
+  return { groups, questions, outOfPartErrors };
+}
+
+export function parseSeparateBilingualPartContent(
+  enInput: string,
+  viInput: string,
+  targetPart: CanonicalToeicPart,
+  enTranscriptInput?: string,
+  viTranscriptInput?: string
+): PartParseResult {
+  const normTargetPart = normalizeToeicPart(targetPart);
+
+  const enParsed = parseSingleLanguagePartText(enInput, 'en', normTargetPart);
+  const viParsed = parseSingleLanguagePartText(viInput, 'vi', normTargetPart);
+
+  let enTranscriptParsed = { groups: [] as SingleLanguageGroup[] };
+  let viTranscriptParsed = { groups: [] as SingleLanguageGroup[] };
+  if (enTranscriptInput && enTranscriptInput.trim()) {
+    enTranscriptParsed = parseSingleLanguagePartText(enTranscriptInput, 'en', normTargetPart);
+  }
+  if (viTranscriptInput && viTranscriptInput.trim()) {
+    viTranscriptParsed = parseSingleLanguagePartText(viTranscriptInput, 'vi', normTargetPart);
   }
 
-  // Validate Part 7 Document Mismatch
-  if (normTargetPart === 'part7') {
-    groups.forEach(g => {
-      if (g.documents && g.documents_vi && g.documents.length !== g.documents_vi.length) {
-        validationErrors.push(`Nhóm Q${g.range} có số lượng tài liệu Tiếng Anh (${g.documents.length}) và Tiếng Việt (${g.documents_vi.length}) không khớp nhau.`);
-      }
+  const outOfPartErrors = Array.from(new Set([...enParsed.outOfPartErrors, ...viParsed.outOfPartErrors]));
+  const validationErrors: string[] = [];
+
+  // Match Groups by Range
+  const groupRangeSet = new Set<string>();
+  enParsed.groups.forEach(g => groupRangeSet.add(g.range));
+  viParsed.groups.forEach(g => groupRangeSet.add(g.range));
+  enTranscriptParsed.groups.forEach(g => groupRangeSet.add(g.range));
+  viTranscriptParsed.groups.forEach(g => groupRangeSet.add(g.range));
+
+  const groups: ParsedPartGroup[] = [];
+
+  groupRangeSet.forEach(rangeStr => {
+    const [start, end] = rangeStr.split('-').map(Number);
+    const gEn = enParsed.groups.find(g => g.range === rangeStr);
+    const gVi = viParsed.groups.find(g => g.range === rangeStr);
+    const gTrEn = enTranscriptParsed.groups.find(g => g.range === rangeStr);
+    const gTrVi = viTranscriptParsed.groups.find(g => g.range === rangeStr);
+
+    groups.push({
+      start_question: start,
+      end_question: end,
+      range: rangeStr,
+      part: normTargetPart,
+      transcript: gTrEn?.transcript || gEn?.transcript,
+      transcript_vi: gTrVi?.transcript || gVi?.transcript,
+      passage: gEn?.passage,
+      passage_vi: gVi?.passage,
+      documents: gEn?.documents,
+      documents_vi: gVi?.documents,
     });
-  }
+  });
+
+  // Match Questions Strictly by Question Number
+  const qNumSet = new Set<number>();
+  enParsed.questions.forEach(q => qNumSet.add(q.question_number));
+  viParsed.questions.forEach(q => qNumSet.add(q.question_number));
+
+  const sortedQNums = Array.from(qNumSet).sort((a, b) => a - b);
+  const questions: ParsedPartQuestion[] = [];
+
+  sortedQNums.forEach(qNum => {
+    const qEn = enParsed.questions.find(q => q.question_number === qNum);
+    const qVi = viParsed.questions.find(q => q.question_number === qNum);
+
+    const optsViArr = qVi?.options
+      ? ['A', 'B', 'C', 'D'].map(lbl => qVi.options?.find(o => o.label === lbl)?.text || '')
+      : undefined;
+
+    questions.push({
+      question_number: qNum,
+      part: normTargetPart,
+      question_text: qEn?.text,
+      translation_vi: qVi?.text,
+      options: qEn?.options,
+      options_vi: optsViArr,
+      explanation: qEn?.explanation || qVi?.explanation,
+    });
+  });
 
   // Calculate Metrics
   let hasQuestionEnCount = 0;
@@ -504,6 +456,13 @@ export function parsePartContentText(
       invalidOptionCount,
     },
   };
+}
+
+export function parsePartContentText(
+  input: string,
+  targetPart: CanonicalToeicPart
+): PartParseResult {
+  return parseSeparateBilingualPartContent(input, '', targetPart);
 }
 
 /**
