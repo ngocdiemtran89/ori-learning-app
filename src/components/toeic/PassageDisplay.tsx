@@ -67,6 +67,7 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
   // Part 7 structured documents
   if (group.documents && Array.isArray(group.documents) && group.documents.length > 0) {
     const docsVi = (group.documents_vi && Array.isArray(group.documents_vi)) ? group.documents_vi : [];
+    const bilingualUnits = Array.isArray((group as any).part7_bilingual_units) ? (group as any).part7_bilingual_units : [];
 
     return (
       <div className="space-y-4">
@@ -78,37 +79,69 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
             )}
           </div>
         )}
+
         {group.documents.map((doc: any, idx: number) => {
           const docVi = docsVi[idx] as any;
+          const docUnits = bilingualUnits.filter((u: any) => u && u.document_index === idx);
+
           return (
             <div
               key={idx}
-              className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2"
+              className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4.5 space-y-3 shadow-xs"
             >
               {group.documents!.length > 1 && (
-                <div className="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider">
+                <div className="text-[10px] font-extrabold text-amber-700 uppercase tracking-wider bg-amber-100/80 px-2 py-0.5 rounded w-fit">
                   Document {idx + 1}{doc.type ? ` — ${doc.type}` : ''}
                 </div>
               )}
-              {doc.title && (
-                <div className="text-sm font-extrabold text-slate-900">
-                  {doc.title}
-                </div>
-              )}
-              <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {doc.content}
-              </div>
 
-              {/* Document-level translation */}
-              {showTranslation && docVi && (
-                <div className="mt-2 pt-2 border-t border-amber-200/60">
-                  {docVi.title && (
-                    <div className="text-xs font-bold text-slate-500 italic">{docVi.title}</div>
-                  )}
-                  <div className="text-xs text-slate-500 italic leading-relaxed whitespace-pre-wrap mt-1">
-                    {docVi.content || <span className="text-slate-400 not-italic">Chưa có bản dịch.</span>}
-                  </div>
+              {/* Render persisted bilingual units if available & in bilingual mode */}
+              {isPartMode && showTranslation && docUnits.length > 0 ? (
+                <div className="space-y-3">
+                  {docUnits.map((unit: any, uIdx: number) => (
+                    <div key={uIdx} className="space-y-1 border-b border-amber-200/50 pb-2 last:border-b-0 last:pb-0">
+                      {unit.en && (
+                        <div className="text-sm font-semibold text-slate-900 leading-relaxed flex items-start gap-2">
+                          <span className="bg-slate-800 text-white font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider shrink-0 mt-0.5">
+                            🇬🇧 EN
+                          </span>
+                          <span>{unit.en}</span>
+                        </div>
+                      )}
+                      {unit.vi && (
+                        <div className="text-sm font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2.5 leading-relaxed flex items-start gap-2">
+                          <span className="bg-emerald-800 text-white font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider shrink-0 mt-0.5">
+                            🇻🇳 VI
+                          </span>
+                          <span>{unit.vi}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
+              ) : (
+                <>
+                  {doc.title && (
+                    <div className="text-sm font-extrabold text-slate-900">
+                      {doc.title}
+                    </div>
+                  )}
+                  <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
+                    {doc.content}
+                  </div>
+
+                  {/* Fallback Document-level translation */}
+                  {isPartMode && showTranslation && docVi && (
+                    <div className="mt-3 pt-3 border-t border-amber-200/80 space-y-1.5">
+                      {docVi.title && (
+                        <div className="text-xs font-bold text-emerald-900">{docVi.title}</div>
+                      )}
+                      <div className="text-xs font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-3 leading-relaxed whitespace-pre-wrap">
+                        {docVi.content || <span className="text-slate-400">Chưa có bản dịch.</span>}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -120,15 +153,15 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
             type="button"
             onClick={() => setShowTranslation(!showTranslation)}
             className={`
-              inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors
+              inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all shadow-xs
               ${showTranslation
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                ? 'bg-amber-200 text-amber-900 hover:bg-amber-300'
+                : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
               }
             `}
           >
             <Globe className="w-3.5 h-3.5" />
-            {showTranslation ? 'Ẩn bản dịch đoạn văn' : 'Xem bản dịch đoạn văn'}
+            {showTranslation ? 'Ẩn bản dịch đoạn văn' : 'Xem bản dịch đoạn văn (Song ngữ)'}
           </button>
         )}
       </div>

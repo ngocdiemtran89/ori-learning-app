@@ -34,6 +34,7 @@ import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporte
 import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
 import { SafePartContentImporterModal } from '../components/admin/PartContentImporterModal';
 import { Part6ManualGroupEditorModal } from '../components/admin/Part6ManualGroupEditorModal';
+import { Part7BatchWorkbenchModal } from '../components/admin/Part7BatchWorkbenchModal';
 import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
 export class AdminTestEditErrorBoundary extends React.Component<
@@ -102,6 +103,10 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
   const [showScriptBilingualModal, setShowScriptBilingualModal] = useState<boolean>(false);
   // Part Content Importer Modal State
   const [showPartContentModal, setShowPartContentModal] = useState<boolean>(false);
+  // Part 7 Batch Workbench Modal State
+  const [showPart7BatchModal, setShowPart7BatchModal] = useState<boolean>(false);
+  const [part7BatchMode, setPart7BatchMode] = useState<'add' | 'update'>('add');
+  const [part7TargetGroupId, setPart7TargetGroupId] = useState<string | undefined>(undefined);
 
   // Header State
   const [title, setTitle] = useState<string>('');
@@ -697,6 +702,35 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     </button>
                   )}
 
+                  {/* Primary Approved Part 7 Batch Workbench Workflows */}
+                  {activePart === 'part7' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPart7BatchMode('add');
+                          setPart7TargetGroupId(undefined);
+                          setShowPart7BatchModal(true);
+                        }}
+                        className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                      >
+                        <span>+</span> NẠP THÊM NỘI DUNG PART 7
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPart7BatchMode('update');
+                          setPart7TargetGroupId(undefined);
+                          setShowPart7BatchModal(true);
+                        }}
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                      >
+                        <span>🔄</span> CẬP NHẬT NỘI DUNG
+                      </button>
+                    </>
+                  )}
+
                   {/* Add Question button hidden for Part 6 */}
                   {activePart !== 'part6' && (
                     <button
@@ -1162,6 +1196,18 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
             testTitle={title}
             existingQuestions={questions ?? []}
             existingGroups={groups ?? []}
+            onUpdated={loadTestDetails}
+          />
+
+          <Part7BatchWorkbenchModal
+            isOpen={showPart7BatchModal}
+            onClose={() => setShowPart7BatchModal(false)}
+            testId={testId}
+            testTitle={title}
+            existingQuestions={questions ?? []}
+            existingGroups={groups ?? []}
+            initialMode={part7BatchMode}
+            initialTargetGroupId={part7TargetGroupId}
             onUpdated={loadTestDetails}
           />
         </>
