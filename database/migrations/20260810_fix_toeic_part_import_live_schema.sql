@@ -36,6 +36,7 @@ DECLARE
   v_q_part text;
   v_existing_q_id uuid;
   v_q_matches_count int;
+  v_final_correct text;
   v_questions_updated int := 0;
 BEGIN
   -- 1. Canonical ORI Admin Security Check
@@ -85,53 +86,60 @@ BEGIN
 
     v_target_group_id := NULL;
 
-    -- Preference 1: Explicit group.id UUID
+    -- Preference 1: Explicit group.id UUID with PART & TEST_ID validation
     IF (v_group_elem ? 'id') AND (v_group_elem ->> 'id') IS NOT NULL AND TRIM(v_group_elem ->> 'id') <> '' THEN
       SELECT id INTO v_target_group_id
       FROM public.toeic_test_groups
       WHERE id = (v_group_elem ->> 'id')::uuid
         AND test_id = p_test_id
+        AND part = v_part_name
         AND is_active = true;
+
+      IF v_target_group_id IS NULL THEN
+        RAISE EXCEPTION 'Nhóm bài ID % không thuộc % của đề thi hiện tại hoặc không hoạt động.', (v_group_elem ->> 'id'), UPPER(v_part_name);
+      END IF;
     END IF;
 
-    -- Preference 2: Range Lookup via existing Question -> Group relationships
+    -- Preference 2: Derived Table Range Lookup
     IF v_target_group_id IS NULL THEN
       v_start_q := (v_group_elem ->> 'start_question')::int;
       v_end_q := (v_group_elem ->> 'end_question')::int;
 
       IF v_start_q IS NOT NULL AND v_end_q IS NOT NULL THEN
-        -- Count matches first to prevent ambiguity
-        SELECT COUNT(DISTINCT g.id) INTO v_group_matches_count
-        FROM public.toeic_test_groups g
-        JOIN public.toeic_test_questions q ON q.group_id = g.id
-        WHERE g.test_id = p_test_id
-          AND g.part = v_part_name
-          AND g.is_active = true
-          AND q.test_id = p_test_id
-          AND q.is_active = true
-        GROUP BY g.id
-        HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q;
+        SELECT COUNT(*) INTO v_group_matches_count
+        FROM (
+          SELECT g.id
+          FROM public.toeic_test_groups g
+          JOIN public.toeic_test_questions q ON q.group_id = g.id
+          WHERE g.test_id = p_test_id
+            AND g.part = v_part_name
+            AND g.is_active = true
+            AND q.test_id = p_test_id
+            AND q.is_active = true
+          GROUP BY g.id
+          HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q
+        ) matching_groups;
 
-        IF COALESCE(v_group_matches_count, 0) > 1 THEN
+        IF v_group_matches_count > 1 THEN
           RAISE EXCEPTION 'Phát hiện nhiều nhóm bài trùng lặp cho dải câu Q%–%. Vui lòng kiểm tra lại cấu trúc đề.', v_start_q, v_end_q;
+        ELSIF v_group_matches_count = 1 THEN
+          SELECT g.id INTO v_target_group_id
+          FROM public.toeic_test_groups g
+          JOIN public.toeic_test_questions q ON q.group_id = g.id
+          WHERE g.test_id = p_test_id
+            AND g.part = v_part_name
+            AND g.is_active = true
+            AND q.test_id = p_test_id
+            AND q.is_active = true
+          GROUP BY g.id
+          HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q;
         END IF;
-
-        SELECT g.id INTO v_target_group_id
-        FROM public.toeic_test_groups g
-        JOIN public.toeic_test_questions q ON q.group_id = g.id
-        WHERE g.test_id = p_test_id
-          AND g.part = v_part_name
-          AND g.is_active = true
-          AND q.test_id = p_test_id
-          AND q.is_active = true
-        GROUP BY g.id
-        HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q;
       END IF;
     END IF;
 
     -- If group not found, BLOCK! Do NOT insert new group.
     IF v_target_group_id IS NULL THEN
-      RAISE EXCEPTION 'Không tìm thấy nhóm bài hiện có phù hợp với dữ liệu import. Vui lòng tạo cấu trúc đề trước khi import nội dung.';
+      RAISE EXCEPTION 'Không tìm thấy nhóm bài hiện có phù hợp cho dải câu Q%–%. Vui lòng tạo cấu trúc đề trước khi import nội dung.', COALESCE(v_start_q, 0), COALESCE(v_end_q, 0);
     END IF;
 
     -- Update Existing Group Content Safely
@@ -156,21 +164,48 @@ BEGIN
   FOR v_question_elem IN SELECT * FROM jsonb_array_elements(v_questions)
   LOOP
     v_q_num := (v_question_elem ->> 'question_number')::int;
-    v_q_part := COALESCE(v_question_elem ->> 'part', v_part_name);
+    v_q_part := LOWER(TRIM(COALESCE(v_question_elem ->> 'part', v_part_name)));
 
-    IF v_q_part <> v_part_name THEN
-      RAISE EXCEPTION 'Câu hỏi Q% có part (% ) không khớp với Part đang import (%).', v_q_num, v_q_part, v_part_name;
+    -- Validate Canonical Question Range per Part
+    IF v_part_name = 'part1' AND (v_q_num < 1 OR v_q_num > 6) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 1 (Dải chuẩn: Q1–6).', v_q_num;
+    ELSIF v_part_name = 'part2' AND (v_q_num < 7 OR v_q_num > 31) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 2 (Dải chuẩn: Q7–31).', v_q_num;
+    ELSIF v_part_name = 'part3' AND (v_q_num < 32 OR v_q_num > 70) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 3 (Dải chuẩn: Q32–70).', v_q_num;
+    ELSIF v_part_name = 'part4' AND (v_q_num < 71 OR v_q_num > 100) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 4 (Dải chuẩn: Q71–100).', v_q_num;
+    ELSIF v_part_name = 'part5' AND (v_q_num < 101 OR v_q_num > 130) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 5 (Dải chuẩn: Q101–130).', v_q_num;
+    ELSIF v_part_name = 'part6' AND (v_q_num < 131 OR v_q_num > 146) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 6 (Dải chuẩn: Q131–146).', v_q_num;
+    ELSIF v_part_name = 'part7' AND (v_q_num < 147 OR v_q_num > 200) THEN
+      RAISE EXCEPTION 'Câu Q% không thuộc Part 7 (Dải chuẩn: Q147–200).', v_q_num;
     END IF;
 
-    -- Count active questions matching (test_id, question_number)
+    -- Validate Options Shape if Supplied
+    IF (v_question_elem ? 'options') AND (v_question_elem -> 'options') IS NOT NULL THEN
+      IF jsonb_typeof(v_question_elem -> 'options') <> 'array' OR jsonb_array_length(v_question_elem -> 'options') <> 4 THEN
+        RAISE EXCEPTION 'Danh sách lựa chọn EN cho câu Q% không hợp lệ (yêu cầu đúng 4 đáp án A, B, C, D).', v_q_num;
+      END IF;
+    END IF;
+
+    IF (v_question_elem ? 'options_vi') AND (v_question_elem -> 'options_vi') IS NOT NULL THEN
+      IF jsonb_typeof(v_question_elem -> 'options_vi') <> 'array' OR jsonb_array_length(v_question_elem -> 'options_vi') <> 4 THEN
+        RAISE EXCEPTION 'Danh sách lựa chọn VI cho câu Q% không hợp lệ (yêu cầu đúng 4 đáp án A, B, C, D).', v_q_num;
+      END IF;
+    END IF;
+
+    -- Check Existing Active Question & Verify DB question.part Matches v_part_name
     SELECT COUNT(*) INTO v_q_matches_count
     FROM public.toeic_test_questions
     WHERE test_id = p_test_id
       AND question_number = v_q_num
+      AND part = v_part_name
       AND is_active = true;
 
     IF v_q_matches_count = 0 THEN
-      RAISE EXCEPTION 'Không tìm thấy câu hỏi Q% trong đề thi. Cấu trúc câu hỏi phải tồn tại trước khi import nội dung.', v_q_num;
+      RAISE EXCEPTION 'Không tìm thấy câu hỏi Q% (thuộc %) trong đề thi. Cấu trúc câu hỏi phải tồn tại trước khi import nội dung.', v_q_num, UPPER(v_part_name);
     ELSIF v_q_matches_count > 1 THEN
       RAISE EXCEPTION 'Phát hiện nhiều câu hỏi Q% trùng lặp trong đề thi. Vui lòng kiểm tra lại dữ liệu.', v_q_num;
     END IF;
@@ -179,7 +214,17 @@ BEGIN
     FROM public.toeic_test_questions
     WHERE test_id = p_test_id
       AND question_number = v_q_num
+      AND part = v_part_name
       AND is_active = true;
+
+    -- Validate Answer Key when import_answers = true
+    v_final_correct := NULL;
+    IF v_import_answers = true AND (v_question_elem ? 'correct_answer') AND (v_question_elem ->> 'correct_answer') IS NOT NULL THEN
+      v_final_correct := UPPER(TRIM(v_question_elem ->> 'correct_answer'));
+      IF v_final_correct NOT IN ('A', 'B', 'C', 'D') THEN
+        RAISE EXCEPTION 'Đáp án cho câu Q% không hợp lệ: % (chỉ chấp nhận A, B, C, D).', v_q_num, (v_question_elem ->> 'correct_answer');
+      END IF;
+    END IF;
 
     -- Update Existing Question Content Safely
     UPDATE public.toeic_test_questions
@@ -189,7 +234,7 @@ BEGIN
       options = CASE WHEN (v_question_elem ? 'options') AND (v_question_elem -> 'options') IS NOT NULL THEN (v_question_elem -> 'options') ELSE options END,
       options_vi = CASE WHEN (v_question_elem ? 'options_vi') AND (v_question_elem -> 'options_vi') IS NOT NULL THEN (v_question_elem -> 'options_vi') ELSE options_vi END,
       explanation = CASE WHEN (v_question_elem ? 'explanation') AND (v_question_elem ->> 'explanation') IS NOT NULL THEN (v_question_elem ->> 'explanation') ELSE explanation END,
-      correct_answer = CASE WHEN v_import_answers = true AND (v_question_elem ? 'correct_answer') AND (v_question_elem ->> 'correct_answer') IS NOT NULL THEN UPPER(TRIM(v_question_elem ->> 'correct_answer')) ELSE correct_answer END,
+      correct_answer = COALESCE(v_final_correct, correct_answer),
       updated_at = NOW()
     WHERE id = v_existing_q_id;
 

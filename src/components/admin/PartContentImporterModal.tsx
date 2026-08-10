@@ -207,9 +207,16 @@ export const PartContentImporterModalContent: React.FC<PartContentImporterModalP
     setServerError(null);
 
     const mappedGroups = (parseResult.groups || []).map(g => {
-      const existingG = (existingGroups || []).find(
-        exG => exG && exG.part === normPart && exG.start_question === g.start_question && exG.end_question === g.end_question
-      );
+      const existingG = (existingGroups || []).find(exG => {
+        if (!exG || exG.part !== normPart) return false;
+        // Derive start_question & end_question from questions matching exG.id
+        const groupQs = (existingQuestions || []).filter(q => q && q.group_id === exG.id);
+        if (groupQs.length === 0) return false;
+        const startQ = Math.min(...groupQs.map(q => q.question_number));
+        const endQ = Math.max(...groupQs.map(q => q.question_number));
+        return startQ === g.start_question && endQ === g.end_question;
+      });
+
       if (existingG && existingG.id) {
         return { ...g, id: existingG.id };
       }
