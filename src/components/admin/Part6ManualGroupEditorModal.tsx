@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle, Clipboard } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { parseFourOptions } from '../../lib/cms/fourOptionsParser';
+import { parsePart6GroupBlock } from '../../lib/cms/part6GroupBlockParser';
 
 export interface Part6ManualGroupEditorModalProps {
   isOpen: boolean;
@@ -23,6 +24,8 @@ const PART6_RANGES = [
 interface QuestionOptionState {
   id: string;
   question_number: number;
+  question_text: string;
+  translation_vi: string;
   options: [string, string, string, string];
   options_vi: [string, string, string, string];
 }
@@ -41,6 +44,10 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
   const [passageVi, setPassageVi] = useState<string>('');
   const [questionsState, setQuestionsState] = useState<QuestionOptionState[]>([]);
   
+  // Group-level paste textareas
+  const [groupTextEn, setGroupTextEn] = useState<string>('');
+  const [groupTextVi, setGroupTextVi] = useState<string>('');
+
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -75,6 +82,8 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
     setErrorMsg(null);
     setSuccessMsg(null);
+    setGroupTextEn('');
+    setGroupTextVi('');
 
     // Initialize group passage
     setPassageEn(targetGroup?.passage || '');
@@ -90,6 +99,8 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
       qStates.push({
         id: q?.id || '',
         question_number: qNum,
+        question_text: q?.question_text || '',
+        translation_vi: q?.translation_vi || '',
         options: [
           String(enOptsArr[0] || ''),
           String(enOptsArr[1] || ''),
@@ -197,6 +208,64 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
     }
   };
 
+  const handleApplyGroupPaste = () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!groupTextEn.trim() && !groupTextVi.trim()) {
+      setErrorMsg('Vui lòng dán văn bản nhóm Tiếng Anh hoặc Tiếng Việt vào ô dán trọn nhóm trước khi bấm điền vào form.');
+      return;
+    }
+
+    const parsedEn = groupTextEn.trim()
+      ? parsePart6GroupBlock(groupTextEn, activeRange.start, activeRange.end)
+      : null;
+    const parsedVi = groupTextVi.trim()
+      ? parsePart6GroupBlock(groupTextVi, activeRange.start, activeRange.end)
+      : null;
+
+    const hasExistingData =
+      Boolean(passageEn.trim() || passageVi.trim()) ||
+      questionsState.some(q => q.options.some(o => o.trim() !== '') || q.options_vi.some(o => o.trim() !== ''));
+
+    if (hasExistingData) {
+      const confirmReplace = window.confirm(`Cập nhật các trường thông tin bóc tách từ nhóm ${activeRange.label} vào form?`);
+      if (!confirmReplace) return;
+    }
+
+    if (parsedEn && parsedEn.passage) {
+      setPassageEn(parsedEn.passage);
+    }
+    if (parsedVi && parsedVi.passage) {
+      setPassageVi(parsedVi.passage);
+    }
+
+    setQuestionsState(prev => {
+      return prev.map(q => {
+        const qNum = q.question_number;
+        const enQ = parsedEn?.questions.find(item => item.question_number === qNum);
+        const viQ = parsedVi?.questions.find(item => item.question_number === qNum);
+
+        const newQ = { ...q };
+
+        if (enQ) {
+          if (enQ.questionText) newQ.question_text = enQ.questionText;
+          if (enQ.options.some(o => o.trim() !== '')) newQ.options = [...enQ.options];
+        }
+
+        if (viQ) {
+          if (viQ.questionText) newQ.translation_vi = viQ.questionText;
+          if (viQ.options.some(o => o.trim() !== '')) newQ.options_vi = [...viQ.options];
+        }
+
+        return newQ;
+      });
+    });
+
+    setIsDirty(true);
+    setSuccessMsg(`Đã điền dữ liệu bóc tách từ nhóm ${activeRange.label} vào form!`);
+  };
+
   const handleSave = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -227,11 +296,13 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
         throw new Error(`Lỗi cập nhật đoạn văn nhóm: ${groupErr.message}`);
       }
 
-      // 2. Update 4 Questions options & options_vi
+      // 2. Update 4 Questions options, options_vi, question_text, translation_vi
       for (const qState of questionsState) {
         const { error: qErr } = await supabase
           .from('toeic_test_questions')
           .update({
+            question_text: qState.question_text?.trim() || null,
+            translation_vi: qState.translation_vi?.trim() || null,
             options: qState.options,
             options_vi: qState.options_vi,
             updated_at: new Date().toISOString(),
@@ -341,6 +412,63 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
             </div>
           )}
 
+          {/* PRIMARY GROUP-LEVEL PASTE WORKBENCH SECTION */}
+          <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-purple-600 text-white rounded-lg">
+                  <Clipboard className="w-4 h-4" />
+                </span>
+                <div>
+                  <h4 className="font-black text-xs text-purple-950 uppercase tracking-wide">
+                    📋 DÁN TRỌN NHÓM PARSE TỰ ĐỘNG ({activeRange.label})
+                  </h4>
+                  <p className="text-[11px] text-purple-700 font-medium">
+                    Dán 1 block Tiếng Anh và/hoặc Tiếng Việt (gồm Đoạn văn + 4 câu hỏi + 16 đáp án), sau đó bấm Điền Vào Form.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleApplyGroupPaste}
+                className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5"
+              >
+                <span>✨</span> ÁP DỤNG VÀO FORM ({activeRange.label})
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              {/* GROUP EN PASTE */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-purple-900 block uppercase">
+                  🇬🇧 DÁN TRỌN NHÓM TIẾNG ANH ({activeRange.label})
+                </label>
+                <textarea
+                  rows={4}
+                  value={groupTextEn}
+                  onChange={e => setGroupTextEn(e.target.value)}
+                  placeholder="Dán toàn bộ bài đọc + 4 câu hỏi Tiếng Anh vào đây..."
+                  className="w-full p-3 bg-white border border-purple-200 rounded-xl text-xs font-mono text-slate-800 focus:border-purple-600 focus:ring-2 focus:ring-purple-200 transition-all"
+                />
+              </div>
+
+              {/* GROUP VI PASTE */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-purple-900 block uppercase">
+                  🇻🇳 DÁN TRỌN NHÓM TIẾNG VIỆT ({activeRange.label})
+                </label>
+                <textarea
+                  rows={4}
+                  value={groupTextVi}
+                  onChange={e => setGroupTextVi(e.target.value)}
+                  placeholder="Dán toàn bộ bài đọc + 4 câu hỏi bản dịch Tiếng Việt vào đây..."
+                  className="w-full p-3 bg-white border border-purple-200 rounded-xl text-xs font-mono text-slate-800 focus:border-purple-600 focus:ring-2 focus:ring-purple-200 transition-all"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* SECTION 1: PASSAGE EN / VI SIDE BY SIDE */}
           <div className="space-y-2">
             <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -353,7 +481,7 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                   🇬🇧 PASSAGE TIẾNG ANH (KÈM VỊ TRÍ ------- {activeRange.start}.)
                 </label>
                 <textarea
-                  rows={8}
+                  rows={6}
                   value={passageEn}
                   onChange={e => {
                     setPassageEn(e.target.value);
@@ -370,7 +498,7 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                   🇻🇳 BẢN DỊCH TIẾNG VIỆT ĐOẠN VĂN
                 </label>
                 <textarea
-                  rows={8}
+                  rows={6}
                   value={passageVi}
                   onChange={e => {
                     setPassageVi(e.target.value);
@@ -405,8 +533,53 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                       <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-lg">Câu {qState.question_number}</span>
                     </span>
                     <span className="text-[11px] font-medium text-slate-400">
-                      (Tự động chia A, B, C, D khi dán block 4 câu)
+                      (Không bắt buộc nhập câu hỏi stem)
                     </span>
+                  </div>
+
+                  {/* QUESTION STEM EN / VI */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-extrabold text-slate-700 block uppercase">
+                        🇬🇧 QUESTION EN (THÂN CÂU - TỰ CHỌN)
+                      </label>
+                      <input
+                        type="text"
+                        value={qState.question_text}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setQuestionsState(prev => {
+                            const updated = [...prev];
+                            updated[qIdx] = { ...updated[qIdx], question_text: val };
+                            return updated;
+                          });
+                          setIsDirty(true);
+                        }}
+                        placeholder="Choose the best sentence to complete..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-extrabold text-slate-700 block uppercase">
+                        🇻🇳 BẢN DỊCH CÂU HỎI VI (TỰ CHỌN)
+                      </label>
+                      <input
+                        type="text"
+                        value={qState.translation_vi}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setQuestionsState(prev => {
+                            const updated = [...prev];
+                            updated[qIdx] = { ...updated[qIdx], translation_vi: val };
+                            return updated;
+                          });
+                          setIsDirty(true);
+                        }}
+                        placeholder="Chọn câu phù hợp nhất để hoàn thành..."
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
+                      />
+                    </div>
                   </div>
 
                   {/* BULK PASTE TEXTAREAS FOR QUESTION */}
