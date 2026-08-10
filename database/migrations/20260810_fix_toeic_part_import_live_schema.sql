@@ -32,6 +32,14 @@ DECLARE
   v_groups_updated int := 0;
   v_has_group_content boolean;
 
+  v_existing_docs jsonb;
+  v_existing_docs_vi jsonb;
+  v_effective_docs jsonb;
+  v_effective_docs_vi jsonb;
+  v_doc_idx int;
+  v_doc_en_type text;
+  v_doc_vi_type text;
+
   v_q_num int;
   v_q_part text;
   v_existing_q_id uuid;
@@ -47,13 +55,26 @@ BEGIN
     RAISE EXCEPTION 'Permission denied: admin role required.';
   END IF;
 
-  -- 2. Validate Part Name
+  -- 2. Root Payload Shape Validation
+  IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+    RAISE EXCEPTION 'Payload phải là một đối tượng JSON.';
+  END IF;
+
+  IF (p_payload ? 'groups') AND (p_payload -> 'groups') IS NOT NULL AND jsonb_typeof(p_payload -> 'groups') <> 'array' THEN
+    RAISE EXCEPTION 'Trường "groups" trong payload phải là một mảng JSON.';
+  END IF;
+
+  IF (p_payload ? 'questions') AND (p_payload -> 'questions') IS NOT NULL AND jsonb_typeof(p_payload -> 'questions') <> 'array' THEN
+    RAISE EXCEPTION 'Trường "questions" trong payload phải là một mảng JSON.';
+  END IF;
+
+  -- 3. Validate Part Name
   v_part_name := LOWER(TRIM(p_part));
   IF v_part_name NOT IN ('part1', 'part2', 'part3', 'part4', 'part5', 'part6', 'part7') THEN
     RAISE EXCEPTION 'Mã Part không hợp lệ: %', p_part;
   END IF;
 
-  -- 3. Check if test exists and is_published status
+  -- 4. Check if test exists and is_published status
   SELECT is_published INTO v_test_published
   FROM public.toeic_tests
   WHERE id = p_test_id;
@@ -70,14 +91,14 @@ BEGIN
   v_questions := COALESCE(p_payload -> 'questions', '[]'::jsonb);
   v_import_answers := COALESCE((p_payload ->> 'import_answers')::boolean, false);
 
-  -- 4. Process Groups (Update-Only)
+  -- 5. Process Groups (Update-Only)
   FOR v_group_elem IN SELECT * FROM jsonb_array_elements(v_groups)
   LOOP
+    -- Note: Exclude synthetic title alone from group mutation trigger
     v_has_group_content := (v_group_elem ? 'transcript') OR (v_group_elem ? 'transcript_vi') 
       OR (v_group_elem ? 'passage') OR (v_group_elem ? 'passage_vi') 
       OR (v_group_elem ? 'documents') OR (v_group_elem ? 'documents_vi')
-      OR (v_group_elem ? 'instruction') OR (v_group_elem ? 'instruction_vi')
-      OR (v_group_elem ? 'title');
+      OR (v_group_elem ? 'instruction') OR (v_group_elem ? 'instruction_vi');
 
     -- Skip empty group payloads that contain no content fields
     IF NOT v_has_group_content THEN
@@ -142,16 +163,50 @@ BEGIN
       RAISE EXCEPTION 'Không tìm thấy nhóm bài hiện có phù hợp cho dải câu Q%–%. Vui lòng tạo cấu trúc đề trước khi import nội dung.', COALESCE(v_start_q, 0), COALESCE(v_end_q, 0);
     END IF;
 
+    -- Part 7 Document Structure & Partial-Update Validation
+    IF v_part_name = 'part7' THEN
+      IF (v_group_elem ? 'documents') AND (v_group_elem -> 'documents') IS NOT NULL AND jsonb_typeof(v_group_elem -> 'documents') <> 'array' THEN
+        RAISE EXCEPTION 'Trường documents trong nhóm bài phải là một mảng JSON.';
+      END IF;
+
+      IF (v_group_elem ? 'documents_vi') AND (v_group_elem -> 'documents_vi') IS NOT NULL AND jsonb_typeof(v_group_elem -> 'documents_vi') <> 'array' THEN
+        RAISE EXCEPTION 'Trường documents_vi trong nhóm bài phải là một mảng JSON.';
+      END IF;
+
+      SELECT documents, documents_vi INTO v_existing_docs, v_existing_docs_vi
+      FROM public.toeic_test_groups
+      WHERE id = v_target_group_id;
+
+      v_effective_docs := CASE WHEN (v_group_elem ? 'documents') AND (v_group_elem -> 'documents') IS NOT NULL THEN (v_group_elem -> 'documents') ELSE v_existing_docs END;
+      v_effective_docs_vi := CASE WHEN (v_group_elem ? 'documents_vi') AND (v_group_elem -> 'documents_vi') IS NOT NULL THEN (v_group_elem -> 'documents_vi') ELSE v_existing_docs_vi END;
+
+      IF v_effective_docs IS NOT NULL AND v_effective_docs_vi IS NOT NULL 
+         AND jsonb_typeof(v_effective_docs) = 'array' AND jsonb_typeof(v_effective_docs_vi) = 'array' THEN
+        IF jsonb_array_length(v_effective_docs) <> jsonb_array_length(v_effective_docs_vi) THEN
+          RAISE EXCEPTION 'Số lượng tài liệu EN (%) và VI (%) trong Part 7 không khớp nhau.', jsonb_array_length(v_effective_docs), jsonb_array_length(v_effective_docs_vi);
+        END IF;
+
+        FOR v_doc_idx IN 0 .. (jsonb_array_length(v_effective_docs) - 1)
+        LOOP
+          v_doc_en_type := (v_effective_docs -> v_doc_idx) ->> 'type';
+          v_doc_vi_type := (v_effective_docs_vi -> v_doc_idx) ->> 'type';
+          IF v_doc_en_type IS NOT NULL AND v_doc_vi_type IS NOT NULL AND LOWER(TRIM(v_doc_en_type)) <> LOWER(TRIM(v_doc_vi_type)) THEN
+            RAISE EXCEPTION 'Loại tài liệu tại vị trí % không khớp (EN: %, VI: %).', v_doc_idx + 1, v_doc_en_type, v_doc_vi_type;
+          END IF;
+        END LOOP;
+      END IF;
+    END IF;
+
     -- Update Existing Group Content Safely
     UPDATE public.toeic_test_groups
     SET
       title = CASE WHEN (v_group_elem ? 'title') AND (v_group_elem ->> 'title') IS NOT NULL THEN (v_group_elem ->> 'title') ELSE title END,
       instruction = CASE WHEN (v_group_elem ? 'instruction') AND (v_group_elem ->> 'instruction') IS NOT NULL THEN (v_group_elem ->> 'instruction') ELSE instruction END,
       instruction_vi = CASE WHEN (v_group_elem ? 'instruction_vi') AND (v_group_elem ->> 'instruction_vi') IS NOT NULL THEN (v_group_elem ->> 'instruction_vi') ELSE instruction_vi END,
-      passage = CASE WHEN (v_group_elem ? 'passage') AND (v_group_elem ->> 'passage') IS NOT NULL THEN (v_group_elem ->> 'passage') ELSE passage END,
-      passage_vi = CASE WHEN (v_group_elem ? 'passage_vi') AND (v_group_elem ->> 'passage_vi') IS NOT NULL THEN (v_group_elem ->> 'passage_vi') ELSE passage_vi END,
-      transcript = CASE WHEN (v_group_elem ? 'transcript') AND (v_group_elem ->> 'transcript') IS NOT NULL THEN (v_group_elem ->> 'transcript') ELSE transcript END,
-      transcript_vi = CASE WHEN (v_group_elem ? 'transcript_vi') AND (v_group_elem ->> 'transcript_vi') IS NOT NULL THEN (v_group_elem ->> 'transcript_vi') ELSE transcript_vi END,
+      passage = CASE WHEN (v_group_elem ? 'passage') AND (v_group_elem -> 'passage') IS NOT NULL THEN (v_group_elem ->> 'passage') ELSE passage END,
+      passage_vi = CASE WHEN (v_group_elem ? 'passage_vi') AND (v_group_elem -> 'passage_vi') IS NOT NULL THEN (v_group_elem ->> 'passage_vi') ELSE passage_vi END,
+      transcript = CASE WHEN (v_group_elem ? 'transcript') AND (v_group_elem -> 'transcript') IS NOT NULL THEN (v_group_elem ->> 'transcript') ELSE transcript END,
+      transcript_vi = CASE WHEN (v_group_elem ? 'transcript_vi') AND (v_group_elem -> 'transcript_vi') IS NOT NULL THEN (v_group_elem ->> 'transcript_vi') ELSE transcript_vi END,
       documents = CASE WHEN (v_group_elem ? 'documents') AND (v_group_elem -> 'documents') IS NOT NULL THEN (v_group_elem -> 'documents') ELSE documents END,
       documents_vi = CASE WHEN (v_group_elem ? 'documents_vi') AND (v_group_elem -> 'documents_vi') IS NOT NULL THEN (v_group_elem -> 'documents_vi') ELSE documents_vi END,
       updated_at = NOW()
@@ -160,11 +215,17 @@ BEGIN
     v_groups_updated := v_groups_updated + 1;
   END LOOP;
 
-  -- 5. Process Questions (Update-Only)
+  -- 6. Process Questions (Update-Only)
   FOR v_question_elem IN SELECT * FROM jsonb_array_elements(v_questions)
   LOOP
     v_q_num := (v_question_elem ->> 'question_number')::int;
-    v_q_part := LOWER(TRIM(COALESCE(v_question_elem ->> 'part', v_part_name)));
+    
+    -- Validate Explicit Payload Part if Supplied
+    IF (v_question_elem ? 'part') AND (v_question_elem ->> 'part') IS NOT NULL AND TRIM(v_question_elem ->> 'part') <> '' THEN
+      IF LOWER(TRIM(v_question_elem ->> 'part')) <> v_part_name THEN
+        RAISE EXCEPTION 'Câu Q% có part (% ) không khớp với Part đang import (%).', v_q_num, (v_question_elem ->> 'part'), UPPER(v_part_name);
+      END IF;
+    END IF;
 
     -- Validate Canonical Question Range per Part
     IF v_part_name = 'part1' AND (v_q_num < 1 OR v_q_num > 6) THEN
@@ -183,15 +244,19 @@ BEGIN
       RAISE EXCEPTION 'Câu Q% không thuộc Part 7 (Dải chuẩn: Q147–200).', v_q_num;
     END IF;
 
-    -- Validate Options Shape if Supplied
+    -- Type-Safe Options Shape Validation if Supplied
     IF (v_question_elem ? 'options') AND (v_question_elem -> 'options') IS NOT NULL THEN
-      IF jsonb_typeof(v_question_elem -> 'options') <> 'array' OR jsonb_array_length(v_question_elem -> 'options') <> 4 THEN
+      IF jsonb_typeof(v_question_elem -> 'options') <> 'array' THEN
+        RAISE EXCEPTION 'Trường options cho câu Q% phải là một mảng JSON.', v_q_num;
+      ELSIF jsonb_array_length(v_question_elem -> 'options') <> 4 THEN
         RAISE EXCEPTION 'Danh sách lựa chọn EN cho câu Q% không hợp lệ (yêu cầu đúng 4 đáp án A, B, C, D).', v_q_num;
       END IF;
     END IF;
 
     IF (v_question_elem ? 'options_vi') AND (v_question_elem -> 'options_vi') IS NOT NULL THEN
-      IF jsonb_typeof(v_question_elem -> 'options_vi') <> 'array' OR jsonb_array_length(v_question_elem -> 'options_vi') <> 4 THEN
+      IF jsonb_typeof(v_question_elem -> 'options_vi') <> 'array' THEN
+        RAISE EXCEPTION 'Trường options_vi cho câu Q% phải là một mảng JSON.', v_q_num;
+      ELSIF jsonb_array_length(v_question_elem -> 'options_vi') <> 4 THEN
         RAISE EXCEPTION 'Danh sách lựa chọn VI cho câu Q% không hợp lệ (yêu cầu đúng 4 đáp án A, B, C, D).', v_q_num;
       END IF;
     END IF;
