@@ -38,62 +38,70 @@ export interface Part6GroupResolverResult {
   error?: string;
 }
 
+const normalizePart = (val: unknown): string =>
+  typeof val === 'string' ? val.trim().toLowerCase() : '';
+
 /**
- * Single Deterministic Resolver for Part 6 Groups & Questions
- * Derives target group primarily from question membership for the exact canonical 4-question range.
- * Eliminates arbitrary group fallback bug.
+ * Strict Deterministic Resolver for Part 6 Groups & Questions
+ * Derives target group ONLY from exact 4-question membership matching the active canonical range.
+ * Zero metadata or positional guessing.
  */
 export function resolvePart6GroupForRange(
   existingGroups: any[],
   existingQuestions: any[],
   activeRange: Part6Range
 ): Part6GroupResolverResult {
+  const expectedNumbers = [
+    activeRange.start,
+    activeRange.start + 1,
+    activeRange.start + 2,
+    activeRange.end,
+  ];
+
   if (!existingGroups || existingGroups.length === 0) {
-    return { group: null, questions: [], error: 'Không tìm thấy dữ liệu nhóm Part 6.' };
+    return { group: null, questions: [], error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
   }
 
-  // 1. Filter questions belonging to this canonical 4-question range
+  // 1. Filter active Part6 questions matching expected canonical numbers
   const rangeQuestions = (existingQuestions || [])
     .filter(q => {
-      const isP6 = q.part === 'part6' || (typeof q.part === 'string' && q.part.toLowerCase() === 'part6');
-      return isP6 && q.question_number >= activeRange.start && q.question_number <= activeRange.end && q.is_active !== false;
+      const isP6 = normalizePart(q.part) === 'part6';
+      return isP6 && expectedNumbers.includes(q.question_number) && q.is_active !== false;
     })
     .sort((a, b) => a.question_number - b.question_number);
 
-  // 2. Derive group_id from questions
-  let derivedGroupId: string | null = null;
-  if (rangeQuestions.length > 0) {
-    const groupIds = Array.from(new Set(rangeQuestions.map(q => q.group_id).filter(Boolean)));
-    if (groupIds.length === 1) {
-      derivedGroupId = groupIds[0] as string;
-    }
+  // 2. Validate exact 4-question count and numbers
+  if (rangeQuestions.length !== 4) {
+    return { group: null, questions: rangeQuestions, error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
   }
 
-  // 3. Find target group by derivedGroupId first
-  let targetGroup: any = null;
-  if (derivedGroupId) {
-    targetGroup = existingGroups.find(g => g.id === derivedGroupId) || null;
+  const qNums = rangeQuestions.map(q => q.question_number);
+  const qNumsMatch = expectedNumbers.every((num, idx) => num === qNums[idx]);
+  if (!qNumsMatch) {
+    return { group: null, questions: rangeQuestions, error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
   }
 
-  // 4. Fallback: match start_question or range field
+  // 3. Require every question has a valid, non-empty group_id
+  const hasInvalidGroupId = rangeQuestions.some(q => !q.group_id || typeof q.group_id !== 'string' || q.group_id.trim() === '');
+  if (hasInvalidGroupId) {
+    return { group: null, questions: rangeQuestions, error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
+  }
+
+  // 4. Require exactly ONE distinct group_id across all 4 questions
+  const distinctGroupIds = Array.from(new Set(rangeQuestions.map(q => q.group_id.trim())));
+  if (distinctGroupIds.length !== 1) {
+    return { group: null, questions: rangeQuestions, error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
+  }
+
+  const derivedGroupId = distinctGroupIds[0];
+
+  // 5. Look up targetGroup in existingGroups using exact group_id and strict part check ONLY
+  const targetGroup = existingGroups.find(g => {
+    return g.id === derivedGroupId && normalizePart(g.part) === 'part6' && g.is_active !== false;
+  }) || null;
+
   if (!targetGroup) {
-    targetGroup = existingGroups.find(g => {
-      if (g.part !== 'part6' && typeof g.part === 'string' && g.part.toLowerCase() !== 'part6') return false;
-      if (typeof g.start_question === 'number' && g.start_question === activeRange.start) return true;
-      if (typeof g.range === 'string' && (g.range === `${activeRange.start}-${activeRange.end}` || g.range.includes(String(activeRange.start)))) return true;
-      return false;
-    }) || null;
-  }
-
-  // Verify targetGroup matches questions if targetGroup is found
-  if (targetGroup && rangeQuestions.length > 0) {
-    const mismatch = rangeQuestions.some(q => q.group_id && q.group_id !== targetGroup.id);
-    if (mismatch) {
-      const matchingGroup = existingGroups.find(g => g.id === rangeQuestions[0].group_id);
-      if (matchingGroup) {
-        targetGroup = matchingGroup;
-      }
-    }
+    return { group: null, questions: rangeQuestions, error: 'Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.' };
   }
 
   return {

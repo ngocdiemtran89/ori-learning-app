@@ -312,7 +312,48 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     expect(patchResult.payload.questions[0].question_number).toBe(131);
   });
 
-  it('10. validates normalizeToeicOptions with string array, object array, letter-key, and numeric-key objects', () => {
+  it('10. validates resolvePart6GroupForRange STRICTNESS edge cases (incomplete load, mixed group_ids, missing group_id, metadata rejection)', () => {
+    const mockGroups = [
+      { id: 'grp-31', part: 'part6', start_question: 131, range: '131-134' },
+      { id: 'grp-35', part: 'part6', start_question: 135, range: '135-138' },
+    ];
+
+    // Case F: Only 3 questions loaded -> group null + error
+    const only3Q = [131, 132, 133].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-31' }));
+    const res3Q = resolvePart6GroupForRange(mockGroups, only3Q, { label: 'Q131-134', start: 131, end: 134 });
+    expect(res3Q.group).toBeNull();
+    expect(res3Q.error).toBeDefined();
+
+    // Case G: 4 questions but two different group_ids -> group null + error
+    const mixedGroupQ = [
+      { id: 'q-131', part: 'part6', question_number: 131, group_id: 'grp-31' },
+      { id: 'q-132', part: 'part6', question_number: 132, group_id: 'grp-31' },
+      { id: 'q-133', part: 'part6', question_number: 133, group_id: 'grp-35' }, // Mismatched!
+      { id: 'q-134', part: 'part6', question_number: 134, group_id: 'grp-31' },
+    ];
+    const resMixed = resolvePart6GroupForRange(mockGroups, mixedGroupQ, { label: 'Q131-134', start: 131, end: 134 });
+    expect(resMixed.group).toBeNull();
+    expect(resMixed.error).toBeDefined();
+
+    // Case H: question missing group_id -> group null + error
+    const missingGroupQ = [
+      { id: 'q-131', part: 'part6', question_number: 131, group_id: 'grp-31' },
+      { id: 'q-132', part: 'part6', question_number: 132, group_id: null }, // Missing!
+      { id: 'q-133', part: 'part6', question_number: 133, group_id: 'grp-31' },
+      { id: 'q-134', part: 'part6', question_number: 134, group_id: 'grp-31' },
+    ];
+    const resMissing = resolvePart6GroupForRange(mockGroups, missingGroupQ, { label: 'Q131-134', start: 131, end: 134 });
+    expect(resMissing.group).toBeNull();
+    expect(resMissing.error).toBeDefined();
+
+    // Case I & J: matching start_question/range metadata but WRONG question membership -> MUST NOT resolve group
+    const wrongQ = [139, 140, 141, 142].map(q => ({ id: `q-${q}`, part: 'part6', question_number: q, group_id: 'grp-31' }));
+    const resWrong = resolvePart6GroupForRange(mockGroups, wrongQ, { label: 'Q131-134', start: 131, end: 134 });
+    expect(resWrong.group).toBeNull();
+    expect(resWrong.error).toBeDefined();
+  });
+
+  it('11. validates normalizeToeicOptions with string array, object array, letter-key, and numeric-key objects', () => {
     const stringArray = ['years', 'space', 'beauty', 'moisture'];
     const objectArray = [
       { label: 'A', text: 'years' },
@@ -327,5 +368,66 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     expect(normalizeToeicOptions(objectArray)).toEqual(['years', 'space', 'beauty', 'moisture']);
     expect(normalizeToeicOptions(letterKey)).toEqual(['years', 'space', 'beauty', 'moisture']);
     expect(normalizeToeicOptions(numericKey)).toEqual(['years', 'space', 'beauty', 'moisture']);
+  });
+
+  it('12. validates normalizeToeicOptions fails safe on unknown/malformed objects, label-only objects, and debug fields', () => {
+    expect(normalizeToeicOptions(null)).toEqual(['', '', '', '']);
+    expect(normalizeToeicOptions(undefined)).toEqual(['', '', '', '']);
+    expect(normalizeToeicOptions({ foo: 'bar' })).toEqual(['', '', '', '']);
+    expect(normalizeToeicOptions([{ label: 'A' }])).toEqual(['', '', '', '']);
+    expect(normalizeToeicOptions([{ label: 'A', debug: 'unexpected' }])).toEqual(['', '', '', '']);
+  });
+
+  it('13. validates ROUNDTRIP: loading historical object-array option -> no changes -> edit option C -> patch payload canonical', () => {
+    const rawDbOptions = [
+      { label: 'A', text: 'years' },
+      { label: 'B', text: 'space' },
+      { label: 'C', text: 'beauty' },
+      { label: 'D', text: 'moisture' },
+    ];
+
+    const normEn = normalizeToeicOptions(rawDbOptions);
+
+    const snapshot: GroupSnapshot = {
+      passageEn: 'Passage EN',
+      passageVi: 'Passage VI',
+      questions: [
+        {
+          question_number: 132,
+          options: [...normEn],
+          options_vi: ['', '', '', ''],
+        },
+      ],
+    };
+
+    const currentQuestions: QuestionOptionState[] = [
+      {
+        id: 'q132',
+        question_number: 132,
+        options: [...normEn],
+        options_vi: ['', '', '', ''],
+      },
+    ];
+
+    // Untouched load check
+    const initialDiff = buildGroupPatchPayload(snapshot, 'Passage EN', 'Passage VI', currentQuestions);
+    expect(initialDiff.hasChanges).toBe(false);
+    expect(initialDiff.payload).toEqual({});
+
+    // Admin edits option C
+    currentQuestions[0].options[2] = 'natural beauty';
+
+    const editedDiff = buildGroupPatchPayload(snapshot, 'Passage EN', 'Passage VI', currentQuestions);
+    expect(editedDiff.hasChanges).toBe(true);
+    expect(editedDiff.payload).toEqual({
+      questions: [
+        {
+          question_number: 132,
+          options: ['years', 'space', 'natural beauty', 'moisture'],
+        },
+      ],
+    });
+    expect(editedDiff.payload.questions[0]).not.toHaveProperty('question_text');
+    expect(editedDiff.payload.questions[0]).not.toHaveProperty('translation_vi');
   });
 });

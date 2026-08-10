@@ -266,13 +266,13 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (!targetGroup) {
-      setErrorMsg(`Không tìm thấy dữ liệu nhóm ${activeRange.label} trong cơ sở dữ liệu.`);
+    if (resolved.error || !targetGroup || targetQuestions.length !== 4) {
+      setErrorMsg('Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.');
       return;
     }
 
     if (questionsState.some(q => !q.id)) {
-      setErrorMsg(`Không tìm thấy đủ 4 câu hỏi (${activeRange.label}) trong hệ thống.`);
+      setErrorMsg('Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.');
       return;
     }
 
@@ -287,7 +287,7 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
       return;
     }
 
-    if (targetQuestions.some(q => q.group_id && q.group_id !== targetGroup.id)) {
+    if (targetQuestions.some(q => !q.group_id || q.group_id !== targetGroup.id)) {
       setErrorMsg('Nhóm câu hỏi đang không khớp dữ liệu. Vui lòng tải lại trang.');
       return;
     }
