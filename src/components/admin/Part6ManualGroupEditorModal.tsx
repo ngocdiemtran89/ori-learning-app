@@ -25,8 +25,8 @@ const PART6_RANGES = [
 export interface QuestionOptionState {
   id: string;
   question_number: number;
-  question_text: string;
-  translation_vi: string;
+  question_text?: string;
+  translation_vi?: string;
   options: [string, string, string, string];
   options_vi: [string, string, string, string];
 }
@@ -102,22 +102,15 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
       const normEnOpts = normalizeToeicOptions(q?.options);
       const normViOpts = normalizeToeicOptions(q?.options_vi);
 
-      const qText = q?.question_text || '';
-      const transVi = q?.translation_vi || '';
-
       qStates.push({
         id: q?.id || '',
         question_number: qNum,
-        question_text: qText,
-        translation_vi: transVi,
         options: [...normEnOpts],
         options_vi: [...normViOpts],
       });
 
       qSnapshots.push({
         question_number: qNum,
-        question_text: qText,
-        translation_vi: transVi,
         options: [...normEnOpts],
         options_vi: [...normViOpts],
       });
@@ -261,12 +254,10 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
         const newQ = { ...q };
 
         if (enQ) {
-          if (enQ.questionText) newQ.question_text = enQ.questionText;
           if (enQ.options.some(o => o.trim() !== '')) newQ.options = [...enQ.options];
         }
 
         if (viQ) {
-          if (viQ.questionText) newQ.translation_vi = viQ.questionText;
           if (viQ.options.some(o => o.trim() !== '')) newQ.options_vi = [...viQ.options];
         }
 
@@ -559,54 +550,6 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
                     <span className="font-black text-sm text-purple-900 flex items-center gap-2">
                       <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-lg">Câu {qState.question_number}</span>
                     </span>
-                    <span className="text-[11px] font-medium text-slate-400">
-                      (Không bắt buộc nhập câu hỏi stem)
-                    </span>
-                  </div>
-
-                  {/* QUESTION STEM EN / VI */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-extrabold text-slate-700 block uppercase">
-                        🇬🇧 QUESTION EN (THÂN CÂU - TỰ CHỌN)
-                      </label>
-                      <input
-                        type="text"
-                        value={qState.question_text}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setQuestionsState(prev => {
-                            const updated = [...prev];
-                            updated[qIdx] = { ...updated[qIdx], question_text: val };
-                            return updated;
-                          });
-                          setIsDirty(true);
-                        }}
-                        placeholder="Choose the best sentence to complete..."
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-extrabold text-slate-700 block uppercase">
-                        🇻🇳 BẢN DỊCH CÂU HỎI VI (TỰ CHỌN)
-                      </label>
-                      <input
-                        type="text"
-                        value={qState.translation_vi}
-                        onChange={e => {
-                          const val = e.target.value;
-                          setQuestionsState(prev => {
-                            const updated = [...prev];
-                            updated[qIdx] = { ...updated[qIdx], translation_vi: val };
-                            return updated;
-                          });
-                          setIsDirty(true);
-                        }}
-                        placeholder="Chọn câu phù hợp nhất để hoàn thành..."
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-600 focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
-                      />
-                    </div>
                   </div>
 
                   {/* BULK PASTE TEXTAREAS FOR QUESTION */}

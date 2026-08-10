@@ -3,15 +3,15 @@
  * Parses ONE known Part 6 four-question group (e.g. Q131-Q134) from a single pasted text block.
  *
  * Extracts:
- * - passage: everything before the first question header (preserving inline blank markers like ------- 131.)
- * - questions: array of parsed questions matching [startQuestion ... endQuestion] with optional questionText and [A, B, C, D] options.
+ * - passage: everything before the options (preserving inline blank markers like ------- 131.)
+ * - questions: array of parsed questions matching [startQuestion ... endQuestion] with [A, B, C, D] options ONLY.
  *
- * Does NOT touch database or full exam bulk parser logic.
+ * TOEIC Part 6 questions do NOT have standalone question stems (question_text is not extracted).
+ * Any text surrounding blank markers belongs to the passage.
  */
 
 export interface ParsedGroupQuestion {
   question_number: number;
-  questionText: string;
   options: [string, string, string, string];
 }
 
@@ -46,7 +46,7 @@ export function parsePart6GroupBlock(
 
   const lines = normalized.split('\n');
   const passageLines: string[] = [];
-  const rawQuestionBlocks: Map<number, { textLines: string[]; lines: string[] }> = new Map();
+  const rawQuestionBlocks: Map<number, { lines: string[] }> = new Map();
 
   let activeQNum: number | null = null;
 
@@ -77,18 +77,16 @@ export function parsePart6GroupBlock(
 
     // Check if line is a question header for target range
     let qMatchNum: number | null = null;
-    let initialQText = '';
 
     // Must NOT be an inline passage blank marker like ------- 131. or ... ------- 131.
     if (!/^[-–—_]{2,}\s*\d+/i.test(cleanLine) && !/[-–—_]{2,}\s*\d+/i.test(trimmed)) {
-      const explicitMatch = cleanLine.match(/^(?:QUESTIONS?|CÂU|CAU)\s*#?\s*(\d{3})\b\s*[:\.]?\s*(.*)$/i) ||
-                            cleanLine.match(/^Q\s*#?\s*(\d{3})\b\s*[:\.]?\s*(.*)$/i);
+      const explicitMatch = cleanLine.match(/^(?:QUESTIONS?|CÂU|CAU)\s*#?\s*(\d{3})\b\s*[:\.]?\s*/i) ||
+                            cleanLine.match(/^Q\s*#?\s*(\d{3})\b\s*[:\.]?\s*/i);
 
       if (explicitMatch) {
         const n = parseInt(explicitMatch[1], 10);
         if (targetNumbers.has(n)) {
           qMatchNum = n;
-          initialQText = explicitMatch[2]?.trim() || '';
         }
       } else {
         const bareMatch = cleanLine.match(/^(\d{3})\s*[\.\)]?\s*$/);
@@ -104,7 +102,6 @@ export function parsePart6GroupBlock(
             const n = parseInt(sameLineOptMatch[1], 10);
             if (targetNumbers.has(n)) {
               qMatchNum = n;
-              initialQText = cleanLine.replace(/^\d{3}\s*[\.\)]?\s*/, '').trim();
             }
           }
         }
@@ -114,10 +111,12 @@ export function parsePart6GroupBlock(
     if (qMatchNum !== null) {
       activeQNum = qMatchNum;
       if (!rawQuestionBlocks.has(activeQNum)) {
-        rawQuestionBlocks.set(activeQNum, { textLines: [], lines: [] });
+        rawQuestionBlocks.set(activeQNum, { lines: [] });
       }
-      if (initialQText) {
-        rawQuestionBlocks.get(activeQNum)!.lines.push(initialQText);
+      // If line contains options after header (e.g. 131. (A) closed (B) close ...)
+      const textAfterHeader = cleanLine.replace(/^(?:QUESTIONS?|CÂU|CAU|Q)?\s*#?\s*\d{3}\s*[\.\)]?\s*/i, '').trim();
+      if (textAfterHeader) {
+        rawQuestionBlocks.get(activeQNum)!.lines.push(textAfterHeader);
       }
       continue;
     }
@@ -129,13 +128,12 @@ export function parsePart6GroupBlock(
     }
   }
 
-  // Parse questions from rawQuestionBlocks
+  // Parse options from rawQuestionBlocks
   const questions: ParsedGroupQuestion[] = [];
   const foundQNums = new Set<number>();
 
   rawQuestionBlocks.forEach((block, qNum) => {
     foundQNums.add(qNum);
-    const qTextLines: string[] = [];
     const rawOptionsMap: Map<string, string> = new Map();
     let currentOptionLabel: string | null = null;
 
@@ -158,9 +156,6 @@ export function parsePart6GroupBlock(
         rawOptionsMap.set(currentOptionLabel, `${existingOpt} ${trimmed.trim()}`);
         continue;
       }
-
-      // Pre-option question text
-      qTextLines.push(trimmed);
     }
 
     const options: [string, string, string, string] = [
@@ -172,7 +167,6 @@ export function parsePart6GroupBlock(
 
     questions.push({
       question_number: qNum,
-      questionText: qTextLines.join(' ').trim(),
       options,
     });
   });

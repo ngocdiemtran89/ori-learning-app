@@ -73,8 +73,8 @@ export const QuestionDisplay: React.FC<QuestionDisplayProps> = ({
         </div>
       </div>
 
-      {/* Part 1 & Part 2 DO NOT SHOW spoken question_text */}
-      {!isPart1 && !isPart2 && question.question_text && (
+      {/* Part 1, Part 2 & Part 6 DO NOT SHOW question_text */}
+      {!isPart1 && !isPart2 && question.part !== 'part6' && question.question_text && (
         <p className="text-sm text-slate-800 font-medium leading-relaxed">
           {question.question_text}
         </p>

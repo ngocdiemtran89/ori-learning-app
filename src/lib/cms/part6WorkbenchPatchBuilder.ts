@@ -5,8 +5,8 @@
 
 export interface QuestionSnapshot {
   question_number: number;
-  question_text: string;
-  translation_vi: string;
+  question_text?: string;
+  translation_vi?: string;
   options: [string, string, string, string];
   options_vi: [string, string, string, string];
 }
@@ -20,8 +20,8 @@ export interface GroupSnapshot {
 export interface QuestionOptionState {
   id: string;
   question_number: number;
-  question_text: string;
-  translation_vi: string;
+  question_text?: string;
+  translation_vi?: string;
   options: [string, string, string, string];
   options_vi: [string, string, string, string];
 }
@@ -139,20 +139,24 @@ export function buildGroupPatchPayload(
     };
     let qHasChanges = false;
 
-    // question_text check
-    const snapQTextTrim = snapQ.question_text.trim();
-    const curQTextTrim = curQ.question_text.trim();
-    if (curQTextTrim !== snapQTextTrim) {
-      qHasChanges = true;
-      qPatch.question_text = curQTextTrim !== '' ? curQTextTrim : null;
+    // Optional question_text check (only if present in state/snapshot)
+    if (curQ.question_text !== undefined && snapQ.question_text !== undefined) {
+      const snapQTextTrim = (snapQ.question_text || '').trim();
+      const curQTextTrim = (curQ.question_text || '').trim();
+      if (curQTextTrim !== snapQTextTrim) {
+        qHasChanges = true;
+        qPatch.question_text = curQTextTrim !== '' ? curQTextTrim : null;
+      }
     }
 
-    // translation_vi check
-    const snapTransViTrim = snapQ.translation_vi.trim();
-    const curTransViTrim = curQ.translation_vi.trim();
-    if (curTransViTrim !== snapTransViTrim) {
-      qHasChanges = true;
-      qPatch.translation_vi = curTransViTrim !== '' ? curTransViTrim : null;
+    // Optional translation_vi check (only if present in state/snapshot)
+    if (curQ.translation_vi !== undefined && snapQ.translation_vi !== undefined) {
+      const snapTransViTrim = (snapQ.translation_vi || '').trim();
+      const curTransViTrim = (curQ.translation_vi || '').trim();
+      if (curTransViTrim !== snapTransViTrim) {
+        qHasChanges = true;
+        qPatch.translation_vi = curTransViTrim !== '' ? curTransViTrim : null;
+      }
     }
 
     // options (EN) check

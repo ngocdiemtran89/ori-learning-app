@@ -20,22 +20,18 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     expect(sqlContent).toContain('GRANT EXECUTE ON FUNCTION public.admin_update_toeic_part6_group');
   });
 
-  it('2. validates ONE FIELD patch payload (only Q132 translation_vi changed)', () => {
+  it('2. validates passage-only Part 6 Workbench save payload (never sends question_text or translation_vi)', () => {
     const snapshot: GroupSnapshot = {
       passageEn: 'Passage EN',
       passageVi: 'Passage VI',
       questions: [
         {
           question_number: 131,
-          question_text: 'Stem 131',
-          translation_vi: 'Stem VI 131',
           options: ['A1', 'B1', 'C1', 'D1'],
           options_vi: ['A1vi', 'B1vi', 'C1vi', 'D1vi'],
         },
         {
           question_number: 132,
-          question_text: 'Stem 132',
-          translation_vi: 'Old Stem VI 132',
           options: ['years', 'space', 'beauty', 'moisture'],
           options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
         },
@@ -46,17 +42,13 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q131',
         question_number: 131,
-        question_text: 'Stem 131',
-        translation_vi: 'Stem VI 131',
         options: ['A1', 'B1', 'C1', 'D1'],
         options_vi: ['A1vi', 'B1vi', 'C1vi', 'D1vi'],
       },
       {
         id: 'q132',
         question_number: 132,
-        question_text: 'Stem 132',
-        translation_vi: 'New Stem VI 132', // Only this changed
-        options: ['years', 'space', 'beauty', 'moisture'],
+        options: ['years', 'space', 'natural beauty', 'moisture'], // Only option C changed
         options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
       },
     ];
@@ -69,28 +61,26 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     );
 
     expect(hasChanges).toBe(true);
-    expect(payload.passage).toBeUndefined(); // Omitted
-    expect(payload.passage_vi).toBeUndefined(); // Omitted
+    expect(payload.passage).toBeUndefined();
+    expect(payload.passage_vi).toBeUndefined();
     expect(payload.questions).toEqual([
       {
         question_number: 132,
-        translation_vi: 'New Stem VI 132',
+        options: ['years', 'space', 'natural beauty', 'moisture'],
       },
     ]);
     expect(payload.questions[0]).not.toHaveProperty('question_text');
-    expect(payload.questions[0]).not.toHaveProperty('options');
+    expect(payload.questions[0]).not.toHaveProperty('translation_vi');
     expect(payload.questions[0]).not.toHaveProperty('options_vi');
   });
 
-  it('3. validates EXPLICIT CLEAR patch payload (stem deleted sends null)', () => {
+  it('3. validates EXPLICIT CLEAR patch payload when passage is cleared', () => {
     const snapshot: GroupSnapshot = {
-      passageEn: 'Passage EN',
-      passageVi: 'Passage VI',
+      passageEn: 'Existing Passage EN',
+      passageVi: 'Existing Passage VI',
       questions: [
         {
           question_number: 132,
-          question_text: 'Existing English Stem',
-          translation_vi: '',
           options: ['years', 'space', 'beauty', 'moisture'],
           options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
         },
@@ -101,8 +91,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q132',
         question_number: 132,
-        question_text: '', // Intentionally cleared
-        translation_vi: '',
         options: ['years', 'space', 'beauty', 'moisture'],
         options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
       },
@@ -110,18 +98,15 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
 
     const { payload, hasChanges } = buildGroupPatchPayload(
       snapshot,
-      'Passage EN',
-      'Passage VI',
+      '', // Cleared passage EN
+      'Existing Passage VI',
       currentQuestions
     );
 
     expect(hasChanges).toBe(true);
-    expect(payload.questions).toEqual([
-      {
-        question_number: 132,
-        question_text: null, // Explicit clear
-      },
-    ]);
+    expect(payload).toEqual({
+      passage: null,
+    });
   });
 
   it('4. validates UNCHANGED EMPTY FIELD (was empty and stays empty -> key omitted)', () => {
@@ -131,8 +116,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       questions: [
         {
           question_number: 132,
-          question_text: '',
-          translation_vi: '',
           options: ['years', 'space', 'beauty', 'moisture'],
           options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
         },
@@ -143,8 +126,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q132',
         question_number: 132,
-        question_text: '',
-        translation_vi: '',
         options: ['years', 'space', 'beauty', 'moisture'],
         options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
       },
@@ -168,8 +149,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       questions: [
         {
           question_number: 132,
-          question_text: 'Stem 132',
-          translation_vi: 'Stem VI 132',
           options: ['years', 'space', 'beauty', 'moisture'],
           options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
         },
@@ -180,9 +159,7 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q132',
         question_number: 132,
-        question_text: 'Stem 132',
-        translation_vi: 'Stem VI 132',
-        options: ['years', 'space', 'natural beauty', 'moisture'], // C changed
+        options: ['years', 'space', 'natural beauty', 'moisture'],
         options_vi: ['năm', 'không gian', 'vẻ đẹp', 'độ ẩm'],
       },
     ];
@@ -203,6 +180,7 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     ]);
     expect(payload.questions[0]).not.toHaveProperty('options_vi');
     expect(payload.questions[0]).not.toHaveProperty('question_text');
+    expect(payload.questions[0]).not.toHaveProperty('translation_vi');
   });
 
   it('6. validates NO CHANGE returns hasChanges = false', () => {
@@ -212,8 +190,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       questions: [
         {
           question_number: 131,
-          question_text: 'Stem',
-          translation_vi: 'Stem VI',
           options: ['A', 'B', 'C', 'D'],
           options_vi: ['Avi', 'Bvi', 'Cvi', 'Dvi'],
         },
@@ -224,8 +200,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q131',
         question_number: 131,
-        question_text: 'Stem',
-        translation_vi: 'Stem VI',
         options: ['A', 'B', 'C', 'D'],
         options_vi: ['Avi', 'Bvi', 'Cvi', 'Dvi'],
       },
@@ -277,8 +251,8 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
     expect(normalizeToeicOptions(null)).toEqual(['', '', '', '']);
     expect(normalizeToeicOptions(undefined)).toEqual(['', '', '', '']);
     expect(normalizeToeicOptions({ foo: 'bar' })).toEqual(['', '', '', '']);
-    expect(normalizeToeicOptions([{ label: 'A' }])).toEqual(['', '', '', '']); // Label alone is NOT option text
-    expect(normalizeToeicOptions([{ label: 'A', debug: 'unexpected' }])).toEqual(['', '', '', '']); // Unknown prop -> empty
+    expect(normalizeToeicOptions([{ label: 'A' }])).toEqual(['', '', '', '']);
+    expect(normalizeToeicOptions([{ label: 'A', debug: 'unexpected' }])).toEqual(['', '', '', '']);
   });
 
   it('10. validates ROUNDTRIP: loading historical object-array option -> no changes -> edit option C -> patch payload canonical', () => {
@@ -297,8 +271,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       questions: [
         {
           question_number: 132,
-          question_text: '',
-          translation_vi: '',
           options: [...normEn],
           options_vi: ['', '', '', ''],
         },
@@ -309,8 +281,6 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
       {
         id: 'q132',
         question_number: 132,
-        question_text: '',
-        translation_vi: '',
         options: [...normEn],
         options_vi: ['', '', '', ''],
       },
@@ -334,5 +304,7 @@ describe('Part 6 Workbench Atomic Save Contract Suite', () => {
         },
       ],
     });
+    expect(editedDiff.payload.questions[0]).not.toHaveProperty('question_text');
+    expect(editedDiff.payload.questions[0]).not.toHaveProperty('translation_vi');
   });
 });

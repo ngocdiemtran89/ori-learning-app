@@ -430,7 +430,7 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                     </div>
 
                     {/* QUESTION TEXT */}
-                    {currentQuestion.question_text && (
+                    {currentQuestion.question_text && (currentQuestion as any).part !== 'part6' && (
                       <p className="text-xs font-bold text-slate-700 leading-relaxed break-words whitespace-normal">
                         {currentQuestion.question_text}
                       </p>
@@ -551,7 +551,7 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                     </div>
                   </div>
 
-                  {currentQuestion.question_text && (
+                  {currentQuestion.question_text && (currentQuestion as any).part !== 'part6' && (
                     <p className="text-sm font-bold text-slate-800 leading-relaxed">
                       {currentQuestion.question_text}
                     </p>
