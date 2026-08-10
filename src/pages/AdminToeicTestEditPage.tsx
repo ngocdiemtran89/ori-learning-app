@@ -664,15 +664,19 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setShowPartContentModal(true)}
-                    className="px-3.5 py-2 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
-                  >
-                    <span>📥 IMPORT {activePart.toUpperCase()} — SONG NGỮ</span>
-                  </button>
+                  {/* Legacy bilingual importer retired for Part 6 — enabled ONLY for Part 3, 4, 5, 7 */}
+                  {activePart !== 'part6' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPartContentModal(true)}
+                      className="px-3.5 py-2 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                    >
+                      <span>📥 IMPORT {activePart.toUpperCase()} — SONG NGỮ</span>
+                    </button>
+                  )}
 
-                  {activePart !== 'part5' && (
+                  {/* Add Group button hidden for Part 5 and Part 6 */}
+                  {activePart !== 'part5' && activePart !== 'part6' && (
                     <button
                       type="button"
                       onClick={() => handleOpenNewGroup(activePart)}
@@ -682,25 +686,36 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     </button>
                   )}
 
+                  {/* Primary Approved Part 6 Workbench Content-Entry Workflow */}
                   {activePart === 'part6' && (
                     <button
                       type="button"
                       onClick={() => setShowPart6ManualModal(true)}
-                      className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                      className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
                     >
-                      <span>✍️</span> Nhập Tay Part 6 (Khuyên Dùng)
+                      <span>✍️</span> NHẬP NỘI DUNG PART 6
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleOpenNewQuestion(activePart)}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1 transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Thêm Câu Hỏi Mới
-                  </button>
+                  {/* Add Question button hidden for Part 6 */}
+                  {activePart !== 'part6' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenNewQuestion(activePart)}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Thêm Câu Hỏi Mới
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {/* Helper text for Part 6 */}
+              {activePart === 'part6' && (
+                <p className="text-xs text-purple-700 bg-purple-50 p-2.5 rounded-xl border border-purple-200 font-medium">
+                  💡 <strong>Nhập nội dung Part 6:</strong> Chỉnh Passage EN/VI và 4 lựa chọn A–D theo từng nhóm 4 câu.
+                </p>
+              )}
 
               {/* Group list for active part */}
               {groups.filter((g) => g.part === activePart).length > 0 && (
@@ -726,12 +741,16 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingGroupId(g.id);
-                                setGroupForm({ ...g });
+                                if (activePart === 'part6') {
+                                  setShowPart6ManualModal(true);
+                                } else {
+                                  setEditingGroupId(g.id);
+                                  setGroupForm({ ...g });
+                                }
                               }}
-                              className="px-2.5 py-1 bg-purple-600 text-white text-[10px] font-bold rounded-lg"
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold rounded-lg transition-all"
                             >
-                              Sửa Nhóm
+                              {activePart === 'part6' ? 'Sửa nội dung' : 'Sửa Nhóm'}
                             </button>
                           </div>
                         </div>

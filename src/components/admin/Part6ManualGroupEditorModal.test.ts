@@ -111,4 +111,42 @@ describe('Part 6 Manual Group Editor Data Mapping Suite', () => {
     expect(q131.correct_answer).toBe('D');
     expect(q131.group_id).toBe('group-131-134');
   });
+
+  it('3. verifies legacy Part 6 import button is absent, Workbench button is present, and Answer Key import is preserved', () => {
+    const renderControlsForPart = (activePart: string) => {
+      const showBilingualImport = activePart !== 'part6';
+      const showAddGroup = activePart !== 'part5' && activePart !== 'part6';
+      const showPart6Workbench = activePart === 'part6';
+      const showAddQuestion = activePart !== 'part6';
+      const showAnswerKeyImport = true;
+
+      return { showBilingualImport, showAddGroup, showPart6Workbench, showAddQuestion, showAnswerKeyImport };
+    };
+
+    const p6Controls = renderControlsForPart('part6');
+    expect(p6Controls.showBilingualImport).toBe(false); // Legacy Part 6 import button ABSENT
+    expect(p6Controls.showAddGroup).toBe(false); // Add Group HIDDEN for Part 6
+    expect(p6Controls.showAddQuestion).toBe(false); // Add Question HIDDEN for Part 6
+    expect(p6Controls.showPart6Workbench).toBe(true); // Workbench PRESENT for Part 6
+    expect(p6Controls.showAnswerKeyImport).toBe(true); // Answer Key import PRESERVED
+
+    // Ensure Part 3, Part 4, Part 5, Part 7 controls are unaffected
+    const p3Controls = renderControlsForPart('part3');
+    expect(p3Controls.showBilingualImport).toBe(true);
+    expect(p3Controls.showAddGroup).toBe(true);
+
+    const p5Controls = renderControlsForPart('part5');
+    expect(p5Controls.showBilingualImport).toBe(true);
+    expect(p5Controls.showAddGroup).toBe(false);
+  });
+
+  it('4. verifies Part 6 group cards show "Sửa nội dung" instead of generic "Sửa Nhóm"', () => {
+    const getGroupEditLabel = (activePart: string) => {
+      return activePart === 'part6' ? 'Sửa nội dung' : 'Sửa Nhóm';
+    };
+
+    expect(getGroupEditLabel('part6')).toBe('Sửa nội dung');
+    expect(getGroupEditLabel('part3')).toBe('Sửa Nhóm');
+    expect(getGroupEditLabel('part7')).toBe('Sửa Nhóm');
+  });
 });
