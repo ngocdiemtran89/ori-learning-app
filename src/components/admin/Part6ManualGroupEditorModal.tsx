@@ -3,7 +3,7 @@ import { X, Save, AlertCircle, FileText, CheckCircle2, AlertTriangle, Clipboard 
 import { supabase } from '../../lib/supabase/client';
 import { parseFourOptions } from '../../lib/cms/fourOptionsParser';
 import { parsePart6GroupBlock } from '../../lib/cms/part6GroupBlockParser';
-import { buildGroupPatchPayload, GroupSnapshot, QuestionSnapshot } from '../../lib/cms/part6WorkbenchPatchBuilder';
+import { buildGroupPatchPayload, normalizeToeicOptions, GroupSnapshot, QuestionSnapshot } from '../../lib/cms/part6WorkbenchPatchBuilder';
 
 export interface Part6ManualGroupEditorModalProps {
   isOpen: boolean;
@@ -99,39 +99,27 @@ export const Part6ManualGroupEditorModal: React.FC<Part6ManualGroupEditorModalPr
 
     for (let qNum = activeRange.start; qNum <= activeRange.end; qNum++) {
       const q = targetQuestions.find(item => item.question_number === qNum);
-      const enOptsArr = Array.isArray(q?.options) ? q.options : [];
-      const viOptsArr = Array.isArray(q?.options_vi) ? q.options_vi : [];
+      const normEnOpts = normalizeToeicOptions(q?.options);
+      const normViOpts = normalizeToeicOptions(q?.options_vi);
 
       const qText = q?.question_text || '';
       const transVi = q?.translation_vi || '';
-      const opts: [string, string, string, string] = [
-        String(enOptsArr[0] || ''),
-        String(enOptsArr[1] || ''),
-        String(enOptsArr[2] || ''),
-        String(enOptsArr[3] || ''),
-      ];
-      const optsVi: [string, string, string, string] = [
-        String(viOptsArr[0] || ''),
-        String(viOptsArr[1] || ''),
-        String(viOptsArr[2] || ''),
-        String(viOptsArr[3] || ''),
-      ];
 
       qStates.push({
         id: q?.id || '',
         question_number: qNum,
         question_text: qText,
         translation_vi: transVi,
-        options: opts,
-        options_vi: optsVi,
+        options: [...normEnOpts],
+        options_vi: [...normViOpts],
       });
 
       qSnapshots.push({
         question_number: qNum,
         question_text: qText,
         translation_vi: transVi,
-        options: [...opts],
-        options_vi: [...optsVi],
+        options: [...normEnOpts],
+        options_vi: [...normViOpts],
       });
     }
 
