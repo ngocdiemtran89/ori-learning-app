@@ -120,6 +120,8 @@ export interface StudentToeicQuestion {
   // Translation (part mode only — null in full mode)
   translation_vi?: string | null;
   options_vi?: string[] | null;
+  correct_answer?: string | null;
+  evidence?: any[] | null;
   // Dual listening cues (single_track mode)
   cue_start_ms?: number | null;
   cue_end_ms?: number | null;
@@ -140,6 +142,7 @@ export interface StudentToeicGroup {
   passage_vi?: string | null;
   documents_vi?: any[] | null;
   transcript_vi?: string | null;
+  part7_bilingual_units?: any[] | null;
   // Dual listening cues (single_track mode)
   cue_start_ms?: number | null;
   cue_end_ms?: number | null;

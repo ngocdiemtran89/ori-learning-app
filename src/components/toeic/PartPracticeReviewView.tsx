@@ -15,6 +15,7 @@ import {
 import type { StudentToeicAttemptReviewPayload, ReviewQuestionItem, ReviewGroupItem } from '../../lib/supabase/studentToeic';
 import { ListeningMedia } from './ListeningMedia';
 import { PassageDisplay } from './PassageDisplay';
+import { Part7StudentWorkspace } from './Part7StudentWorkspace';
 
 interface PartPracticeReviewViewProps {
   reviewData: StudentToeicAttemptReviewPayload;
@@ -117,6 +118,14 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
     if (!currentQuestion?.group_id) return undefined;
     return groups.find(g => g.id === currentQuestion.group_id);
   }, [currentQuestion, groups]);
+
+  const userAnswersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const q of questions) {
+      if (q.student_answer) map.set(q.id, q.student_answer);
+    }
+    return map;
+  }, [questions]);
 
   const mediaContext = useMemo(() => {
     if (!currentQuestion) return { audioUrl: null, imageUrl: null, cueStartMs: null, cueEndMs: null };
@@ -338,14 +347,25 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
           </div>
 
           {currentQuestion ? (
-            <div className={currentQuestion.part === 'part1' ? "w-full max-w-full space-y-6 min-w-0" : "max-w-2xl mx-auto space-y-6"}>
-              {/* GROUP PASSAGE OR DOCUMENTS (IF AVAILABLE) */}
-              {currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0) || currentGroup.instruction) && (
-                <PassageDisplay
-                  group={currentGroup as unknown as import('../../lib/supabase/types').StudentToeicGroup}
-                  isPartMode={true}
-                />
-              )}
+            currentQuestion.part === 'part7' && currentGroup ? (
+              <Part7StudentWorkspace
+                group={currentGroup as any}
+                questions={reviewData.questions.filter(q => q.group_id === currentGroup.id) as any[]}
+                isPartMode={true}
+                answers={userAnswersMap}
+                onSelectAnswer={() => {}}
+                onPrevGroup={() => setCurrentQIndex(prev => Math.max(0, prev - 1))}
+                onNextGroup={() => setCurrentQIndex(prev => Math.min(filteredQuestions.length - 1, prev + 1))}
+              />
+            ) : (
+              <div className={currentQuestion.part === 'part1' ? "w-full max-w-full space-y-6 min-w-0" : "max-w-2xl mx-auto space-y-6"}>
+                {/* GROUP PASSAGE OR DOCUMENTS (IF AVAILABLE) */}
+                {currentGroup && (currentGroup.passage || (currentGroup.documents && currentGroup.documents.length > 0) || currentGroup.instruction) && (
+                  <PassageDisplay
+                    group={currentGroup as unknown as import('../../lib/supabase/types').StudentToeicGroup}
+                    isPartMode={true}
+                  />
+                )}
 
               {/* FOR PARTS 2-7: TOP MEDIA PLAYER */}
               {currentQuestion.part !== 'part1' && (mediaContext.audioUrl || mediaContext.imageUrl || isListeningPart) && (
@@ -714,6 +734,7 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
                 </button>
               </div>
             </div>
+            )
           ) : (
             <div className="text-center py-16 text-slate-400">
               Không có câu hỏi phù hợp với bộ lọc.

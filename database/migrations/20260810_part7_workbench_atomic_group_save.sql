@@ -1,9 +1,13 @@
--- Migration: Part 7 Workbench Atomic Group Save RPC & Bilingual Units Storage
+-- Migration: Part 7 Workbench Atomic Group Save RPC, Bilingual Units & Evidence Storage
 -- File: database/migrations/20260810_part7_workbench_atomic_group_save.sql
 
 -- Add nullable part7_bilingual_units column to toeic_test_groups if not exists
 ALTER TABLE public.toeic_test_groups
 ADD COLUMN IF NOT EXISTS part7_bilingual_units jsonb DEFAULT NULL;
+
+-- Add nullable evidence column to toeic_test_questions if not exists
+ALTER TABLE public.toeic_test_questions
+ADD COLUMN IF NOT EXISTS evidence jsonb DEFAULT NULL;
 
 -- Function: admin_update_toeic_part7_group
 CREATE OR REPLACE FUNCTION public.admin_update_toeic_part7_group(
@@ -153,6 +157,17 @@ BEGIN
 
         UPDATE public.toeic_test_questions
         SET options_vi = v_opts_vi,
+        updated_at = NOW()
+        WHERE id = v_q_id;
+      END IF;
+
+      -- Update evidence
+      IF v_q_elem ? 'evidence' THEN
+        UPDATE public.toeic_test_questions
+        SET evidence = CASE
+          WHEN jsonb_typeof(v_q_elem->'evidence') = 'null' THEN NULL
+          ELSE v_q_elem->'evidence'
+        END,
         updated_at = NOW()
         WHERE id = v_q_id;
       END IF;

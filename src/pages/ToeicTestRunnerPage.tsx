@@ -22,6 +22,7 @@ import { QuestionDisplay } from '../components/toeic/QuestionDisplay';
 import { QuestionNavigator } from '../components/toeic/QuestionNavigator';
 import { TestTimer } from '../components/toeic/TestTimer';
 import { PassageDisplay } from '../components/toeic/PassageDisplay';
+import { Part7StudentWorkspace } from '../components/toeic/Part7StudentWorkspace';
 import { ListeningMedia } from '../components/toeic/ListeningMedia';
 import { PartPracticeReviewView, ReviewViewErrorBoundary } from '../components/toeic/PartPracticeReviewView';
 
@@ -489,31 +490,46 @@ export const ToeicTestRunnerPage: React.FC = () => {
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {currentQuestion ? (
-            <div className="max-w-2xl mx-auto space-y-6">
-              {showPassage && currentGroup && <PassageDisplay group={currentGroup} isPartMode={isPartMode} />}
-              {showMedia && (
-                <ListeningMedia
-                  audioUrl={mediaContext.audioUrl}
-                  imageUrl={mediaContext.imageUrl}
-                  part={currentQuestion.part}
-                  isAudioRequired={isListeningPart}
-                  cueStartMs={mediaContext.cueStartMs}
-                  cueEndMs={mediaContext.cueEndMs}
-                />
-              )}
-
-              <QuestionDisplay
-                question={currentQuestion}
-                selectedAnswer={answers.get(currentQuestion.id) || null}
-                onSelectAnswer={handleSelectAnswer}
-                disabled={timeExpired && !isPartMode}
+            currentQuestion.part === 'part7' && currentGroup ? (
+              <Part7StudentWorkspace
+                group={currentGroup}
+                questions={content?.questions.filter((q: any) => q.group_id === currentGroup.id) || [currentQuestion]}
                 isPartMode={isPartMode}
-                hasAudio={hasAudio}
-                hasImage={hasImage}
+                answers={answers}
+                onSelectAnswer={handleSelectAnswer}
+                onPrevGroup={handlePrev}
+                onNextGroup={handleNext}
+                onSubmitTest={() => setShowSubmitConfirm(true)}
                 onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
                   await saveToeicWord(attempt.id, currentQuestion.id, word, context);
                 } : undefined}
               />
+            ) : (
+              <div className="max-w-2xl mx-auto space-y-6">
+                {showPassage && currentGroup && <PassageDisplay group={currentGroup} isPartMode={isPartMode} />}
+                {showMedia && (
+                  <ListeningMedia
+                    audioUrl={mediaContext.audioUrl}
+                    imageUrl={mediaContext.imageUrl}
+                    part={currentQuestion.part}
+                    isAudioRequired={isListeningPart}
+                    cueStartMs={mediaContext.cueStartMs}
+                    cueEndMs={mediaContext.cueEndMs}
+                  />
+                )}
+
+                <QuestionDisplay
+                  question={currentQuestion}
+                  selectedAnswer={answers.get(currentQuestion.id) || null}
+                  onSelectAnswer={handleSelectAnswer}
+                  disabled={timeExpired && !isPartMode}
+                  isPartMode={isPartMode}
+                  hasAudio={hasAudio}
+                  hasImage={hasImage}
+                  onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
+                    await saveToeicWord(attempt.id, currentQuestion.id, word, context);
+                  } : undefined}
+                />
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                 <button
@@ -546,6 +562,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 )}
               </div>
             </div>
+            )
           ) : (
             <div className="text-center py-12">
               <p className="text-slate-500">Không có câu hỏi.</p>

@@ -1,6 +1,7 @@
 /**
  * Part 7 Multi-Group Batch Parser & Patch Builder
  * Parses unstructured English & Vietnamese multi-group text blocks into canonical Part 7 drafts.
+ * Supports evidence association with stable translation unit references.
  */
 
 import { buildPart7BilingualUnits, Part7BilingualUnit } from '../toeic/part7BilingualAligner';
@@ -13,6 +14,14 @@ export interface Part7DocumentDraft {
   content_vi?: string;
 }
 
+export interface Part7EvidenceItem {
+  document_index: number;
+  unit_id?: string;
+  order?: number;
+  quote_en?: string;
+  quote_vi?: string;
+}
+
 export interface Part7QuestionDraft {
   id?: string;
   question_number: number;
@@ -20,6 +29,7 @@ export interface Part7QuestionDraft {
   translation_vi: string;
   options: [string, string, string, string];
   options_vi: [string, string, string, string];
+  evidence?: Part7EvidenceItem[];
 }
 
 export interface Part7GroupDraft {
@@ -78,7 +88,6 @@ function normalize4Options(rawOpts: any): [string, string, string, string] {
 function parseQuestionsFromBlock(blockText: string): Part7QuestionDraft[] {
   const questions: Part7QuestionDraft[] = [];
 
-  // Match question numbers like 147. What is the purpose of the email?
   const qRegex = /(?:^|\n)(\d{3})\.\s*([\s\S]*?)(?=(?:\n\d{3}\.|$))/gi;
   let match: RegExpExecArray | null;
 
@@ -88,7 +97,6 @@ function parseQuestionsFromBlock(blockText: string): Part7QuestionDraft[] {
 
     const body = match[2].trim();
 
-    // Extract options (A) ... (B) ... (C) ... (D) ...
     const optRegex = /\(([A-D])\)\s*([\s\S]*?)(?=\([A-D]\)|$)/gi;
     let stem = body;
     const opts: [string, string, string, string] = ['', '', '', ''];
@@ -114,6 +122,7 @@ function parseQuestionsFromBlock(blockText: string): Part7QuestionDraft[] {
       translation_vi: '',
       options: opts,
       options_vi: ['', '', '', ''],
+      evidence: [],
     });
   }
 
@@ -124,16 +133,12 @@ function parseQuestionsFromBlock(blockText: string): Part7QuestionDraft[] {
  * Extracts documents (passage content) from group block text.
  */
 function parseDocumentsFromBlock(blockText: string): Part7DocumentDraft[] {
-  // Strip out questions section first
   const firstQIndex = blockText.search(/(?:^|\n)\d{3}\./);
   const docSection = firstQIndex !== -1 ? blockText.substring(0, firstQIndex).trim() : blockText.trim();
-
-  // Strip header line like "QUESTIONS 147-150" or "CÂU 147-150"
   const cleanDocText = docSection.replace(/^(?:QUESTIONS|CÂU|CAU)\s*\d{3}\s*[-–]\s*\d{3}.*$/im, '').trim();
 
   if (!cleanDocText) return [];
 
-  // Split multi-document sets by [DOCUMENT 1], [EMAIL], [NOTICE], etc.
   const docBlocks = cleanDocText.split(/(?=\[\s*(?:DOCUMENT|DOC|EMAIL|LETTER|NOTICE|ADVERTISEMENT|ARTICLE|WEBPAGE|CHAT|SCHEDULE|FORM)\b)/i).map(b => b.trim()).filter(Boolean);
 
   const docs: Part7DocumentDraft[] = [];
@@ -151,7 +156,6 @@ function parseDocumentsFromBlock(blockText: string): Part7DocumentDraft[] {
       }
       content = b.substring(headerMatch[0].length).trim();
     } else {
-      // Split title line if present
       const lines = b.split(/\r?\n/);
       if (lines.length > 1 && lines[0].length <= 100 && !lines[0].endsWith('.')) {
         title = lines[0].trim();
@@ -200,7 +204,6 @@ export function parsePart7BatchBlock(
     };
   }
 
-  // Map questions to groups
   const groupMap = new Map<string, { group: any; questions: any[] }>();
   for (const g of part7Groups) {
     const gQuestions = part7Questions
@@ -211,20 +214,17 @@ export function parsePart7BatchBlock(
     }
   }
 
-  // Split textEn into group blocks using header "QUESTIONS X-Y"
   const enBlocks = textEn.split(/(?=(?:^|\n)\s*(?:QUESTIONS|CÂU|CAU)\s*\d{3}\s*[-–]\s*\d{3})/i).map(b => b.trim()).filter(Boolean);
   const viBlocks = (textVi || '').split(/(?=(?:^|\n)\s*(?:QUESTIONS|CÂU|CAU)\s*\d{3}\s*[-–]\s*\d{3})/i).map(b => b.trim()).filter(Boolean);
 
   for (const enB of enBlocks) {
     const headerMatch = enB.match(/(?:QUESTIONS|CÂU|CAU)\s*(\d{3})\s*[-–]\s*(\d{3})/i);
     if (!headerMatch) {
-      // Fallback: search question numbers in block
       const parsedQ = parseQuestionsFromBlock(enB);
       if (parsedQ.length === 0) continue;
       const qStart = parsedQ[0].question_number;
       const qEnd = parsedQ[parsedQ.length - 1].question_number;
 
-      // Find matching DB group containing these question numbers
       const matchedGroupEntry = Array.from(groupMap.values()).find(entry => {
         return entry.questions.some(q => q.question_number >= qStart && q.question_number <= qEnd);
       });
@@ -269,7 +269,6 @@ function processGroupDraft(
   const expectedQNums = dbQuestions.map(q => q.question_number).sort((a, b) => a - b);
   const rangeLabel = `Q${expectedQNums[0]}–${expectedQNums[expectedQNums.length - 1]}`;
 
-  // Find matching VI block
   const viB = viBlocks.find(b => {
     const m = b.match(/(?:QUESTIONS|CÂU|CAU)\s*(\d{3})\s*[-–]\s*(\d{3})/i);
     if (!m) return false;
@@ -282,7 +281,6 @@ function processGroupDraft(
   const parsedQEn = parseQuestionsFromBlock(enBlock);
   const parsedQVi = parseQuestionsFromBlock(viB);
 
-  // Build question drafts
   const questionDrafts: Part7QuestionDraft[] = [];
 
   for (const dbQ of dbQuestions) {
@@ -300,10 +298,10 @@ function processGroupDraft(
       translation_vi: qVi?.question_text || dbQ.translation_vi || '',
       options: qEn?.options.some(o => o !== '') ? qEn.options : normDbEnOpts,
       options_vi: qVi?.options.some(o => o !== '') ? qVi.options : normDbViOpts,
+      evidence: Array.isArray(dbQ.evidence) ? dbQ.evidence : [],
     });
   }
 
-  // Check completeness
   const parsedQNums = parsedQEn.map(q => q.question_number).sort((a, b) => a - b);
   const hasAllQuestions = expectedQNums.length === parsedQNums.length && expectedQNums.every((n, i) => n === parsedQNums[i]);
 
@@ -320,7 +318,6 @@ function processGroupDraft(
     validationError = `Nội dung ${rangeLabel} thiếu bài đọc (passage/documents).`;
   }
 
-  // Build bilingual units
   const units = buildPart7BilingualUnits(
     parsedDocsEn.map(d => ({ type: d.type, title: d.title, content: d.content })),
     parsedDocsVi.map(d => ({ type: d.type, title: d.title, content: d.content }))
@@ -354,7 +351,6 @@ export function buildPart7GroupPatchPayload(
   const payload: Record<string, any> = {};
   let hasChanges = false;
 
-  // Documents check
   const dbDocsJson = JSON.stringify(dbGroup?.documents || []);
   const draftDocsJson = JSON.stringify(draft.documents || []);
   if (dbDocsJson !== draftDocsJson) {
@@ -362,7 +358,6 @@ export function buildPart7GroupPatchPayload(
     payload.documents = draft.documents.length > 0 ? draft.documents : null;
   }
 
-  // Documents VI check
   const dbDocsViJson = JSON.stringify(dbGroup?.documents_vi || []);
   const draftDocsViJson = JSON.stringify(draft.documents_vi || []);
   if (dbDocsViJson !== draftDocsViJson) {
@@ -370,7 +365,6 @@ export function buildPart7GroupPatchPayload(
     payload.documents_vi = (draft.documents_vi && draft.documents_vi.length > 0) ? draft.documents_vi : null;
   }
 
-  // Bilingual units check
   const dbUnitsJson = JSON.stringify(dbGroup?.part7_bilingual_units || []);
   const draftUnitsJson = JSON.stringify(draft.units || []);
   if (dbUnitsJson !== draftUnitsJson) {
@@ -378,13 +372,11 @@ export function buildPart7GroupPatchPayload(
     payload.part7_bilingual_units = draft.units.length > 0 ? draft.units : null;
   }
 
-  // Group type check
   if (dbGroup?.group_type !== draft.groupType) {
     hasChanges = true;
     payload.group_type = draft.groupType;
   }
 
-  // Questions check
   const questionPatches: Record<string, any>[] = [];
 
   for (const qDraft of draft.questions) {
@@ -394,7 +386,6 @@ export function buildPart7GroupPatchPayload(
     };
     let qHasChanges = false;
 
-    // Stem check
     const dbStem = (dbQ?.question_text || '').trim();
     const draftStem = (qDraft.question_text || '').trim();
     if (dbStem !== draftStem) {
@@ -402,7 +393,6 @@ export function buildPart7GroupPatchPayload(
       qPatch.question_text = draftStem !== '' ? draftStem : null;
     }
 
-    // Translation VI check
     const dbTransVi = (dbQ?.translation_vi || '').trim();
     const draftTransVi = (qDraft.translation_vi || '').trim();
     if (dbTransVi !== draftTransVi) {
@@ -410,7 +400,6 @@ export function buildPart7GroupPatchPayload(
       qPatch.translation_vi = draftTransVi !== '' ? draftTransVi : null;
     }
 
-    // Options EN check
     const normDbOpts = normalize4Options(dbQ?.options);
     const optsChanged = qDraft.options.some((opt, i) => opt !== normDbOpts[i]);
     if (optsChanged) {
@@ -418,12 +407,18 @@ export function buildPart7GroupPatchPayload(
       qPatch.options = [...qDraft.options];
     }
 
-    // Options VI check
     const normDbOptsVi = normalize4Options(dbQ?.options_vi);
     const optsViChanged = qDraft.options_vi.some((opt, i) => opt !== normDbOptsVi[i]);
     if (optsViChanged) {
       qHasChanges = true;
       qPatch.options_vi = [...qDraft.options_vi];
+    }
+
+    const dbEvidenceJson = JSON.stringify(dbQ?.evidence || []);
+    const draftEvidenceJson = JSON.stringify(qDraft.evidence || []);
+    if (dbEvidenceJson !== draftEvidenceJson) {
+      qHasChanges = true;
+      qPatch.evidence = (qDraft.evidence && qDraft.evidence.length > 0) ? qDraft.evidence : null;
     }
 
     if (qHasChanges) {
