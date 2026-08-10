@@ -33,6 +33,7 @@ import { MediaManagerTab } from '../components/admin/MediaManagerTab';
 import { SafeAnswerKeyImporterModal } from '../components/admin/AnswerKeyImporterModal';
 import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilingualManagerModal';
 import { SafePartContentImporterModal } from '../components/admin/PartContentImporterModal';
+import { Part6ManualGroupEditorModal } from '../components/admin/Part6ManualGroupEditorModal';
 import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
 export class AdminTestEditErrorBoundary extends React.Component<
@@ -159,6 +160,8 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
     translation_vi: '',
     options_vi: null,
   });
+
+  const [showPart6ManualModal, setShowPart6ManualModal] = useState<boolean>(false);
 
   useEffect(() => {
     if (isEditing && testId) {
@@ -679,6 +682,16 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     </button>
                   )}
 
+                  {activePart === 'part6' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPart6ManualModal(true)}
+                      className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                    >
+                      <span>✍️</span> Nhập Tay Part 6 (Khuyên Dùng)
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => handleOpenNewQuestion(activePart)}
@@ -1122,6 +1135,16 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
               onUpdated={loadTestDetails}
             />
           )}
+
+          <Part6ManualGroupEditorModal
+            isOpen={showPart6ManualModal}
+            onClose={() => setShowPart6ManualModal(false)}
+            testId={testId}
+            testTitle={title}
+            existingQuestions={questions ?? []}
+            existingGroups={groups ?? []}
+            onUpdated={loadTestDetails}
+          />
         </>
       )}
     </div>
