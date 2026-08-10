@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Globe } from 'lucide-react';
 import type { StudentToeicGroup } from '../../lib/supabase/types';
+import { buildPart6BilingualSegments } from '../../lib/toeic/part6BilingualAligner';
 
 interface PassageDisplayProps {
   group: StudentToeicGroup;
@@ -8,8 +9,50 @@ interface PassageDisplayProps {
   isPartMode?: boolean;
 }
 
+/**
+ * Helper to render segment text with high-contrast blank badges (────── [ 131 ])
+ */
+function renderSegmentTextWithMarkers(text: string): React.ReactNode {
+  if (!text) return null;
+
+  // Regex to match blank markers like ------- 131, ------- [CÂU 131], ------- 131., [CÂU 131], etc.
+  const markerRegex = /(?:-------?|--------?|\[\s*(?:CÂU|CAU)?\s*)?(\d{3})\b(?:\s*\])?(?:\.|\b)/gi;
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerRegex.exec(text)) !== null) {
+    const qNum = parseInt(match[1], 10);
+    if (qNum >= 131 && qNum <= 146) {
+      // Push text before match
+      if (match.index > lastIdx) {
+        parts.push(text.substring(lastIdx, match.index));
+      }
+
+      // Push styled badge
+      parts.push(
+        <span
+          key={`badge-${match.index}-${qNum}`}
+          className="inline-flex items-center gap-1 mx-1.5 px-2 py-0.5 rounded-md bg-rose-600 text-white font-black text-xs shadow-sm ring-2 ring-rose-200"
+        >
+          ────── [&nbsp;{qNum}&nbsp;]
+        </span>
+      );
+
+      lastIdx = markerRegex.lastIndex;
+    }
+  }
+
+  if (lastIdx < text.length) {
+    parts.push(text.substring(lastIdx));
+  }
+
+  return parts.length > 0 ? parts : text;
+}
+
 export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMode = false }) => {
   const [showTranslation, setShowTranslation] = useState(false);
+  const [part6ViewMode, setPart6ViewMode] = useState<'bilingual' | 'english_only'>('bilingual');
 
   // Listening groups (Part 3 / Part 4) MUST NOT render conversation/talk spoken transcripts
   if (group.part === 'part3' || group.part === 'part4') {
@@ -92,7 +135,114 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
     );
   }
 
-  // Part 6 / single reading passage
+  // Dedicated High-Contrast Interleaved Renderer for Part 6
+  if (group.part === 'part6' || (typeof group.part === 'string' && group.part.toLowerCase() === 'part6')) {
+    const segments = buildPart6BilingualSegments(group.passage || '', group.passage_vi || '');
+
+    return (
+      <div className="space-y-4">
+        {group.instruction && (
+          <div className="text-xs font-bold text-slate-500 italic">
+            {group.instruction}
+          </div>
+        )}
+
+        <div className="bg-slate-900/5 border border-slate-200/90 rounded-2xl p-5 space-y-4 shadow-sm">
+          {/* Header & Mode Switch */}
+          <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-slate-800"></span>
+              {(group as any).start_question && (group as any).end_question
+                ? `CÂU ${(group as any).start_question}–${(group as any).end_question}`
+                : (group.title || 'TOEIC PART 6 PASSAGE')}
+            </div>
+
+            {/* Mode switch for learning/bilingual mode */}
+            {isPartMode && group.passage_vi && (
+              <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setPart6ViewMode('bilingual')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                    part6ViewMode === 'bilingual'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🌐 SONG NGỮ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPart6ViewMode('english_only')}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${
+                    part6ViewMode === 'english_only'
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🇬🇧 ENGLISH ONLY
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Interleaved Segment Blocks */}
+          <div className="space-y-4">
+            {segments.map((seg, idx) => {
+              const showViForSeg = isPartMode && part6ViewMode === 'bilingual' && Boolean(seg.vi);
+
+              if (seg.isTitle) {
+                return (
+                  <div key={seg.id || idx} className="border-b border-slate-200/80 pb-3 space-y-1.5">
+                    <div className="text-base font-black text-slate-900 leading-snug">
+                      {seg.en}
+                    </div>
+                    {showViForSeg && (
+                      <div className="text-sm font-bold text-emerald-950 bg-emerald-50/90 rounded-lg px-3 py-1.5 border border-emerald-200/60 leading-snug">
+                        {seg.vi}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <div key={seg.id || idx} className="border-b border-slate-200/60 pb-3.5 space-y-2 last:border-b-0 last:pb-0">
+                  {/* English Row */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="bg-slate-800 text-white font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider">
+                        🇬🇧 EN
+                      </span>
+                    </div>
+                    <div className="text-sm font-semibold text-slate-900 leading-relaxed pl-0.5">
+                      {renderSegmentTextWithMarkers(seg.en)}
+                    </div>
+                  </div>
+
+                  {/* Vietnamese Row */}
+                  {showViForSeg && (
+                    <div className="space-y-1 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-emerald-800 text-white font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider">
+                          🇻🇳 VI
+                        </span>
+                      </div>
+                      <div className="text-sm font-medium text-emerald-950 leading-relaxed">
+                        {renderSegmentTextWithMarkers(seg.vi)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Single reading passage fallback
   if (group.passage) {
     return (
       <div className="space-y-3">
