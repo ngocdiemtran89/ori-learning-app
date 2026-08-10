@@ -20,7 +20,7 @@ DECLARE
   v_test_published boolean;
   v_groups jsonb;
   v_questions jsonb;
-  v_import_answers boolean;
+  v_import_answers boolean := false;
   v_group_elem jsonb;
   v_question_elem jsonb;
   
@@ -68,6 +68,14 @@ BEGIN
     RAISE EXCEPTION 'Trường "questions" trong payload phải là một mảng JSON.';
   END IF;
 
+  -- Controlled import_answers Validation
+  IF (p_payload ? 'import_answers') AND (p_payload -> 'import_answers') IS NOT NULL THEN
+    IF jsonb_typeof(p_payload -> 'import_answers') <> 'boolean' THEN
+      RAISE EXCEPTION 'Trường "import_answers" phải là kiểu boolean (true/false).';
+    END IF;
+    v_import_answers := (p_payload ->> 'import_answers')::boolean;
+  END IF;
+
   -- 3. Validate Part Name
   v_part_name := LOWER(TRIM(p_part));
   IF v_part_name NOT IN ('part1', 'part2', 'part3', 'part4', 'part5', 'part6', 'part7') THEN
@@ -89,7 +97,6 @@ BEGIN
 
   v_groups := COALESCE(p_payload -> 'groups', '[]'::jsonb);
   v_questions := COALESCE(p_payload -> 'questions', '[]'::jsonb);
-  v_import_answers := COALESCE((p_payload ->> 'import_answers')::boolean, false);
 
   -- 5. Process Groups (Update-Only)
   FOR v_group_elem IN SELECT * FROM jsonb_array_elements(v_groups)
@@ -123,38 +130,45 @@ BEGIN
 
     -- Preference 2: Derived Table Range Lookup
     IF v_target_group_id IS NULL THEN
-      v_start_q := (v_group_elem ->> 'start_question')::int;
-      v_end_q := (v_group_elem ->> 'end_question')::int;
+      IF (v_group_elem ? 'start_question') IS FALSE OR (v_group_elem ->> 'start_question') IS NULL OR TRIM(v_group_elem ->> 'start_question') = ''
+         OR (v_group_elem ? 'end_question') IS FALSE OR (v_group_elem ->> 'end_question') IS NULL OR TRIM(v_group_elem ->> 'end_question') = '' THEN
+        RAISE EXCEPTION 'Thiếu start_question hoặc end_question để tìm kiếm nhóm bài.';
+      END IF;
 
-      IF v_start_q IS NOT NULL AND v_end_q IS NOT NULL THEN
-        SELECT COUNT(*) INTO v_group_matches_count
-        FROM (
-          SELECT g.id
-          FROM public.toeic_test_groups g
-          JOIN public.toeic_test_questions q ON q.group_id = g.id
-          WHERE g.test_id = p_test_id
-            AND g.part = v_part_name
-            AND g.is_active = true
-            AND q.test_id = p_test_id
-            AND q.is_active = true
-          GROUP BY g.id
-          HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q
-        ) matching_groups;
+      BEGIN
+        v_start_q := (v_group_elem ->> 'start_question')::int;
+        v_end_q := (v_group_elem ->> 'end_question')::int;
+      EXCEPTION WHEN OTHERS THEN
+        RAISE EXCEPTION 'Giá trị dải câu hỏi (%–%) không hợp lệ.', (v_group_elem ->> 'start_question'), (v_group_elem ->> 'end_question');
+      END;
 
-        IF v_group_matches_count > 1 THEN
-          RAISE EXCEPTION 'Phát hiện nhiều nhóm bài trùng lặp cho dải câu Q%–%. Vui lòng kiểm tra lại cấu trúc đề.', v_start_q, v_end_q;
-        ELSIF v_group_matches_count = 1 THEN
-          SELECT g.id INTO v_target_group_id
-          FROM public.toeic_test_groups g
-          JOIN public.toeic_test_questions q ON q.group_id = g.id
-          WHERE g.test_id = p_test_id
-            AND g.part = v_part_name
-            AND g.is_active = true
-            AND q.test_id = p_test_id
-            AND q.is_active = true
-          GROUP BY g.id
-          HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q;
-        END IF;
+      SELECT COUNT(*) INTO v_group_matches_count
+      FROM (
+        SELECT g.id
+        FROM public.toeic_test_groups g
+        JOIN public.toeic_test_questions q ON q.group_id = g.id
+        WHERE g.test_id = p_test_id
+          AND g.part = v_part_name
+          AND g.is_active = true
+          AND q.test_id = p_test_id
+          AND q.is_active = true
+        GROUP BY g.id
+        HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q
+      ) matching_groups;
+
+      IF v_group_matches_count > 1 THEN
+        RAISE EXCEPTION 'Phát hiện nhiều nhóm bài trùng lặp cho dải câu Q%–%. Vui lòng kiểm tra lại cấu trúc đề.', v_start_q, v_end_q;
+      ELSIF v_group_matches_count = 1 THEN
+        SELECT g.id INTO v_target_group_id
+        FROM public.toeic_test_groups g
+        JOIN public.toeic_test_questions q ON q.group_id = g.id
+        WHERE g.test_id = p_test_id
+          AND g.part = v_part_name
+          AND g.is_active = true
+          AND q.test_id = p_test_id
+          AND q.is_active = true
+        GROUP BY g.id
+        HAVING MIN(q.question_number) = v_start_q AND MAX(q.question_number) = v_end_q;
       END IF;
     END IF;
 
@@ -186,14 +200,29 @@ BEGIN
           RAISE EXCEPTION 'Số lượng tài liệu EN (%) và VI (%) trong Part 7 không khớp nhau.', jsonb_array_length(v_effective_docs), jsonb_array_length(v_effective_docs_vi);
         END IF;
 
-        FOR v_doc_idx IN 0 .. (jsonb_array_length(v_effective_docs) - 1)
-        LOOP
-          v_doc_en_type := (v_effective_docs -> v_doc_idx) ->> 'type';
-          v_doc_vi_type := (v_effective_docs_vi -> v_doc_idx) ->> 'type';
-          IF v_doc_en_type IS NOT NULL AND v_doc_vi_type IS NOT NULL AND LOWER(TRIM(v_doc_en_type)) <> LOWER(TRIM(v_doc_vi_type)) THEN
-            RAISE EXCEPTION 'Loại tài liệu tại vị trí % không khớp (EN: %, VI: %).', v_doc_idx + 1, v_doc_en_type, v_doc_vi_type;
-          END IF;
-        END LOOP;
+        IF jsonb_array_length(v_effective_docs) > 0 THEN
+          FOR v_doc_idx IN 0 .. (jsonb_array_length(v_effective_docs) - 1)
+          LOOP
+            IF jsonb_typeof(v_effective_docs -> v_doc_idx) <> 'object' THEN
+              RAISE EXCEPTION 'Tài liệu EN tại vị trí % phải là một đối tượng JSON.', v_doc_idx + 1;
+            END IF;
+
+            IF jsonb_typeof(v_effective_docs_vi -> v_doc_idx) <> 'object' THEN
+              RAISE EXCEPTION 'Tài liệu VI tại vị trí % phải là một đối tượng JSON.', v_doc_idx + 1;
+            END IF;
+
+            v_doc_en_type := (v_effective_docs -> v_doc_idx) ->> 'type';
+            v_doc_vi_type := (v_effective_docs_vi -> v_doc_idx) ->> 'type';
+
+            IF v_doc_en_type IS NOT NULL AND TRIM(v_doc_en_type) <> '' THEN
+              IF v_doc_vi_type IS NULL OR TRIM(v_doc_vi_type) = '' THEN
+                RAISE EXCEPTION 'Tài liệu VI tại vị trí % thiếu loại tài liệu (type: %).', v_doc_idx + 1, v_doc_en_type;
+              ELSIF LOWER(TRIM(v_doc_en_type)) <> LOWER(TRIM(v_doc_vi_type)) THEN
+                RAISE EXCEPTION 'Loại tài liệu tại vị trí % không khớp (EN: %, VI: %).', v_doc_idx + 1, v_doc_en_type, v_doc_vi_type;
+              END IF;
+            END IF;
+          END LOOP;
+        END IF;
       END IF;
     END IF;
 
@@ -218,7 +247,17 @@ BEGIN
   -- 6. Process Questions (Update-Only)
   FOR v_question_elem IN SELECT * FROM jsonb_array_elements(v_questions)
   LOOP
-    v_q_num := (v_question_elem ->> 'question_number')::int;
+    IF (v_question_elem ? 'question_number') IS FALSE 
+       OR (v_question_elem ->> 'question_number') IS NULL 
+       OR TRIM(v_question_elem ->> 'question_number') = '' THEN
+      RAISE EXCEPTION 'Thiếu question_number trong dữ liệu câu hỏi.';
+    END IF;
+
+    BEGIN
+      v_q_num := (v_question_elem ->> 'question_number')::int;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE EXCEPTION 'Giá trị question_number không hợp lệ: %', (v_question_elem ->> 'question_number');
+    END;
     
     -- Validate Explicit Payload Part if Supplied
     IF (v_question_elem ? 'part') AND (v_question_elem ->> 'part') IS NOT NULL AND TRIM(v_question_elem ->> 'part') <> '' THEN
