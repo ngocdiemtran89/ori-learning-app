@@ -1,5 +1,5 @@
 // ============================================================
-// Phase P3.5J Revised: Admin Bulk Import TOEIC Questions By Part Parser (Bilingual EN + VI)
+// Phase P3.5J Hotfix: Admin Bulk Import TOEIC Questions By Part Parser (Compact Bilingual EN + VI)
 // Parses human text, markdown, JSON, CSV, and PDF text per TOEIC Part (1–7) with full EN + VI support
 // ============================================================
 
@@ -191,6 +191,46 @@ export function parsePartContentText(
     currentDocViContent = [];
   };
 
+  const ensureAutoGroup = (qNum: number) => {
+    if (normTargetPart === 'part5' || normTargetPart === 'part7') return;
+
+    let start = qNum;
+    let end = qNum;
+
+    if (normTargetPart === 'part3' && qNum >= 32 && qNum <= 70) {
+      start = Math.floor((qNum - 32) / 3) * 3 + 32;
+      end = start + 2;
+    } else if (normTargetPart === 'part4' && qNum >= 71 && qNum <= 100) {
+      start = Math.floor((qNum - 71) / 3) * 3 + 71;
+      end = start + 2;
+    } else if (normTargetPart === 'part6' && qNum >= 131 && qNum <= 146) {
+      start = Math.floor((qNum - 131) / 4) * 4 + 131;
+      end = start + 3;
+    } else {
+      return;
+    }
+
+    const rangeStr = `${start}-${end}`;
+
+    if (currentGroup && currentGroup.range === rangeStr) {
+      return;
+    }
+
+    const existingG = groups.find(g => g.range === rangeStr);
+    if (existingG) {
+      currentGroup = existingG;
+    } else {
+      finalizeGroup();
+      currentGroup = {
+        start_question: start,
+        end_question: end,
+        range: rangeStr,
+        part: normTargetPart,
+      };
+      groupSection = normTargetPart === 'part6' ? 'passage_en' : 'transcript_en';
+    }
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const trimmed = rawLine.trim();
@@ -274,12 +314,15 @@ export function parsePartContentText(
       }
     }
 
-    // Check Single Question Header (e.g. QUESTION 32, CÂU 32, Q32)
-    const qMatch = normalizedHeader.match(/^(?:QUESTION|CÂU|CAU|Q)\s*#?\s*(\d+)\s*:?\s*(.*)$/i);
+    // Check Single Question Header (e.g. QUESTION 32, CÂU 32, Q32, Q32:)
+    const qMatch = normalizedHeader.match(/^(?:QUESTION|CÂU|CAU)\s*#?\s*(\d+)\b\s*[:\.]?\s*(.*)$/i) ||
+                   normalizedHeader.match(/^Q\s*#?\s*(\d+)\b\s*[:\.]?\s*$/i);
     if (qMatch) {
       finalizeQuestion();
       const num = parseInt(qMatch[1], 10);
       const initialText = qMatch[2]?.trim() || '';
+
+      ensureAutoGroup(num);
 
       currentQuestion = {
         question_number: num,
@@ -294,13 +337,13 @@ export function parsePartContentText(
 
     // Check Question Level EN vs VI Headings
     if (currentQuestion) {
-      const isQEnHeader = /^(?:QUESTION\s*EN|CÂU\s*HỎI\s*TIẾNG\s*ANH|ENGLISH\s*QUESTION|QUESTION)$/i.test(cleanHeader);
+      const isQEnHeader = /^(?:TIẾNG\s*ANH|TIENG\s*ANH|EN|ENGLISH|QUESTION\s*EN|CÂU\s*HỎI\s*TIẾNG\s*ANH|ENGLISH\s*QUESTION|QUESTION)$/i.test(cleanHeader);
       if (isQEnHeader) {
         questionSection = 'q_en';
         continue;
       }
 
-      const isQViHeader = /^(?:QUESTION\s*VI|CÂU\s*HỎI\s*TIẾNG\s*VIỆT|BẢN\s*DỊCH\s*CÂU\s*HỎI|VIETNAMESE\s*QUESTION)$/i.test(cleanHeader);
+      const isQViHeader = /^(?:TIẾNG\s*VIỆT|TIENG\s*VIET|VI|VIETNAMESE|QUESTION\s*VI|CÂU\s*HỎI\s*TIẾNG\s*VIỆT|BẢN\s*DỊCH\s*CÂU\s*HỎI|VIETNAMESE\s*QUESTION|BẢN\s*DỊCH)$/i.test(cleanHeader);
       if (isQViHeader) {
         questionSection = 'q_vi';
         continue;
@@ -340,14 +383,15 @@ export function parsePartContentText(
         continue;
       }
 
-      // 3. Normal Option Line (e.g. (A) Option text, A. Option text, A) Option text)
+      // 3. Normal Option Line (e.g. (A) Option text, A. Option text, A) Option text, A: Option text)
       const optMatch = trimmed.match(/^\s*(?:[\(\[]?([A-D])[\)\]\.\:\s]+)(.*)$/i);
       if (optMatch) {
         const label = optMatch[1].toUpperCase();
         const optText = optMatch[2].replace(/^[\*\_\s]+/, '').replace(/[\*\_\s]+$/, '').trim();
 
-        if ((questionSection as string) === 'opt_vi' || (questionSection === 'q_vi' && rawOptionsEnMap.has(label))) {
+        if ((questionSection as string) === 'opt_vi' || questionSection === 'q_vi' || (rawOptionsEnMap.has(label) && rawOptionsEnMap.size >= 4)) {
           rawOptionsViMap.set(label, optText);
+          questionSection = 'opt_vi';
         } else {
           rawOptionsEnMap.set(label, optText);
           questionSection = 'opt_en';
