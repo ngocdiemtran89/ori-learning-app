@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, Send, AlertTriangle } from 'lucide-react';
+import { Loader2, LogOut, ChevronLeft, ChevronRight, PanelRightOpen, PanelRightClose, Send, AlertTriangle, Grid } from 'lucide-react';
 import {
   startOrResumeTest,
   fetchTestContent,
@@ -263,6 +263,19 @@ export const ToeicTestRunnerPage: React.FC = () => {
       }
     }
   }, [content, currentGroup, part7Groups, handleNavigate]);
+
+  const [userNavCollapsed, setUserNavCollapsed] = useState<boolean | null>(null);
+
+  const isPart7Runner = useMemo(() => {
+    if (!currentQuestion) return false;
+    return (currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) ||
+      (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200);
+  }, [currentQuestion]);
+
+  const isNavCollapsed = useMemo(() => {
+    if (userNavCollapsed !== null) return userNavCollapsed;
+    return isPart7Runner;
+  }, [isPart7Runner, userNavCollapsed]);
 
   const handleSaveAndExit = useCallback(async () => {
     if (attempt && attempt.status !== 'submitted') {
@@ -542,10 +555,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
         </div>
       )}
 
-      <div className={currentQuestion && ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) ? "flex-1 flex w-full max-w-[98vw] mx-auto min-h-0" : "flex-1 flex max-w-7xl mx-auto w-full"}>
-        <main className="flex-1 p-2 sm:p-4 overflow-y-auto">
+      <div className={isPart7Runner ? "flex-1 flex w-full max-w-none min-w-0 min-h-0 overflow-hidden" : "flex-1 flex max-w-7xl mx-auto w-full"}>
+        <main className="flex-1 p-1 sm:p-2 min-w-0 min-h-0 flex flex-col overflow-hidden">
           {currentQuestion ? (
-            ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) && currentGroup ? (
+            isPart7Runner && currentGroup ? (
               <Part7StudentWorkspace
                 group={currentGroup}
                 questions={content?.questions.filter((q: any) => q.group_id === currentGroup.id) || [currentQuestion]}
@@ -588,37 +601,37 @@ export const ToeicTestRunnerPage: React.FC = () => {
                   } : undefined}
                 />
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={handlePrev}
-                  disabled={currentQ <= scopeRange.start}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1"
-                >
-                  <ChevronLeft className="w-4 h-4" /> Câu trước
-                </button>
+                <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={handlePrev}
+                    disabled={currentQ <= scopeRange.start}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Câu trước
+                  </button>
 
-                {currentQ === scopeRange.end ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowSubmitConfirm(true)}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span>NỘP PART {partNumber || 1}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    disabled={currentQ >= scopeRange.end}
-                    className="px-4 py-2 bg-ori-600 hover:bg-ori-700 text-white font-bold text-xs rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1"
-                  >
-                    Câu sau <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
+                  {currentQ === scopeRange.end ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowSubmitConfirm(true)}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center gap-1.5"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>NỘP PART {partNumber || 1}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      disabled={currentQ >= scopeRange.end}
+                      className="px-4 py-2 bg-ori-600 hover:bg-ori-700 text-white font-bold text-xs rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1"
+                    >
+                      Câu sau <ChevronRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
             )
           ) : (
             <div className="text-center py-12">
@@ -627,16 +640,49 @@ export const ToeicTestRunnerPage: React.FC = () => {
           )}
         </main>
 
-        {navOpen && (
-          <aside className="hidden lg:block w-72 border-l border-slate-200 bg-white p-4 overflow-y-auto">
-            <QuestionNavigator
-              totalQuestions={scopeTotal}
-              currentQuestion={currentQ}
-              answeredQuestions={answeredNumbers}
-              onNavigate={handleNavigate}
-              partFilter={isPartMode ? partNumber : null}
-            />
+        {/* RIGHT QUESTION NAVIGATOR (Supports w-14 Collapsed Rail in Part 7 Focus Mode) */}
+        {isPart7Runner ? (
+          <aside className={`hidden lg:flex flex-col border-l border-slate-200 bg-white transition-all duration-200 shrink-0 ${
+            isNavCollapsed ? 'w-14 p-2 items-center' : 'w-72 p-4 overflow-y-auto'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setUserNavCollapsed(!isNavCollapsed)}
+              className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors cursor-pointer mb-2"
+              title={isNavCollapsed ? "Mở rộng danh sách câu hỏi" : "Thu gọn danh sách câu hỏi"}
+            >
+              {isNavCollapsed ? <ChevronLeft className="w-5 h-5 text-purple-700" /> : <ChevronRight className="w-5 h-5" />}
+            </button>
+
+            {isNavCollapsed ? (
+              <div className="flex flex-col items-center gap-3 mt-2">
+                <span className="text-[10px] font-black text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-1 rounded-md text-center">
+                  {answeredNumbers.size}/{scopeTotal}
+                </span>
+                <Grid className="w-5 h-5 text-slate-400" />
+              </div>
+            ) : (
+              <QuestionNavigator
+                totalQuestions={scopeTotal}
+                currentQuestion={currentQ}
+                answeredQuestions={answeredNumbers}
+                onNavigate={handleNavigate}
+                partFilter={isPartMode ? partNumber : null}
+              />
+            )}
           </aside>
+        ) : (
+          navOpen && (
+            <aside className="hidden lg:block w-72 border-l border-slate-200 bg-white p-4 overflow-y-auto">
+              <QuestionNavigator
+                totalQuestions={scopeTotal}
+                currentQuestion={currentQ}
+                answeredQuestions={answeredNumbers}
+                onNavigate={handleNavigate}
+                partFilter={isPartMode ? partNumber : null}
+              />
+            </aside>
+          )
         )}
       </div>
     </div>

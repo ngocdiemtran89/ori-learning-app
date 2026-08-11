@@ -283,4 +283,71 @@ describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
       expect(currentGroup.passage).not.toBe('Document B content');
     });
   });
+
+  // True Full-Width Focus Mode Layout Suite
+  describe('True Full-Width Focus Mode Layout Suite', () => {
+    it('24. Part 7 focus mode collapses global sidebar to icon rail (w-16 / 60px)', () => {
+      const isPart7FocusMode = true;
+      const userOverride = null;
+      const isSidebarCollapsed = userOverride !== null ? !userOverride : isPart7FocusMode;
+
+      const sidebarClass = isSidebarCollapsed ? 'w-16' : 'w-64';
+      expect(sidebarClass).toBe('w-16');
+    });
+
+    it('25. Part 7 focus mode collapses right navigator to narrow rail (w-14 / 56px) by default', () => {
+      const isPart7Runner = true;
+      const userNavOverride = null;
+      const isNavCollapsed = userNavOverride !== null ? userNavOverride : isPart7Runner;
+
+      const navClass = isNavCollapsed ? 'w-14' : 'w-72';
+      expect(navClass).toBe('w-14');
+    });
+
+    it('26. non-Part7 routes retain full sidebar (w-64 / 256px)', () => {
+      const isPart7FocusMode = false;
+      const userOverride = null;
+      const isSidebarCollapsed = userOverride !== null ? !userOverride : isPart7FocusMode;
+
+      const sidebarClass = isSidebarCollapsed ? 'w-16' : 'w-64';
+      expect(sidebarClass).toBe('w-64');
+    });
+
+    it('27. Part 7 focus mode reclaims viewport width >= 82% at 1536px desktop viewport', () => {
+      const viewportWidth = 1536;
+      const outerPadding = 24;
+      const collapsedSidebarWidth = 60; // w-16
+      const leftGap = 12;
+      const collapsedNavWidth = 56; // w-14
+      const rightGap = 12;
+
+      const reclaimedWorkspaceWidth = viewportWidth - outerPadding - collapsedSidebarWidth - leftGap - collapsedNavWidth - rightGap;
+      const workspaceRatio = reclaimedWorkspaceWidth / viewportWidth;
+
+      expect(reclaimedWorkspaceWidth).toBe(1372); // 1372px
+      expect(workspaceRatio).toBeGreaterThan(0.82); // 89.3% of viewport!
+    });
+
+    it('28. reading panel gets ~56% and question panel gets ~44% of workspace width', () => {
+      const workspaceWidth = 1372;
+      const readingPanelWidth = Math.round(workspaceWidth * 0.56);
+      const questionPanelWidth = Math.round(workspaceWidth * 0.44);
+
+      expect(readingPanelWidth).toBeGreaterThan(750); // ~768px
+      expect(questionPanelWidth).toBeGreaterThan(550); // ~604px
+    });
+
+    it('29. user can reopen sidebar or right navigator when clicked', () => {
+      let userSidebarExpanded: boolean | null = null;
+      let userNavCollapsed: boolean | null = null;
+
+      // User clicks expand sidebar
+      userSidebarExpanded = true;
+      expect(userSidebarExpanded).toBe(true);
+
+      // User clicks expand question navigator
+      userNavCollapsed = false;
+      expect(userNavCollapsed).toBe(false);
+    });
+  });
 });

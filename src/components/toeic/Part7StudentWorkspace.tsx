@@ -311,7 +311,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
             md:col-span-7 lg:col-span-7 p-6 overflow-y-auto border-r border-slate-200 bg-white space-y-6 pointer-events-auto
             ${mobileTab === 'document' ? 'block' : 'hidden md:block'}
           `}
-          style={{ maxHeight: 'calc(100vh - 150px)' }}
+          style={{ maxHeight: 'calc(100vh - 110px)' }}
         >
           {group?.instruction && (
             <div className="text-xs font-bold text-slate-600 bg-slate-100/90 p-3.5 rounded-2xl border border-slate-200">
@@ -429,7 +429,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
             md:col-span-5 lg:col-span-5 p-6 overflow-y-auto bg-slate-50 space-y-6 pointer-events-auto
             ${mobileTab === 'questions' ? 'block' : 'hidden md:block'}
           `}
-          style={{ maxHeight: 'calc(100vh - 150px)' }}
+          style={{ maxHeight: 'calc(100vh - 110px)' }}
         >
           {sortedQs.length === 0 && (
             <div className="p-6 bg-white border border-slate-200 rounded-3xl text-center text-xs font-bold text-slate-500 italic">
