@@ -186,10 +186,23 @@ export const ToeicTestRunnerPage: React.FC = () => {
     return { audioUrl, imageUrl, cueStartMs, cueEndMs };
   }, [currentQuestion, currentGroup]);
 
-  const handleSelectAnswer = useCallback(async (answer: string) => {
-    if (!currentQuestion || !attempt || timeExpired || attempt.status === 'submitted') return;
-    setAnswers(prev => new Map(prev).set(currentQuestion.id, answer));
-    const res = await saveAnswer(attempt.id, currentQuestion.id, answer, isPartMode ? localElapsedSeconds : undefined);
+  const handleSelectAnswer = useCallback(async (questionIdOrAnswer: string, answerArg?: string) => {
+    if (!attempt || timeExpired || attempt.status === 'submitted') return;
+
+    let targetQId: string;
+    let selectedOption: string;
+
+    if (answerArg !== undefined) {
+      targetQId = questionIdOrAnswer;
+      selectedOption = answerArg;
+    } else {
+      if (!currentQuestion) return;
+      targetQId = currentQuestion.id;
+      selectedOption = questionIdOrAnswer;
+    }
+
+    setAnswers(prev => new Map(prev).set(targetQId, selectedOption));
+    const res = await saveAnswer(attempt.id, targetQId, selectedOption, isPartMode ? localElapsedSeconds : undefined);
     if (res.error) console.error('Save answer error:', res.error);
   }, [currentQuestion, attempt, timeExpired, isPartMode, localElapsedSeconds]);
 
@@ -208,6 +221,48 @@ export const ToeicTestRunnerPage: React.FC = () => {
   const handleNext = useCallback(() => {
     if (currentQ < scopeRange.end) handleNavigate(currentQ + 1);
   }, [currentQ, handleNavigate, scopeRange.end]);
+
+  const part7Groups = useMemo(() => {
+    if (!content) return [];
+    return content.groups.filter(g =>
+      (g.part && String(g.part).toLowerCase().replace(/[\s_]/g, '') === 'part7') ||
+      String(g.part) === '7'
+    );
+  }, [content]);
+
+  const currentGroupIndex = useMemo(() => {
+    if (!currentGroup || part7Groups.length === 0) return 1;
+    const idx = part7Groups.findIndex(g => g.id === currentGroup.id);
+    return idx >= 0 ? idx + 1 : 1;
+  }, [currentGroup, part7Groups]);
+
+  const handleNextGroup = useCallback(() => {
+    if (!content || !currentGroup || part7Groups.length === 0) return;
+    const currentGroupIdx = part7Groups.findIndex(g => g.id === currentGroup.id);
+    if (currentGroupIdx >= 0 && currentGroupIdx < part7Groups.length - 1) {
+      const nextG = part7Groups[currentGroupIdx + 1];
+      const firstQOfNextG = content.questions
+        .filter(q => q.group_id === nextG.id)
+        .sort((a, b) => a.question_number - b.question_number)[0];
+      if (firstQOfNextG) {
+        handleNavigate(firstQOfNextG.question_number);
+      }
+    }
+  }, [content, currentGroup, part7Groups, handleNavigate]);
+
+  const handlePrevGroup = useCallback(() => {
+    if (!content || !currentGroup || part7Groups.length === 0) return;
+    const currentGroupIdx = part7Groups.findIndex(g => g.id === currentGroup.id);
+    if (currentGroupIdx > 0) {
+      const prevG = part7Groups[currentGroupIdx - 1];
+      const firstQOfPrevG = content.questions
+        .filter(q => q.group_id === prevG.id)
+        .sort((a, b) => a.question_number - b.question_number)[0];
+      if (firstQOfPrevG) {
+        handleNavigate(firstQOfPrevG.question_number);
+      }
+    }
+  }, [content, currentGroup, part7Groups, handleNavigate]);
 
   const handleSaveAndExit = useCallback(async () => {
     if (attempt && attempt.status !== 'submitted') {
@@ -487,8 +542,8 @@ export const ToeicTestRunnerPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 flex max-w-7xl mx-auto w-full">
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+      <div className={currentQuestion && ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) ? "flex-1 flex w-full max-w-[98vw] mx-auto min-h-0" : "flex-1 flex max-w-7xl mx-auto w-full"}>
+        <main className="flex-1 p-2 sm:p-4 overflow-y-auto">
           {currentQuestion ? (
             ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) && currentGroup ? (
               <Part7StudentWorkspace
@@ -497,8 +552,10 @@ export const ToeicTestRunnerPage: React.FC = () => {
                 isPartMode={isPartMode}
                 answers={answers}
                 onSelectAnswer={handleSelectAnswer}
-                onPrevGroup={handlePrev}
-                onNextGroup={handleNext}
+                onPrevGroup={handlePrevGroup}
+                onNextGroup={handleNextGroup}
+                groupIndex={currentGroupIndex}
+                totalGroups={part7Groups.length || 1}
                 onSubmitTest={() => setShowSubmitConfirm(true)}
                 onSaveWord={isPartMode && attempt ? async (word: string, context: string) => {
                   await saveToeicWord(attempt.id, currentQuestion.id, word, context);

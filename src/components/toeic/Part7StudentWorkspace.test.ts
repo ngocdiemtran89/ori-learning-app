@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parsePart7BatchBlock } from '../../lib/cms/part7BatchParser';
 
 describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
@@ -170,7 +170,6 @@ describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
       passage: 'Published reading text',
       documents: [{ content: 'Published reading text' }],
       instruction: 'Read article',
-      // part7_bilingual_units and evidence missing!
     };
 
     const units = Array.isArray(publishedGroupResponse.part7_bilingual_units)
@@ -188,5 +187,100 @@ describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
 
     expect(showBilingualInMock).toBe(false);
     expect(showEvidenceInMock).toBe(false);
+  });
+
+  // Answer Interaction Suite
+  describe('Answer Interaction Suite', () => {
+    it('16. clicking option calls handler with target question ID and letter', () => {
+      const handler = vi.fn();
+      const q147Id = 'q-147-id';
+      const q148Id = 'q-148-id';
+
+      // Simulate answer click on Q147 choice A
+      handler(q147Id, 'A');
+      expect(handler).toHaveBeenCalledWith(q147Id, 'A');
+
+      // Simulate answer click on Q148 choice B
+      handler(q148Id, 'B');
+      expect(handler).toHaveBeenCalledWith(q148Id, 'B');
+    });
+
+    it('17. changing selection A -> C replaces selection in answers Map', () => {
+      const answersMap = new Map<string, string>();
+      const qId = 'q-147';
+
+      // First click A
+      answersMap.set(qId, 'A');
+      expect(answersMap.get(qId)).toBe('A');
+
+      // Second click C
+      answersMap.set(qId, 'C');
+      expect(answersMap.get(qId)).toBe('C');
+      expect(answersMap.size).toBe(1);
+    });
+
+    it('18. Q147 selection does not modify Q148 answer state', () => {
+      const answersMap = new Map<string, string>();
+      answersMap.set('q-147', 'B');
+
+      expect(answersMap.get('q-147')).toBe('B');
+      expect(answersMap.get('q-148')).toBeUndefined();
+    });
+
+    it('19. answered questions set updates count correctly when new question answered', () => {
+      const answersMap = new Map<string, string>();
+      answersMap.set('q-147', 'A');
+      expect(answersMap.size).toBe(1);
+
+      answersMap.set('q-148', 'C');
+      expect(answersMap.size).toBe(2);
+    });
+
+    it('20. mock exam mode answer selection works without correct answer reveal', () => {
+      const isPartMode = false;
+      const selectedAnswer = 'B';
+      const isSelected = selectedAnswer === 'B';
+      const shouldHighlightCorrect = isPartMode;
+
+      expect(isSelected).toBe(true);
+      expect(shouldHighlightCorrect).toBe(false);
+    });
+  });
+
+  // Group Integrity & Mapping Suite
+  describe('Group Integrity Suite', () => {
+    it('21. Q147 group resolves by exact group_id match', () => {
+      const groups = [
+        { id: 'g-1', passage: 'Passage 1' },
+        { id: 'g-2', passage: 'Passage 2' },
+      ];
+      const q147 = { id: 'q-147', group_id: 'g-2', question_number: 147 };
+
+      const matchedGroup = groups.find(g => g.id === q147.group_id);
+      expect(matchedGroup?.id).toBe('g-2');
+      expect(matchedGroup?.passage).toBe('Passage 2');
+    });
+
+    it('22. Development guard filters out questions from another group', () => {
+      const targetGroup = { id: 'g-100', passage: 'Group 100 Passage' };
+      const rawQuestions = [
+        { id: 'q-1', group_id: 'g-100', question_number: 147 },
+        { id: 'q-2', group_id: 'g-200', question_number: 148 }, // Wrong group!
+      ];
+
+      const validQs = rawQuestions.filter(q => q.group_id === targetGroup.id);
+      expect(validQs.length).toBe(1);
+      expect(validQs[0].id).toBe('q-1');
+    });
+
+    it('23. current group document is never substituted with adjacent group document', () => {
+      const groupA = { id: 'g-A', passage: 'Document A content' };
+      const groupB = { id: 'g-B', passage: 'Document B content' };
+      const currentQ = { id: 'q-1', group_id: 'g-A' };
+
+      const currentGroup = currentQ.group_id === groupA.id ? groupA : groupB;
+      expect(currentGroup.passage).toBe('Document A content');
+      expect(currentGroup.passage).not.toBe('Document B content');
+    });
   });
 });

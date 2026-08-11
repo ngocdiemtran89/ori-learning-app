@@ -177,11 +177,18 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
     return Array.isArray(units) ? units : [];
   }, [group]);
 
-  // Question Range Label & Sorted Questions
+  // Development Integrity Guard (Filter questions to ensure q.group_id === group.id)
   const sortedQs = useMemo(() => {
     const valid = Array.isArray(questions) ? questions.filter(Boolean) : [];
-    return [...valid].sort((a, b) => (a.question_number || 0) - (b.question_number || 0));
-  }, [questions]);
+    const matched = valid.filter((q) => {
+      if (group && group.id && q.group_id && q.group_id !== group.id) {
+        console.warn(`Part7IntegrityGuard: Filtered question Q${q.question_number} (group_id ${q.group_id}) from group ${group.id}`);
+        return false;
+      }
+      return true;
+    });
+    return [...matched].sort((a, b) => (a.question_number || 0) - (b.question_number || 0));
+  }, [questions, group]);
 
   const firstQ = sortedQs[0]?.question_number || 147;
   const lastQ = sortedQs[sortedQs.length - 1]?.question_number || 150;
@@ -222,10 +229,10 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
 
   return (
     <div className="w-full flex flex-col h-full bg-slate-100 rounded-3xl overflow-hidden shadow-xl border border-slate-200">
-      {/* 1. TOP HEADER TOOLBAR */}
-      <div className="px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between flex-wrap gap-3">
+      {/* 1. TOP HEADER TOOLBAR (Compact, High-Contrast) */}
+      <div className="px-5 py-2.5 bg-slate-900 text-white flex items-center justify-between flex-wrap gap-2 rounded-t-3xl border-b border-slate-800">
         <div className="flex items-center gap-3">
-          <span className="px-3 py-1 bg-purple-600 font-extrabold text-xs rounded-full uppercase tracking-wider text-white shadow-xs">
+          <span className="px-3 py-1 bg-purple-600 font-extrabold text-[11px] rounded-full uppercase tracking-wider text-white shadow-xs">
             PART 7 READING WORKSPACE
           </span>
           <span className="font-extrabold text-sm text-slate-200">
@@ -243,7 +250,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => setShowBilingual(!showBilingual)}
-                className={`px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs ${
+                className={`px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
                   showBilingual
                     ? 'bg-amber-400 text-amber-950 hover:bg-amber-300'
                     : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -259,7 +266,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                   setShowEvidence(!showEvidence);
                   if (showEvidence) setSelectedEvidenceQNum(null);
                 }}
-                className={`px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs ${
+                className={`px-3 py-1.5 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
                   showEvidence
                     ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300'
                     : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
@@ -295,19 +302,19 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* 2. SPLIT WORKSPACE BODY (DESKTOP: 2 INDEPENDENT SCROLL PANELS) */}
+      {/* 2. SPLIT WORKSPACE BODY (DESKTOP 58% / 42% WITH INDEPENDENT SCROLL) */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden relative">
-        {/* LEFT PANEL: READING DOCUMENTS (52% Desktop Width) */}
+        {/* LEFT PANEL: READING DOCUMENTS (58% Desktop Width, High Legibility White Background) */}
         <div
           ref={leftPanelRef}
           className={`
-            md:col-span-6 lg:col-span-6 p-5 overflow-y-auto border-r border-slate-200 bg-white space-y-5
+            md:col-span-7 lg:col-span-7 p-6 overflow-y-auto border-r border-slate-200 bg-white space-y-6 pointer-events-auto
             ${mobileTab === 'document' ? 'block' : 'hidden md:block'}
           `}
-          style={{ maxHeight: 'calc(100vh - 160px)' }}
+          style={{ maxHeight: 'calc(100vh - 150px)' }}
         >
           {group?.instruction && (
-            <div className="text-xs font-bold text-slate-600 bg-slate-100/90 p-3 rounded-2xl border border-slate-200">
+            <div className="text-xs font-bold text-slate-600 bg-slate-100/90 p-3.5 rounded-2xl border border-slate-200">
               {group.instruction}
               {!isMockExam && showBilingual && group.instruction_vi && (
                 <div className="text-slate-500 mt-1 font-normal">{group.instruction_vi}</div>
@@ -317,8 +324,8 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
 
           {/* Fallback if no documents or passage */}
           {docs.length === 0 && (
-            <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs font-bold text-slate-500 italic">
-              Nội dung bài đọc chưa được cập nhật.
+            <div className="p-6 bg-amber-50/80 border border-amber-200 rounded-2xl text-center text-xs font-bold text-amber-900 italic space-y-1">
+              <p>Nội dung bài đọc của nhóm này chưa khớp. Vui lòng báo quản trị viên.</p>
             </div>
           )}
 
@@ -330,19 +337,19 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
             return (
               <div
                 key={docIdx}
-                className="bg-amber-50/60 border border-amber-200 rounded-3xl p-5 space-y-4 shadow-xs"
+                className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm"
               >
                 {/* Document Type Badge */}
                 {docs.length > 1 && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-200/80 text-amber-950 font-extrabold text-[11px] uppercase tracking-wider">
-                    <FileText className="w-3.5 h-3.5" />
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-slate-900 text-white font-extrabold text-[11px] uppercase tracking-wider shadow-xs">
+                    <FileText className="w-3.5 h-3.5 text-purple-400" />
                     <span>Document {docIdx + 1}{doc.type ? ` — ${doc.type}` : ''}</span>
                   </div>
                 )}
 
                 {/* Structured Interleaved Bilingual Units */}
                 {!isMockExam && showBilingual && docUnits.length > 0 ? (
-                  <div className="space-y-3">
+                  <div className="space-y-3.5">
                     {docUnits.map((unit: any, uIdx: number) => {
                       const unitKey = `unit-${uIdx}`;
                       const isEvidenceHighlighted =
@@ -362,25 +369,25 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                           key={uIdx}
                           ref={(el) => unitRefs.current.set(unitKey, el)}
                           className={`
-                            p-3 rounded-2xl transition-all space-y-1.5
+                            p-3.5 rounded-2xl transition-all space-y-1.5 pointer-events-auto
                             ${isEvidenceHighlighted
-                              ? 'bg-amber-100 border-2 border-amber-400 ring-4 ring-amber-200/60 shadow-md'
-                              : 'border border-amber-100 hover:border-amber-200'
+                              ? 'bg-amber-100/90 border-2 border-amber-500 ring-4 ring-amber-200/80 shadow-md'
+                              : 'border border-slate-100 hover:border-slate-300'
                             }
                           `}
                         >
                           {unitEnText && (
-                            <div className="text-sm font-semibold text-slate-900 leading-relaxed flex items-start gap-2">
-                              <span className="bg-slate-900 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5">
+                            <div className="text-[15px] font-medium text-slate-900 leading-relaxed flex items-start gap-2.5">
+                              <span className="bg-slate-900 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5 select-none">
                                 🇬🇧 EN
                               </span>
-                              <span>{unitEnText}</span>
+                              <span className="font-serif">{unitEnText}</span>
                             </div>
                           )}
 
                           {unitViText && (
-                            <div className="text-sm font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2.5 leading-relaxed flex items-start gap-2">
-                              <span className="bg-emerald-800 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5">
+                            <div className="text-sm font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2.5 leading-relaxed flex items-start gap-2.5">
+                              <span className="bg-emerald-800 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5 select-none">
                                 🇻🇳 VI
                               </span>
                               <span>{unitViText}</span>
@@ -391,20 +398,20 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                     })}
                   </div>
                 ) : (
-                  /* Standard / Mock Exam English-Only Document View */
-                  <div className="space-y-2">
+                  /* Standard / Mock Exam High-Legibility Document View */
+                  <div className="space-y-3">
                     {doc.title && (
-                      <h4 className="text-base font-extrabold text-slate-900">{doc.title}</h4>
+                      <h4 className="text-base font-extrabold text-slate-900 border-b border-slate-100 pb-2">{doc.title}</h4>
                     )}
-                    <div className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-serif">
+                    <div className="text-[15px] text-slate-900 leading-relaxed whitespace-pre-wrap font-serif tracking-normal">
                       {doc.content}
                     </div>
 
                     {/* Fallback VI Translation in Practice Mode if bilingual units absent */}
                     {!isMockExam && showBilingual && docVi && (
-                      <div className="mt-4 pt-3 border-t border-amber-200/80">
-                        {docVi.title && <h5 className="text-xs font-bold text-emerald-900">{docVi.title}</h5>}
-                        <div className="text-xs font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl p-3 leading-relaxed whitespace-pre-wrap">
+                      <div className="mt-4 pt-3.5 border-t border-slate-200">
+                        {docVi.title && <h5 className="text-xs font-bold text-emerald-900 mb-1">{docVi.title}</h5>}
+                        <div className="text-sm font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-2xl p-3.5 leading-relaxed whitespace-pre-wrap">
                           {docVi.content}
                         </div>
                       </div>
@@ -416,13 +423,13 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
           })}
         </div>
 
-        {/* RIGHT PANEL: QUESTIONS LIST (48% Desktop Width, Independent Scroll) */}
+        {/* RIGHT PANEL: QUESTIONS LIST (42% Desktop Width, Independent Scroll) */}
         <div
           className={`
-            md:col-span-6 lg:col-span-6 p-5 overflow-y-auto bg-slate-50 space-y-6
+            md:col-span-5 lg:col-span-5 p-6 overflow-y-auto bg-slate-50 space-y-6 pointer-events-auto
             ${mobileTab === 'questions' ? 'block' : 'hidden md:block'}
           `}
-          style={{ maxHeight: 'calc(100vh - 160px)' }}
+          style={{ maxHeight: 'calc(100vh - 150px)' }}
         >
           {sortedQs.length === 0 && (
             <div className="p-6 bg-white border border-slate-200 rounded-3xl text-center text-xs font-bold text-slate-500 italic">
@@ -438,7 +445,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
             return (
               <div
                 key={q.id}
-                className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow"
+                className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 hover:shadow-md transition-shadow pointer-events-auto"
               >
                 {/* Question Header & Evidence Toggle Button */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -446,14 +453,14 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                     <span className="w-8 h-8 rounded-full bg-purple-700 text-white font-extrabold text-sm flex items-center justify-center shadow-xs">
                       {q.question_number}
                     </span>
-                    <span className="font-extrabold text-slate-800 text-sm">Câu {q.question_number}</span>
+                    <span className="font-extrabold text-slate-900 text-sm">Câu {q.question_number}</span>
                   </div>
 
                   {!isMockExam && hasEvidence && (
                     <button
                       type="button"
                       onClick={() => handleScrollToEvidence(q.question_number)}
-                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-extrabold text-[11px] rounded-xl flex items-center gap-1 transition-all shadow-xs"
+                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 font-extrabold text-[11px] rounded-xl flex items-center gap-1 transition-all shadow-xs cursor-pointer pointer-events-auto"
                     >
                       <Highlighter className="w-3.5 h-3.5 text-amber-700" />
                       <span>Dẫn chứng Q{q.question_number}</span>
@@ -463,7 +470,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
 
                 {/* Question Stem (EN + VI) */}
                 <div className="space-y-1.5">
-                  <p className="text-sm font-extrabold text-slate-900 leading-snug">{q.question_text}</p>
+                  <p className="text-[16px] font-extrabold text-slate-900 leading-snug">{q.question_text}</p>
                   {!isMockExam && showBilingual && q.translation_vi && (
                     <p className="text-xs font-semibold text-emerald-800 bg-emerald-50/80 px-3 py-1.5 rounded-xl border border-emerald-100">
                       🇻🇳 {q.translation_vi}
@@ -471,8 +478,8 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                   )}
                 </div>
 
-                {/* 4 Answer Options (A/B/C/D) */}
-                <div className="space-y-2.5 pt-1">
+                {/* 4 Interactive Answer Option Buttons (A/B/C/D) */}
+                <div className="space-y-2.5 pt-1 pointer-events-auto">
                   {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
                     const rawOptEn = Array.isArray(q.options) ? q.options[optIdx] : '';
                     const rawOptVi = !isMockExam && showBilingual && Array.isArray(q.options_vi) ? q.options_vi[optIdx] : '';
@@ -489,16 +496,16 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                       if (!isMockExam && isAnswered) {
                         // Practice Mode immediate feedback
                         if (letter === q.correct_answer) {
-                          btnStyle = 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-200 font-bold';
+                          btnStyle = 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-300 font-bold shadow-xs';
                           badgeStyle = 'bg-emerald-600 text-white';
                         } else {
-                          btnStyle = 'border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-200 font-bold';
+                          btnStyle = 'border-rose-500 bg-rose-50 text-rose-950 ring-2 ring-rose-300 font-bold shadow-xs';
                           badgeStyle = 'bg-rose-600 text-white';
                         }
                       } else {
-                        // Mock Exam / Practice Selected before answer
-                        btnStyle = 'border-purple-600 bg-purple-50 text-purple-950 ring-2 ring-purple-200 font-bold';
-                        badgeStyle = 'bg-purple-600 text-white';
+                        // Mock Exam / Practice Selected before answer reveal
+                        btnStyle = 'border-purple-600 bg-purple-50 text-purple-950 ring-2 ring-purple-300 font-bold shadow-xs';
+                        badgeStyle = 'bg-purple-700 text-white';
                       }
                     } else if (!isMockExam && isAnswered && letter === q.correct_answer) {
                       // Highlight correct choice in practice mode if wrong selected
@@ -511,16 +518,16 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                         key={letter}
                         type="button"
                         onClick={() => onSelectAnswer(q.id, letter)}
-                        className={`w-full p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 text-left ${btnStyle}`}
+                        className={`w-full min-h-[44px] p-3.5 rounded-2xl border-2 transition-all flex items-start gap-3 text-left cursor-pointer pointer-events-auto select-none ${btnStyle}`}
                       >
                         <span className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shrink-0 mt-0.5 ${badgeStyle}`}>
                           {letter}
                         </span>
 
                         <div className="flex-1 space-y-0.5">
-                          <span className="text-xs font-semibold leading-relaxed block">{optEn || `(${letter})`}</span>
+                          <span className="text-sm font-semibold leading-relaxed block">{optEn || `(${letter})`}</span>
                           {optVi && (
-                            <span className="text-[11px] font-medium text-emerald-800 block italic">{optVi}</span>
+                            <span className="text-xs font-medium text-emerald-800 block italic">{optVi}</span>
                           )}
                         </div>
                       </button>
@@ -534,7 +541,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
       </div>
 
       {/* 3. BOTTOM STICKY CONTROL TOOLBAR */}
-      <div className="px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between flex-wrap gap-3 text-xs font-extrabold">
+      <div className="px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between flex-wrap gap-3 text-xs font-extrabold pointer-events-auto">
         <div className="flex items-center gap-3">
           {/* Word Saving Popup Button */}
           {onSaveWord && !isMockExam && (
@@ -542,7 +549,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => setSaveWordOpen(!saveWordOpen)}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <BookOpen className="w-4 h-4" />
                 <span>📖 TRA / LƯU TỪ VỰNG</span>
@@ -551,7 +558,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
               {saveWordOpen && (
                 <form
                   onSubmit={handleSaveWordSubmit}
-                  className="absolute left-0 bottom-12 z-30 p-3 bg-white border border-slate-200 rounded-2xl shadow-xl w-72 space-y-2"
+                  className="absolute left-0 bottom-12 z-30 p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xl w-72 space-y-2.5 pointer-events-auto"
                 >
                   <label className="font-extrabold text-slate-800 block">Lưu từ vào sổ tay Part 7:</label>
                   <input
@@ -565,14 +572,14 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
                     <button
                       type="button"
                       onClick={() => setSaveWordOpen(false)}
-                      className="px-3 py-1 border rounded-lg text-slate-600 hover:bg-slate-100"
+                      className="px-3 py-1 border rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
                     >
                       Hủy
                     </button>
                     <button
                       type="submit"
                       disabled={savingWord || !saveWordInput.trim()}
-                      className="px-3 py-1 bg-emerald-600 text-white rounded-lg disabled:opacity-50"
+                      className="px-3 py-1 bg-emerald-600 text-white rounded-lg disabled:opacity-50 cursor-pointer"
                     >
                       {savingWord ? 'Đang lưu...' : wordSaved ? '✓ Đã lưu!' : 'Lưu Sổ Tay'}
                     </button>
@@ -590,7 +597,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
               type="button"
               onClick={onPrevGroup}
               disabled={groupIndex <= 1}
-              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-100 disabled:opacity-40 transition-colors flex items-center gap-1"
+              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl hover:bg-slate-100 disabled:opacity-40 transition-colors flex items-center gap-1 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" /> Nhóm trước
             </button>
@@ -600,7 +607,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
             <button
               type="button"
               onClick={onNextGroup}
-              className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1"
+              className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
             >
               <span>Nhóm tiếp theo</span>
               <ChevronRight className="w-4 h-4" />
@@ -610,7 +617,7 @@ const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={onSubmitTest}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-1.5"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <Send className="w-4 h-4" />
                 <span>NỘP BÀI THI</span>
