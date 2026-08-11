@@ -6,6 +6,7 @@
  */
 
 export interface Part7BilingualUnit {
+  unit_id: string;
   document_index: number;
   order: number;
   kind: 'title' | 'sentence' | 'paragraph' | 'chat' | 'table' | 'field';
@@ -31,9 +32,11 @@ export function buildPart7BilingualUnits(
 
     // Title unit
     if (docEn.title || (docVi && docVi.title)) {
+      const uOrd = order++;
       units.push({
+        unit_id: `d${docIdx}-u${uOrd.toString().padStart(3, '0')}`,
         document_index: docIdx,
-        order: order++,
+        order: uOrd,
         kind: 'title',
         en: docEn.title || '',
         vi: docVi?.title || '',
@@ -47,9 +50,11 @@ export function buildPart7BilingualUnits(
     if (!contentEn && !contentVi) continue;
 
     if (!contentVi) {
+      const uOrd = order++;
       units.push({
+        unit_id: `d${docIdx}-u${uOrd.toString().padStart(3, '0')}`,
         document_index: docIdx,
-        order: order++,
+        order: uOrd,
         kind: 'paragraph',
         en: contentEn,
         vi: '',
@@ -66,10 +71,12 @@ export function buildPart7BilingualUnits(
         const lEn = linesEn[i];
         const lVi = linesVi[i];
         const kind = lEn.includes(':') ? 'field' : (lEn.includes('[') || lEn.includes(']')) ? 'chat' : 'sentence';
+        const uOrd = order++;
 
         units.push({
+          unit_id: `d${docIdx}-u${uOrd.toString().padStart(3, '0')}`,
           document_index: docIdx,
-          order: order++,
+          order: uOrd,
           kind,
           en: lEn,
           vi: lVi,
@@ -82,9 +89,11 @@ export function buildPart7BilingualUnits(
 
       if (parasEn.length === parasVi.length && parasEn.length > 0) {
         for (let i = 0; i < parasEn.length; i++) {
+          const uOrd = order++;
           units.push({
+            unit_id: `d${docIdx}-u${uOrd.toString().padStart(3, '0')}`,
             document_index: docIdx,
-            order: order++,
+            order: uOrd,
             kind: 'paragraph',
             en: parasEn[i],
             vi: parasVi[i],
@@ -92,9 +101,11 @@ export function buildPart7BilingualUnits(
         }
       } else {
         // Full document content fallback (zero text loss)
+        const uOrd = order++;
         units.push({
+          unit_id: `d${docIdx}-u${uOrd.toString().padStart(3, '0')}`,
           document_index: docIdx,
-          order: order++,
+          order: uOrd,
           kind: 'paragraph',
           en: contentEn,
           vi: contentVi,

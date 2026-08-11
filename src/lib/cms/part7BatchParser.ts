@@ -380,11 +380,6 @@ export function buildPart7GroupPatchPayload(
     payload.part7_bilingual_units = draft.units.length > 0 ? draft.units : null;
   }
 
-  if (dbGroup?.group_type !== draft.groupType) {
-    hasChanges = true;
-    payload.group_type = draft.groupType;
-  }
-
   const questionPatches: Record<string, any>[] = [];
 
   for (const qDraft of draft.questions) {
