@@ -490,7 +490,7 @@ export const ToeicTestRunnerPage: React.FC = () => {
       <div className="flex-1 flex max-w-7xl mx-auto w-full">
         <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
           {currentQuestion ? (
-            currentQuestion.part === 'part7' && currentGroup ? (
+            ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) && currentGroup ? (
               <Part7StudentWorkspace
                 group={currentGroup}
                 questions={content?.questions.filter((q: any) => q.group_id === currentGroup.id) || [currentQuestion]}

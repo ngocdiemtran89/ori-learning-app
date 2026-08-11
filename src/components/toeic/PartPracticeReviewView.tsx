@@ -347,7 +347,7 @@ export const PartPracticeReviewView: React.FC<PartPracticeReviewViewProps> = ({
           </div>
 
           {currentQuestion ? (
-            currentQuestion.part === 'part7' && currentGroup ? (
+            ((currentQuestion.part && (String(currentQuestion.part).toLowerCase().replace(/[\s_]/g, '') === 'part7' || String(currentQuestion.part) === '7')) || (currentQuestion.question_number >= 147 && currentQuestion.question_number <= 200)) && currentGroup ? (
               <Part7StudentWorkspace
                 group={currentGroup as any}
                 questions={reviewData.questions.filter(q => q.group_id === currentGroup.id) as any[]}

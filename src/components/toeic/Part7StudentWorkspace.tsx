@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Globe,
   Highlighter,
@@ -7,6 +7,8 @@ import {
   ChevronRight,
   Send,
   BookOpen,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { StudentToeicQuestion, StudentToeicGroup } from '../../lib/supabase/types';
 
@@ -24,7 +26,74 @@ export interface Part7StudentWorkspaceProps {
   onSaveWord?: (word: string, context: string) => Promise<void>;
 }
 
-export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
+/** Fail-safe Error Boundary component to prevent Part 7 rendering crashes from blanking the page */
+export class Part7ErrorBoundary extends React.Component<
+  { children: React.ReactNode; onRetry?: () => void },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode; onRetry?: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Part7ErrorBoundary caught render error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 bg-rose-50 border border-rose-200 rounded-3xl text-center space-y-4 max-w-md mx-auto my-12 shadow-lg">
+          <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+            <AlertTriangle className="w-7 h-7 text-rose-600" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-extrabold text-slate-900">
+              Không thể hiển thị bài đọc này
+            </h3>
+            <p className="text-xs text-slate-600">
+              Vui lòng tải lại trang hoặc chuyển sang bài tiếp theo.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ hasError: false, error: null });
+              if (this.props.onRetry) {
+                this.props.onRetry();
+              } else {
+                window.location.reload();
+              }
+            }}
+            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl transition-colors shadow-sm inline-flex items-center gap-2"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Tải lại trang</span>
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+/** Safe string converter for option content (handles objects, nulls, numbers gracefully) */
+function getOptionText(opt: any): string {
+  if (opt == null) return '';
+  if (typeof opt === 'string') return opt;
+  if (typeof opt === 'number' || typeof opt === 'boolean') return String(opt);
+  if (typeof opt === 'object') {
+    return opt.text || opt.content || opt.value || opt.label || JSON.stringify(opt);
+  }
+  return String(opt);
+}
+
+const Part7StudentWorkspaceView: React.FC<Part7StudentWorkspaceProps> = ({
   group,
   questions,
   isPartMode,
@@ -57,16 +126,66 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
 
   const isMockExam = !isPartMode; // Security guard: Mock exam = English ONLY!
 
-  // Documents & Units
-  const docs = group.documents && Array.isArray(group.documents) ? group.documents : [];
-  const docsVi = group.documents_vi && Array.isArray(group.documents_vi) ? group.documents_vi : [];
-  const bilingualUnits: any[] = Array.isArray((group as any).part7_bilingual_units) ? (group as any).part7_bilingual_units : [];
+  // Documents Normalization (Fallback from group.documents to group.passage)
+  const docs = useMemo(() => {
+    if (!group) return [];
+    if (group.documents && Array.isArray(group.documents) && group.documents.length > 0) {
+      return group.documents.map((d: any) => {
+        if (typeof d === 'string') return { content: d, title: '', type: '' };
+        if (typeof d === 'object' && d !== null) {
+          return {
+            content: typeof d.content === 'string' ? d.content : (d.text || d.passage || ''),
+            title: typeof d.title === 'string' ? d.title : '',
+            type: typeof d.type === 'string' ? d.type : '',
+          };
+        }
+        return { content: String(d || ''), title: '', type: '' };
+      });
+    }
+    if (group.passage && typeof group.passage === 'string' && group.passage.trim().length > 0) {
+      return [{ content: group.passage, title: group.title || '', type: '' }];
+    }
+    return [];
+  }, [group]);
 
-  // Question Range Label
-  const sortedQs = [...questions].sort((a, b) => a.question_number - b.question_number);
+  // Documents VI Normalization (Fallback from group.documents_vi to group.passage_vi)
+  const docsVi = useMemo(() => {
+    if (!group) return [];
+    if (group.documents_vi && Array.isArray(group.documents_vi) && group.documents_vi.length > 0) {
+      return group.documents_vi.map((d: any) => {
+        if (typeof d === 'string') return { content: d, title: '', type: '' };
+        if (typeof d === 'object' && d !== null) {
+          return {
+            content: typeof d.content === 'string' ? d.content : (d.text || d.passage || ''),
+            title: typeof d.title === 'string' ? d.title : '',
+            type: typeof d.type === 'string' ? d.type : '',
+          };
+        }
+        return { content: String(d || ''), title: '', type: '' };
+      });
+    }
+    if (group.passage_vi && typeof group.passage_vi === 'string' && group.passage_vi.trim().length > 0) {
+      return [{ content: group.passage_vi, title: group.title || '', type: '' }];
+    }
+    return [];
+  }, [group]);
+
+  // Optional Bilingual Units (Safely handle null/undefined)
+  const bilingualUnits: any[] = useMemo(() => {
+    if (!group) return [];
+    const units = (group as any).part7_bilingual_units;
+    return Array.isArray(units) ? units : [];
+  }, [group]);
+
+  // Question Range Label & Sorted Questions
+  const sortedQs = useMemo(() => {
+    const valid = Array.isArray(questions) ? questions.filter(Boolean) : [];
+    return [...valid].sort((a, b) => (a.question_number || 0) - (b.question_number || 0));
+  }, [questions]);
+
   const firstQ = sortedQs[0]?.question_number || 147;
   const lastQ = sortedQs[sortedQs.length - 1]?.question_number || 150;
-  const rangeLabel = `Câu ${firstQ}–${lastQ}`;
+  const rangeLabel = sortedQs.length > 0 ? `Câu ${firstQ}–${lastQ}` : 'Nhóm đọc Part 7';
 
   const handleScrollToEvidence = (qNum: number, unitIdx?: number) => {
     setSelectedEvidenceQNum(qNum);
@@ -187,12 +306,19 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
           `}
           style={{ maxHeight: 'calc(100vh - 160px)' }}
         >
-          {group.instruction && (
+          {group?.instruction && (
             <div className="text-xs font-bold text-slate-600 bg-slate-100/90 p-3 rounded-2xl border border-slate-200">
               {group.instruction}
               {!isMockExam && showBilingual && group.instruction_vi && (
                 <div className="text-slate-500 mt-1 font-normal">{group.instruction_vi}</div>
               )}
+            </div>
+          )}
+
+          {/* Fallback if no documents or passage */}
+          {docs.length === 0 && (
+            <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs font-bold text-slate-500 italic">
+              Nội dung bài đọc chưa được cập nhật.
             </div>
           )}
 
@@ -228,6 +354,9 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
                             return evList.some((ev: any) => ev.document_index === docIdx && (ev.order === uIdx || ev.unit_id === unit.unit_id));
                           }));
 
+                      const unitEnText = typeof unit.en === 'string' ? unit.en : (unit.en ? String(unit.en) : '');
+                      const unitViText = typeof unit.vi === 'string' ? unit.vi : (unit.vi ? String(unit.vi) : '');
+
                       return (
                         <div
                           key={uIdx}
@@ -240,21 +369,21 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
                             }
                           `}
                         >
-                          {unit.en && (
+                          {unitEnText && (
                             <div className="text-sm font-semibold text-slate-900 leading-relaxed flex items-start gap-2">
                               <span className="bg-slate-900 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5">
                                 🇬🇧 EN
                               </span>
-                              <span>{unit.en}</span>
+                              <span>{unitEnText}</span>
                             </div>
                           )}
 
-                          {unit.vi && (
+                          {unitViText && (
                             <div className="text-sm font-medium text-emerald-950 bg-emerald-50/90 border border-emerald-200/80 rounded-xl p-2.5 leading-relaxed flex items-start gap-2">
                               <span className="bg-emerald-800 text-white font-black text-[10px] px-1.5 py-0.5 rounded tracking-wider shrink-0 mt-0.5">
                                 🇻🇳 VI
                               </span>
-                              <span>{unit.vi}</span>
+                              <span>{unitViText}</span>
                             </div>
                           )}
                         </div>
@@ -295,8 +424,14 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
           `}
           style={{ maxHeight: 'calc(100vh - 160px)' }}
         >
+          {sortedQs.length === 0 && (
+            <div className="p-6 bg-white border border-slate-200 rounded-3xl text-center text-xs font-bold text-slate-500 italic">
+              Chưa có câu hỏi cho nhóm đọc này.
+            </div>
+          )}
+
           {sortedQs.map((q) => {
-            const selectedOpt = answers.get(q.id) || null;
+            const selectedOpt = answers?.get ? (answers.get(q.id) || null) : null;
             const isAnswered = selectedOpt !== null;
             const hasEvidence = Array.isArray(q.evidence) && q.evidence.length > 0;
 
@@ -339,8 +474,11 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
                 {/* 4 Answer Options (A/B/C/D) */}
                 <div className="space-y-2.5 pt-1">
                   {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
-                    const optEn = Array.isArray(q.options) ? q.options[optIdx] : '';
-                    const optVi = !isMockExam && showBilingual && Array.isArray(q.options_vi) ? q.options_vi[optIdx] : '';
+                    const rawOptEn = Array.isArray(q.options) ? q.options[optIdx] : '';
+                    const rawOptVi = !isMockExam && showBilingual && Array.isArray(q.options_vi) ? q.options_vi[optIdx] : '';
+                    
+                    const optEn = getOptionText(rawOptEn);
+                    const optVi = getOptionText(rawOptVi);
                     const isSelected = selectedOpt === letter;
 
                     // Option Styling logic
@@ -484,3 +622,9 @@ export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = ({
     </div>
   );
 };
+
+export const Part7StudentWorkspace: React.FC<Part7StudentWorkspaceProps> = (props) => (
+  <Part7ErrorBoundary>
+    <Part7StudentWorkspaceView {...props} />
+  </Part7ErrorBoundary>
+);

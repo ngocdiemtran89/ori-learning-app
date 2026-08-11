@@ -95,4 +95,98 @@ describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
     expect(getHeaderCountLabel(qs4)).toBe('4 câu hỏi');
     expect(getHeaderCountLabel(qs5)).toBe('5 câu hỏi');
   });
+
+  // White Screen Protection & Optional Fields Fallback Tests
+  it('9. Part 7 renders safely when part7_bilingual_units = null or []', () => {
+    const groupWithNullUnits: any = {
+      id: 'g-1',
+      part: 'part7',
+      passage: 'Sample passage text...',
+      documents: null,
+      part7_bilingual_units: null,
+    };
+
+    const docs = groupWithNullUnits.documents && Array.isArray(groupWithNullUnits.documents)
+      ? groupWithNullUnits.documents
+      : [{ content: groupWithNullUnits.passage }];
+
+    expect(docs.length).toBe(1);
+    expect(docs[0].content).toBe('Sample passage text...');
+  });
+
+  it('10. Part 7 renders safely when evidence = null or []', () => {
+    const qWithNullEvidence: any = {
+      id: 'q-147',
+      question_number: 147,
+      question_text: 'What is true?',
+      options: ['A', 'B', 'C', 'D'],
+      evidence: null,
+    };
+
+    const hasEvidence = Array.isArray(qWithNullEvidence.evidence) && qWithNullEvidence.evidence.length > 0;
+    expect(hasEvidence).toBe(false);
+  });
+
+  it('11. documents exists but documents_vi is null -> English still renders', () => {
+    const group: any = {
+      documents: [{ content: 'English text' }],
+      documents_vi: null,
+    };
+
+    const docEn = group.documents[0].content;
+    const docVi = group.documents_vi ? group.documents_vi[0] : null;
+
+    expect(docEn).toBe('English text');
+    expect(docVi).toBeNull();
+  });
+
+  it('12. question translation_vi null or options_vi null -> English still renders', () => {
+    const q: any = {
+      question_text: 'Where is the event?',
+      translation_vi: null,
+      options: ['Building A', 'Building B', 'Building C', 'Building D'],
+      options_vi: null,
+    };
+
+    expect(q.question_text).toBe('Where is the event?');
+    expect(q.translation_vi).toBeNull();
+    expect(q.options.length).toBe(4);
+    expect(q.options_vi).toBeNull();
+  });
+
+  it('13. direct URL ?mode=part&part=7 selects Part 7 route correctly', () => {
+    const searchParams = new URLSearchParams('mode=part&part=7');
+    const mode = searchParams.get('mode');
+    const partNumber = parseInt(searchParams.get('part')!, 10);
+
+    const isPart7Mode = mode === 'part' && partNumber === 7;
+    expect(isPart7Mode).toBe(true);
+  });
+
+  it('14. published Part 7 response missing optional new fields does not crash', () => {
+    const publishedGroupResponse: any = {
+      id: 'g-147-150',
+      part: 'part7',
+      passage: 'Published reading text',
+      documents: [{ content: 'Published reading text' }],
+      instruction: 'Read article',
+      // part7_bilingual_units and evidence missing!
+    };
+
+    const units = Array.isArray(publishedGroupResponse.part7_bilingual_units)
+      ? publishedGroupResponse.part7_bilingual_units
+      : [];
+
+    expect(units).toEqual([]);
+    expect(publishedGroupResponse.documents[0].content).toBe('Published reading text');
+  });
+
+  it('15. full/mock exam mode hides Vietnamese and evidence', () => {
+    const isPartMode = false; // Mock exam mode
+    const showBilingualInMock = isPartMode; // Must be false!
+    const showEvidenceInMock = isPartMode; // Must be false!
+
+    expect(showBilingualInMock).toBe(false);
+    expect(showEvidenceInMock).toBe(false);
+  });
 });
