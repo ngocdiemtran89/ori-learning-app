@@ -303,15 +303,23 @@ function processGroupDraft(
   }
 
   const parsedQNums = parsedQEn.map(q => q.question_number).sort((a, b) => a - b);
-  const hasAllQuestions = expectedQNums.length === parsedQNums.length && expectedQNums.every((n, i) => n === parsedQNums[i]);
+  const unexpected = parsedQNums.filter(n => !expectedQNums.includes(n));
+  const missing = expectedQNums.filter(n => !parsedQNums.includes(n));
+
+  const hasExactQuestions = unexpected.length === 0 && missing.length === 0;
 
   let isComplete = true;
   let validationError: string | undefined = undefined;
 
-  if (!hasAllQuestions) {
+  if (!hasExactQuestions) {
     isComplete = false;
-    const missing = expectedQNums.filter(n => !parsedQNums.includes(n));
-    validationError = `Nội dung không khớp nhóm ${rangeLabel}. Thiếu Q${missing.join(', Q')}.`;
+    if (unexpected.length > 0 && missing.length > 0) {
+      validationError = `Nội dung không khớp nhóm ${rangeLabel}. Thiếu Q${missing.join(', Q')}, phát hiện thừa Q${unexpected.join(', Q')}.`;
+    } else if (missing.length > 0) {
+      validationError = `Nội dung không khớp nhóm ${rangeLabel}. Thiếu Q${missing.join(', Q')}.`;
+    } else {
+      validationError = `Nội dung không khớp nhóm ${rangeLabel}. Phát hiện Q${unexpected.join(', Q')} không thuộc nhóm.`;
+    }
     warnings.push(`⚠️ ${rangeLabel}: ${validationError}`);
   } else if (parsedDocsEn.length === 0) {
     isComplete = false;

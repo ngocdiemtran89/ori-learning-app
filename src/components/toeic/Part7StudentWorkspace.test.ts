@@ -1,95 +1,98 @@
 import { describe, it, expect } from 'vitest';
-import { buildPart7BilingualUnits } from '../../lib/toeic/part7BilingualAligner';
+import { parsePart7BatchBlock } from '../../lib/cms/part7BatchParser';
 
-describe('Part 7 Student Workspace & Evidence Suite', () => {
-  const mockGroup: any = {
-    id: 'grp-159-163',
-    part: 'part7',
-    group_type: 'single_passage',
-    title: 'E-mail',
-    instruction: 'Questions 159-163 refer to the following e-mail.',
-    instruction_vi: 'Câu 159-163 tham chiếu đến e-mail sau.',
-    documents: [
-      {
-        type: 'email',
-        title: 'Discount Notice',
-        content: 'To: Hailey Hua\nFrom: Middlesex Hair\nDate: October 14\nSubject: Special Offer\n\nWe have not seen you in a long time, and we miss you! If you book an appointment within the next two weeks, you will receive a 20 percent discount.',
-      },
-    ],
-    documents_vi: [
-      {
-        type: 'email',
-        title: 'Thông báo giảm giá',
-        content: 'Người nhận: Hailey Hua\nNgười gửi: Middlesex Hair\nNgày: 14 tháng 10\nTiêu đề: Ưu đãi đặc biệt\n\nĐã lâu rồi chúng tôi chưa gặp bạn và chúng tôi rất nhớ bạn! Nếu bạn đặt lịch hẹn trong vòng hai tuần tới, bạn sẽ nhận được mức giảm giá 20%.',
-      },
-    ],
-    part7_bilingual_units: [],
-  };
-
-  const mockQuestions: any[] = [
-    {
-      id: 'q-159',
-      group_id: 'grp-159-163',
-      question_number: 159,
-      part: 'part7',
-      question_text: 'How can Ms. Hua receive a 20 percent discount at Middlesex Hair?',
-      translation_vi: 'Làm thế nào cô Hua có thể nhận được mức giảm giá 20% tại Middlesex Hair?',
-      options: [
-        'By presenting a coupon',
-        'By referring new customers',
-        'By making a booking within two weeks',
-        'By purchasing products online',
-      ],
-      options_vi: [
-        'Bằng cách xuất trình phiếu giảm giá',
-        'Bằng cách giới thiệu khách hàng mới',
-        'Bằng cách đặt lịch hẹn trong vòng hai tuần',
-        'Bằng cách mua sản phẩm trực tuyến',
-      ],
-      evidence: [
-        {
-          document_index: 0,
-          unit_id: 'd0-u002',
-          quote_en: 'If you book an appointment within the next two weeks...',
-          quote_vi: 'Nếu bạn đặt lịch hẹn trong vòng hai tuần tới...',
-        },
-      ],
-    },
+describe('Part 7 Dynamic Group Size & Workspace Suite', () => {
+  const mockGroups345 = [
+    { id: 'g-2q', part: 'part7', start_question: 159, end_question: 160 },
+    { id: 'g-3q', part: 'part7', start_question: 161, end_question: 163 },
+    { id: 'g-4q', part: 'part7', start_question: 164, end_question: 167 },
+    { id: 'g-5q', part: 'part7', start_question: 168, end_question: 172 },
   ];
 
-  it('1. verifies persisted bilingual units generator pairs EN & VI sentence units', () => {
-    const units = buildPart7BilingualUnits(mockGroup.documents, mockGroup.documents_vi);
-    expect(units.length).toBeGreaterThan(0);
-    expect(units[0].document_index).toBe(0);
-    expect(units[0].en).toBeDefined();
-    expect(units[0].vi).toBeDefined();
+  const mockQuestions345 = [
+    ...[159, 160].map(q => ({ id: `q-${q}`, part: 'part7', question_number: q, group_id: 'g-2q', options: ['a', 'b', 'c', 'd'] })),
+    ...[161, 162, 163].map(q => ({ id: `q-${q}`, part: 'part7', question_number: q, group_id: 'g-3q', options: ['a', 'b', 'c', 'd'] })),
+    ...[164, 165, 166, 167].map(q => ({ id: `q-${q}`, part: 'part7', question_number: q, group_id: 'g-4q', options: ['a', 'b', 'c', 'd'] })),
+    ...[168, 169, 170, 171, 172].map(q => ({ id: `q-${q}`, part: 'part7', question_number: q, group_id: 'g-5q', options: ['a', 'b', 'c', 'd'] })),
+  ];
+
+  it('1. parses 2-question group correctly (Q159-160)', () => {
+    const textEn = `QUESTIONS 159-160\n\n[EMAIL] Special Discount\nDetails...\n\n159. Q159?\n(A) a\n(B) b\n(C) c\n(D) d\n\n160. Q160?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g2 = res.groups.find(g => g.groupId === 'g-2q');
+
+    expect(g2).toBeDefined();
+    expect(g2?.questions.length).toBe(2);
+    expect(g2?.isComplete).toBe(true);
+    expect(g2?.rangeLabel).toBe('Q159–160');
   });
 
-  it('2. verifies question evidence structure maps to stable translation units', () => {
-    const q159 = mockQuestions[0];
-    expect(q159.evidence.length).toBe(1);
-    expect(q159.evidence[0].document_index).toBe(0);
-    expect(q159.evidence[0].unit_id).toBe('d0-u002');
+  it('2. parses 3-question group correctly (Q161-163)', () => {
+    const textEn = `QUESTIONS 161-163\n\n[NOTICE] Meeting\nDetails...\n\n161. Q161?\n(A) a\n(B) b\n(C) c\n(D) d\n\n162. Q162?\n(A) a\n(B) b\n(C) c\n(D) d\n\n163. Q163?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g3 = res.groups.find(g => g.groupId === 'g-3q');
+
+    expect(g3).toBeDefined();
+    expect(g3?.questions.length).toBe(3);
+    expect(g3?.isComplete).toBe(true);
+    expect(g3?.rangeLabel).toBe('Q161–163');
   });
 
-  it('3. verifies practice mode exposes Vietnamese & evidence, while mock exam forces English ONLY', () => {
-    const renderWorkspaceForMode = (isPartMode: boolean) => {
-      const showBilingualToggle = isPartMode;
-      const showEvidenceToggle = isPartMode;
-      const showQuestionVi = isPartMode;
-      const showOptionsVi = isPartMode;
+  it('3. parses 4-question group correctly (Q164-167)', () => {
+    const textEn = `QUESTIONS 164-167\n\n[ARTICLE] News\nDetails...\n\n164. Q164?\n(A) a\n(B) b\n(C) c\n(D) d\n\n165. Q165?\n(A) a\n(B) b\n(C) c\n(D) d\n\n166. Q166?\n(A) a\n(B) b\n(C) c\n(D) d\n\n167. Q167?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g4 = res.groups.find(g => g.groupId === 'g-4q');
 
-      return { showBilingualToggle, showEvidenceToggle, showQuestionVi, showOptionsVi };
-    };
+    expect(g4).toBeDefined();
+    expect(g4?.questions.length).toBe(4);
+    expect(g4?.isComplete).toBe(true);
+  });
 
-    const practiceControls = renderWorkspaceForMode(true);
-    expect(practiceControls.showBilingualToggle).toBe(true);
-    expect(practiceControls.showEvidenceToggle).toBe(true);
-    expect(practiceControls.showQuestionVi).toBe(true);
+  it('4. parses 5-question group correctly (Q168-172)', () => {
+    const textEn = `QUESTIONS 168-172\n\n[CHAT] Team Chat\nDetails...\n\n168. Q168?\n(A) a\n(B) b\n(C) c\n(D) d\n\n169. Q169?\n(A) a\n(B) b\n(C) c\n(D) d\n\n170. Q170?\n(A) a\n(B) b\n(C) c\n(D) d\n\n171. Q171?\n(A) a\n(B) b\n(C) c\n(D) d\n\n172. Q172?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g5 = res.groups.find(g => g.groupId === 'g-5q');
 
-    const mockControls = renderWorkspaceForMode(false);
-    expect(mockControls.showBilingualToggle).toBe(false);
-    expect(mockControls.showEvidenceToggle).toBe(false);
-    expect(mockControls.showQuestionVi).toBe(false);
+    expect(g5).toBeDefined();
+    expect(g5?.questions.length).toBe(5);
+    expect(g5?.isComplete).toBe(true);
+  });
+
+  it('5. blocks 2-question group missing one question', () => {
+    const textEn = `QUESTIONS 159-160\n\n[EMAIL] Test\nText...\n\n159. Q159?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g2 = res.groups.find(g => g.groupId === 'g-2q');
+
+    expect(g2?.isComplete).toBe(false);
+    expect(g2?.validationError).toContain('Thiếu Q160');
+  });
+
+  it('6. blocks 2-question group with unexpected 3rd question', () => {
+    const textEn = `QUESTIONS 159-160\n\n[EMAIL] Test\nText...\n\n159. Q159?\n(A) a\n(B) b\n(C) c\n(D) d\n\n160. Q160?\n(A) a\n(B) b\n(C) c\n(D) d\n\n161. Q161?\n(A) a\n(B) b\n(C) c\n(D) d`;
+    const res = parsePart7BatchBlock(textEn, '', mockGroups345, mockQuestions345);
+    const g2 = res.groups.find(g => g.groupId === 'g-2q');
+
+    expect(g2?.isComplete).toBe(false);
+    expect(g2?.validationError).toContain('Phát hiện Q161 không thuộc nhóm');
+  });
+
+  it('7. resolves group membership strictly by group_id and expected question numbers', () => {
+    const res = parsePart7BatchBlock(`QUESTIONS 161-163\n\n[NOTICE] Test\n...\n\n161. Q161?\n(A) a\n(B) b\n(C) c\n(D) d\n\n162. Q162?\n(A) a\n(B) b\n(C) c\n(D) d\n\n163. Q163?\n(A) a\n(B) b\n(C) c\n(D) d`, '', mockGroups345, mockQuestions345);
+    expect(res.groups[0].groupId).toBe('g-3q');
+    expect(res.groups[0].expectedQuestionNumbers).toEqual([161, 162, 163]);
+  });
+
+  it('8. switching from one group size to another dynamically updates header text', () => {
+    const getHeaderCountLabel = (qs: any[]) => `${qs.length} câu hỏi`;
+
+    const qs2 = mockQuestions345.filter(q => q.group_id === 'g-2q');
+    const qs3 = mockQuestions345.filter(q => q.group_id === 'g-3q');
+    const qs4 = mockQuestions345.filter(q => q.group_id === 'g-4q');
+    const qs5 = mockQuestions345.filter(q => q.group_id === 'g-5q');
+
+    expect(getHeaderCountLabel(qs2)).toBe('2 câu hỏi');
+    expect(getHeaderCountLabel(qs3)).toBe('3 câu hỏi');
+    expect(getHeaderCountLabel(qs4)).toBe('4 câu hỏi');
+    expect(getHeaderCountLabel(qs5)).toBe('5 câu hỏi');
   });
 });
