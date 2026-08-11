@@ -1,23 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildPart7GroupPatchPayload, Part7GroupDraft } from './part7BatchParser';
+import * as fs from 'fs';
+import * as path from 'path';
 
-describe('Part 7 RPC & Payload Security & Atomicity Suite', () => {
-  const mockGroups = [
-    {
-      id: 'g-active-147-150',
-      part: 'part7',
-      start_question: 147,
-      end_question: 150,
-      is_active: true,
-      documents: [{ content: 'Doc 0' }, { content: 'Doc 1' }],
-      documents_vi: [{ content: 'Bài 0' }, { content: 'Bài 1' }],
-      part7_bilingual_units: [
-        { unit_id: 'u-147-1', document_index: 0, order: 0, kind: 'sentence', en: 'Text 1', vi: 'Dịch 1' },
-        { unit_id: 'u-147-2', document_index: 1, order: 1, kind: 'sentence', en: 'Text 2', vi: 'Dịch 2' },
-      ],
-    },
-  ];
-
+describe('Part 7 RPC & Payload Atomicity & Security Hardening Suite', () => {
   const mockQuestions = [
     { id: 'q-147', part: 'part7', question_number: 147, group_id: 'g-active-147-150', is_active: true, options: ['a', 'b', 'c', 'd'], evidence: [{ unit_id: 'u-147-1' }] },
     { id: 'q-148', part: 'part7', question_number: 148, group_id: 'g-active-147-150', is_active: true, options: ['a', 'b', 'c', 'd'], evidence: [{ unit_id: 'u-147-2' }] },
@@ -25,29 +10,18 @@ describe('Part 7 RPC & Payload Security & Atomicity Suite', () => {
     { id: 'q-150', part: 'part7', question_number: 150, group_id: 'g-active-147-150', is_active: true, options: ['a', 'b', 'c', 'd'] },
   ];
 
-  it('1. verifies Phase A validation occurs before Phase B mutation', () => {
-    const draft: Part7GroupDraft = {
-      groupId: 'g-active-147-150',
-      expectedQuestionNumbers: [147, 148, 149, 150],
-      rangeLabel: 'Q147–150',
-      groupType: 'single_passage',
-      documents: [{ content: 'Valid Text' }],
-      questions: [
-        {
-          question_number: 147,
-          question_text: 'Valid Q147?',
-          translation_vi: 'Dịch 147',
-          options: ['a', 'b', 'c', 'd'],
-          options_vi: ['a', 'b', 'c', 'd'],
-        },
-      ],
-      units: [{ unit_id: 'u-147-1', document_index: 0, order: 0, kind: 'sentence', en: 'Text 1', vi: 'Dịch 1' }],
-      isComplete: true,
-    };
+  it('1. verifies Phase A validation occurs strictly before Phase B UPDATE statements in SQL', () => {
+    const migrationPath = path.join(__dirname, '../../../database/migrations/20260810_part7_workbench_atomic_group_save.sql');
+    const sql = fs.readFileSync(migrationPath, 'utf8');
 
-    const { payload, hasChanges } = buildPart7GroupPatchPayload(mockGroups[0], mockQuestions, draft);
-    expect(hasChanges).toBe(true);
-    expect(payload.documents).toBeDefined();
+    const phaseAPos = sql.indexOf('PHASE A: VALIDATION ONLY');
+    const phaseBPos = sql.indexOf('PHASE B: MUTATION PHASE');
+    const firstUpdatePos = sql.indexOf('UPDATE public.toeic_test_groups');
+
+    expect(phaseAPos).toBeGreaterThan(-1);
+    expect(phaseBPos).toBeGreaterThan(-1);
+    expect(phaseAPos).toBeLessThan(phaseBPos);
+    expect(firstUpdatePos).toBeGreaterThan(phaseBPos); // Zero UPDATE statements before Phase B!
   });
 
   it('2. verifies bad options fail validation before any group or question UPDATE occurs', () => {
@@ -65,8 +39,6 @@ describe('Part 7 RPC & Payload Security & Atomicity Suite', () => {
   });
 
   it('4. rejects units update when unpatched questions in group contain dangling evidence (Q160 test)', () => {
-    // Group has Q147 (ev: u-147-1) and Q148 (ev: u-147-2)
-    // New units only include u-147-1, removing u-147-2
     const updatedUnits = [{ unit_id: 'u-147-1', document_index: 0, order: 0, kind: 'sentence', en: 'Text 1', vi: 'Dịch 1' }];
     
     // Q148 is NOT in the patch, so it retains existing evidence 'u-147-2'
