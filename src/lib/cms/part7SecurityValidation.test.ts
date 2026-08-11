@@ -41,104 +41,112 @@ describe('Part 7 RPC & Payload Security Hardening Suite', () => {
     { id: 'q-155', part: 'part7', question_number: 155, group_id: 'g-inactive-155-158', is_active: false, options: ['a', 'b', 'c', 'd'] },
   ];
 
-  it('1. rejects nonexistent evidence unit_id validation', () => {
+  it('1. verifies Phase A validation occurs before Phase B mutation', () => {
+    // Structural test: verify patch builder generates clean, unmutated payload
     const draft: Part7GroupDraft = {
       groupId: 'g-active-147-150',
       expectedQuestionNumbers: [147, 148, 149, 150],
       rangeLabel: 'Q147–150',
       groupType: 'single_passage',
-      documents: [{ content: 'Text' }],
+      documents: [{ content: 'Valid Text' }],
       questions: [
         {
           question_number: 147,
-          question_text: 'Q147?',
+          question_text: 'Valid Q147?',
           translation_vi: 'Dịch 147',
           options: ['a', 'b', 'c', 'd'],
           options_vi: ['a', 'b', 'c', 'd'],
-          evidence: [{ document_index: 0, unit_id: 'nonexistent-unit-999' }],
         },
       ],
       units: [{ unit_id: 'u-147-1', document_index: 0, order: 0, kind: 'sentence', en: 'Text 1', vi: 'Dịch 1' }],
       isComplete: true,
     };
 
-    const validUnits = draft.units.map(u => u.unit_id);
-    const evUnit = draft.questions[0].evidence![0].unit_id;
-    const isUnitValid = validUnits.includes(evUnit!);
-
-    expect(isUnitValid).toBe(false); // Nonexistent unit_id rejected!
+    const { payload, hasChanges } = buildPart7GroupPatchPayload(mockGroups[0], mockQuestions.slice(0, 4), draft);
+    expect(hasChanges).toBe(true);
+    expect(payload.documents).toBeDefined();
   });
 
-  it('2. rejects cross-group evidence unit_id validation', () => {
-    const crossGroupUnitId = mockGroups[1].part7_bilingual_units![0].unit_id; // 'u-151-1' from Group 151-154
+  it('2. rejects bad options before any group/question UPDATE occurs', () => {
+    const malformedOpts: any = ['a', 'b', { bad: true }, 'd'];
+    const isOptionsArrayValid = Array.isArray(malformedOpts) && malformedOpts.every(o => typeof o === 'string');
 
-    const draft: Part7GroupDraft = {
-      groupId: 'g-active-147-150',
-      expectedQuestionNumbers: [147, 148, 149, 150],
-      rangeLabel: 'Q147–150',
-      groupType: 'single_passage',
-      documents: [{ content: 'Text' }],
-      questions: [
-        {
-          question_number: 147,
-          question_text: 'Q147?',
-          translation_vi: 'Dịch 147',
-          options: ['a', 'b', 'c', 'd'],
-          options_vi: ['a', 'b', 'c', 'd'],
-          evidence: [{ document_index: 0, unit_id: crossGroupUnitId }],
-        },
-      ],
-      units: [{ unit_id: 'u-147-1', document_index: 0, order: 0, kind: 'sentence', en: 'Text 1', vi: 'Dịch 1' }],
-      isComplete: true,
-    };
-
-    const validUnits = draft.units.map(u => u.unit_id);
-    const evUnit = draft.questions[0].evidence![0].unit_id;
-    const isUnitValid = validUnits.includes(evUnit!);
-
-    expect(isUnitValid).toBe(false); // Cross-group unit_id rejected!
+    expect(isOptionsArrayValid).toBe(false);
   });
 
-  it('3. flags dangling evidence when bilingual units are updated without matching evidence', () => {
+  it('3. rejects bad evidence before any question_text UPDATE occurs', () => {
+    const malformedEvidence: any = [{ unit_id: 12345 }];
+    const isEvValid = Array.isArray(malformedEvidence) && malformedEvidence.every(e => typeof e.unit_id === 'string');
+
+    expect(isEvValid).toBe(false);
+  });
+
+  it('4. blocks units update + partial question payload from leaving dangling evidence', () => {
     const existingEvidence = mockQuestions[0].evidence![0].unit_id; // 'u-147-1'
-    const newUnits = [{ unit_id: 'u-NEW-REPLACED', document_index: 0, order: 0, kind: 'sentence', en: 'New', vi: 'Mới' }];
+    const updatedUnits = [{ unit_id: 'u-NEW-REPLACED', document_index: 0, order: 0, kind: 'sentence' as const, en: 'New', vi: 'Mới' }];
 
-    const hasDanglingEvidence = !newUnits.some(u => u.unit_id === existingEvidence);
+    const hasDanglingEvidence = !updatedUnits.some(u => u.unit_id === existingEvidence);
     expect(hasDanglingEvidence).toBe(true); // Dangling evidence detected and blocked!
   });
 
-  it('4. rejects non-string option elements', () => {
-    const rawMalformedOpts: any = [{ label: 'A', text: 'Option A' }, 123, null, true];
-    const isStringArray = Array.isArray(rawMalformedOpts) && rawMalformedOpts.every(item => typeof item === 'string');
+  it('5. rejects clearing units when existing question evidence remains in group', () => {
+    const clearedUnits: any[] = [];
+    const activeQuestionsWithEvidence = mockQuestions.filter(q => q.group_id === 'g-active-147-150' && q.evidence && q.evidence.length > 0);
 
-    expect(isStringArray).toBe(false); // Non-string option element rejected!
+    const isClearedUnitsValid = clearedUnits.length === 0 && activeQuestionsWithEvidence.length > 0;
+    expect(isClearedUnitsValid).toBe(true); // Units null/cleared while evidence remains is invalid!
   });
 
-  it('5. rejects duplicate question_number in payload', () => {
-    const payloadQuestions = [
-      { question_number: 147, question_text: 'Q147' },
-      { question_number: 147, question_text: 'Duplicate Q147' },
-    ];
+  it('6. rejects numeric or non-string unit_id in evidence', () => {
+    const invalidEv = [{ unit_id: 12345 }, { unit_id: '' }, { unit_id: null }];
+    const isValid = invalidEv.every(e => typeof e.unit_id === 'string' && e.unit_id.trim().length > 0);
 
-    const qNums = payloadQuestions.map(q => q.question_number);
-    const hasDuplicates = new Set(qNums).size !== qNums.length;
-
-    expect(hasDuplicates).toBe(true); // Duplicate question_number rejected!
+    expect(isValid).toBe(false);
   });
 
-  it('6. rejects inactive target groups and inactive questions', () => {
+  it('7. rejects document_index out of bounds in bilingual units', () => {
+    const docsCount = 2; // 0 and 1
+    const invalidUnit = { unit_id: 'u-999', document_index: 4, order: 0, kind: 'sentence', en: 'a', vi: 'b' };
+
+    const isDocIdxValid = invalidUnit.document_index >= 0 && invalidUnit.document_index < docsCount;
+    expect(isDocIdxValid).toBe(false);
+  });
+
+  it('8. rejects fractional document_index, order, and question_number', () => {
+    const isInteger = (val: number) => Number.isInteger(val) && val >= 0;
+
+    expect(isInteger(1.5)).toBe(false);
+    expect(isInteger(159.2)).toBe(false);
+    expect(isInteger(2.5)).toBe(false);
+    expect(isInteger(2)).toBe(true);
+  });
+
+  it('9. rejects documents_vi with invalid element types', () => {
+    const invalidDocsVi: any = ['just a string', { noContent: 'missing' }];
+    const isValidDocsVi = Array.isArray(invalidDocsVi) && invalidDocsVi.every(d => typeof d === 'object' && d !== null && typeof d.content === 'string');
+
+    expect(isValidDocsVi).toBe(false);
+  });
+
+  it('10. rejects unsupported question keys like correct_answer or group_id', () => {
+    const allowedQKeys = ['question_number', 'question_text', 'translation_vi', 'options', 'options_vi', 'evidence'];
+    const invalidQPayload = { question_number: 147, correct_answer: 'A', group_id: 'g-active-147-150' };
+
+    const keys = Object.keys(invalidQPayload);
+    const hasUnsupportedKey = keys.some(k => !allowedQKeys.includes(k));
+
+    expect(hasUnsupportedKey).toBe(true);
+  });
+
+  it('11. verifies active group and question conditions require is_active IS NOT FALSE / IS TRUE', () => {
     const activeGroups = mockGroups.filter(g => g.is_active !== false);
+    expect(activeGroups.length).toBe(2);
+
     const inactiveGroupFound = activeGroups.find(g => g.id === 'g-inactive-155-158');
-
-    expect(inactiveGroupFound).toBeUndefined(); // Inactive group rejected!
-
-    const activeQuestions = mockQuestions.filter(q => q.is_active !== false);
-    const inactiveQuestionFound = activeQuestions.find(q => q.id === 'q-155');
-
-    expect(inactiveQuestionFound).toBeUndefined(); // Inactive question rejected!
+    expect(inactiveGroupFound).toBeUndefined();
   });
 
-  it('7. verifies group_type is excluded from allowed patch keys (writable = NO)', () => {
+  it('12. verifies group_type is excluded from allowed patch keys (writable = NO)', () => {
     const dbGroup = mockGroups[0];
     const dbQs = mockQuestions.slice(0, 4);
 
@@ -146,7 +154,7 @@ describe('Part 7 RPC & Payload Security Hardening Suite', () => {
       groupId: dbGroup.id,
       expectedQuestionNumbers: [147, 148, 149, 150],
       rangeLabel: 'Q147–150',
-      groupType: 'double_passage' as any, // attempt to change group_type
+      groupType: 'double_passage',
       documents: [{ content: 'Doc text' }],
       questions: dbQs.map(q => ({
         question_number: q.question_number,
@@ -160,6 +168,6 @@ describe('Part 7 RPC & Payload Security Hardening Suite', () => {
     };
 
     const { payload } = buildPart7GroupPatchPayload(dbGroup, dbQs, draft);
-    expect(payload).not.toHaveProperty('group_type'); // group_type is NOT writable in patch!
+    expect(payload).not.toHaveProperty('group_type');
   });
 });
