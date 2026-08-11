@@ -22,7 +22,6 @@ SET search_path = ''
 AS $$
 DECLARE
   v_is_published boolean;
-  v_group_exists boolean;
   v_group_part text;
   v_key text;
   v_q_key text;
@@ -94,14 +93,18 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Cannot modify a published test. Unpublish first.');
   END IF;
 
-  -- 4. Active Target Group Check
-  SELECT true, part, documents, documents_vi, part7_bilingual_units 
-  INTO v_group_exists, v_group_part, v_existing_docs, v_existing_docs_vi, v_existing_units
+  -- 4. Active Target Group Check (Explicit FOUND handling)
+  SELECT part, documents, documents_vi, part7_bilingual_units 
+  INTO v_group_part, v_existing_docs, v_existing_docs_vi, v_existing_units
   FROM public.toeic_test_groups
-  WHERE id = p_group_id AND test_id = p_test_id AND (is_active IS TRUE OR is_active IS NULL);
+  WHERE id = p_group_id AND test_id = p_test_id AND (is_active IS NOT FALSE);
 
-  IF NOT v_group_exists OR LOWER(TRIM(v_group_part)) <> 'part7' THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Target group does not exist, is inactive, or is not Part 7.');
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Target Part 7 group not found or inactive.');
+  END IF;
+
+  IF LOWER(TRIM(v_group_part)) <> 'part7' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Target group is not a Part 7 group.');
   END IF;
 
   -- 5. Compute & Validate Effective Documents
@@ -258,7 +261,7 @@ BEGIN
         AND group_id = p_group_id
         AND question_number = v_q_num
         AND LOWER(TRIM(part)) = 'part7'
-        AND (is_active IS TRUE OR is_active IS NULL);
+        AND (is_active IS NOT FALSE);
 
       IF v_q_id IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', format('Question number %s does not belong to active Part 7 group %s.', v_q_num, p_group_id));
@@ -312,7 +315,7 @@ BEGIN
   END IF;
 
   -- 9. Comprehensive Effective Evidence Validation Across ALL Active Group Questions
-  FOR v_db_q IN SELECT id, question_number, evidence FROM public.toeic_test_questions WHERE group_id = p_group_id AND (is_active IS TRUE OR is_active IS NULL)
+  FOR v_db_q IN SELECT id, question_number, evidence FROM public.toeic_test_questions WHERE group_id = p_group_id AND (is_active IS NOT FALSE)
   LOOP
     v_patched_q := NULL;
     IF p_payload ? 'questions' THEN
@@ -327,7 +330,8 @@ BEGIN
       v_eff_ev := v_db_q.evidence;
     END IF;
 
-    IF v_eff_ev IS NOT NULL AND jsonb_typeof(v_eff_ev) = 'array' THEN
+    -- Validate non-empty evidence array against unit_ids
+    IF v_eff_ev IS NOT NULL AND jsonb_typeof(v_eff_ev) = 'array' AND jsonb_array_length(v_eff_ev) > 0 THEN
       IF array_length(v_unit_ids, 1) IS NULL THEN
         RETURN jsonb_build_object('success', false, 'error', format('Effective evidence in Q%s references units, but group bilingual units are empty.', v_db_q.question_number));
       END IF;
