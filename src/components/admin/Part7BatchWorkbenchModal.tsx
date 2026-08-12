@@ -9,6 +9,8 @@ import {
   Part7QuestionDraft,
 } from '../../lib/cms/part7BatchParser';
 
+import { getPart7StructureStatus } from '../../lib/supabase/studentToeic';
+
 export interface Part7BatchWorkbenchModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -46,6 +48,8 @@ export const Part7BatchWorkbenchModal: React.FC<Part7BatchWorkbenchModalProps> =
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [structStatus, setStructStatus] = useState<any>(null);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -55,6 +59,12 @@ export const Part7BatchWorkbenchModal: React.FC<Part7BatchWorkbenchModalProps> =
     setSaveResults({});
     setTextEn('');
     setTextVi('');
+
+    if (testId) {
+      getPart7StructureStatus(testId).then((res) => {
+        if (res.data) setStructStatus(res.data);
+      });
+    }
 
     // If opened for a specific single target group
     if (initialTargetGroupId) {
@@ -126,6 +136,11 @@ export const Part7BatchWorkbenchModal: React.FC<Part7BatchWorkbenchModalProps> =
   const handleSaveValidGroups = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    if (structStatus?.status === 'DRIFT') {
+      setErrorMsg('❌ Cấu trúc DB đã thay đổi sau khi khóa. Vui lòng quét lại cấu trúc trước khi lưu.');
+      return;
+    }
 
     const validDrafts = parsedDrafts.filter(d => d.isComplete);
     if (validDrafts.length === 0) {
@@ -234,6 +249,25 @@ export const Part7BatchWorkbenchModal: React.FC<Part7BatchWorkbenchModalProps> =
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+          {/* Structure Gating Banners */}
+          {structStatus?.status === 'UNVERIFIED' && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl flex items-center gap-2 font-bold">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>⚠ Hãy quét và khóa cấu trúc Part 7 trước khi nhập nội dung.</span>
+            </div>
+          )}
+          {structStatus?.status === 'DRIFT' && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl flex items-center gap-2 font-bold">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>❌ Cấu trúc DB đã thay đổi sau khi khóa. Quét lại trước khi tiếp tục.</span>
+            </div>
+          )}
+          {structStatus?.fallback_message && (
+            <div className="p-3 bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl flex items-center gap-2 text-[11px] font-semibold">
+              <span>ℹ️ {structStatus.fallback_message}</span>
+            </div>
+          )}
+
           {/* Notifications */}
           {errorMsg && (
             <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-center gap-2 font-bold">

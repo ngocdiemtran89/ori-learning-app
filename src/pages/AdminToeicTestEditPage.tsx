@@ -35,6 +35,8 @@ import { SafeScriptBilingualManagerModal } from '../components/admin/ScriptBilin
 import { SafePartContentImporterModal } from '../components/admin/PartContentImporterModal';
 import { Part6ManualGroupEditorModal } from '../components/admin/Part6ManualGroupEditorModal';
 import { Part7BatchWorkbenchModal } from '../components/admin/Part7BatchWorkbenchModal';
+import { Part7StructureScannerModal } from '../components/admin/Part7StructureScannerModal';
+import { getPart7StructureStatus } from '../lib/supabase/studentToeic';
 import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
 export class AdminTestEditErrorBoundary extends React.Component<
@@ -108,6 +110,10 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
   const [part7BatchMode, setPart7BatchMode] = useState<'add' | 'update'>('add');
   const [part7TargetGroupId, setPart7TargetGroupId] = useState<string | undefined>(undefined);
 
+  // Part 7 Structure Scanner Modal State
+  const [showPart7StructureScannerModal, setShowPart7StructureScannerModal] = useState<boolean>(false);
+  const [part7StructureStatus, setPart7StructureStatus] = useState<any>(null);
+
   // Header State
   const [title, setTitle] = useState<string>('');
   const [slug, setSlug] = useState<string>('');
@@ -176,10 +182,11 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
 
   async function loadTestDetails() {
     setLoading(true);
-    const [tRes, gRes, qRes] = await Promise.all([
+    const [tRes, gRes, qRes, structRes] = await Promise.all([
       getAdminToeicTest(testId!),
       getToeicTestGroups(testId!),
       getToeicTestQuestions(testId!),
+      getPart7StructureStatus(testId!),
     ]);
 
     if (tRes.error || !tRes.data) {
@@ -197,6 +204,9 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
       setListeningAudioUrl(t.listening_audio_url || null);
       setGroups(gRes.data || []);
       setQuestions(qRes.data || []);
+      if (structRes?.data) {
+        setPart7StructureStatus(structRes.data);
+      }
     }
     setLoading(false);
   }
@@ -702,9 +712,34 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     </button>
                   )}
 
-                  {/* Primary Approved Part 7 Batch Workbench Workflows */}
+                  {/* Primary Approved Part 7 Batch Workbench Workflows & Structure Scanner */}
                   {activePart === 'part7' && (
                     <>
+                      {/* Structure Status Badge */}
+                      {part7StructureStatus?.status === 'LOCKED' && (
+                        <span className="px-3 py-1.5 bg-emerald-100 border border-emerald-300 text-emerald-900 font-extrabold text-xs rounded-xl flex items-center gap-1 shadow-2xs">
+                          🟢 STRUCTURE LOCKED
+                        </span>
+                      )}
+                      {part7StructureStatus?.status === 'DRIFT' && (
+                        <span className="px-3 py-1.5 bg-rose-100 border border-rose-300 text-rose-900 font-extrabold text-xs rounded-xl flex items-center gap-1 shadow-2xs">
+                          🔴 STRUCTURE DRIFT
+                        </span>
+                      )}
+                      {part7StructureStatus?.status === 'UNVERIFIED' && (
+                        <span className="px-3 py-1.5 bg-slate-100 border border-slate-300 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1 shadow-2xs">
+                          ⚪ CHƯA KIỂM TRA
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowPart7StructureScannerModal(true)}
+                        className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>🔍</span> QUÉT CẤU TRÚC ĐỀ
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -712,7 +747,7 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                           setPart7TargetGroupId(undefined);
                           setShowPart7BatchModal(true);
                         }}
-                        className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                        className="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <span>+</span> NẠP THÊM NỘI DUNG PART 7
                       </button>
@@ -724,7 +759,7 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                           setPart7TargetGroupId(undefined);
                           setShowPart7BatchModal(true);
                         }}
-                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                        className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
                       >
                         <span>🔄</span> CẬP NHẬT NỘI DUNG
                       </button>
@@ -1208,6 +1243,17 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
             existingGroups={groups ?? []}
             initialMode={part7BatchMode}
             initialTargetGroupId={part7TargetGroupId}
+            onUpdated={loadTestDetails}
+          />
+
+          <Part7StructureScannerModal
+            isOpen={showPart7StructureScannerModal}
+            onClose={() => setShowPart7StructureScannerModal(false)}
+            testId={testId}
+            testTitle={title}
+            isPublished={isPublished}
+            existingQuestions={questions ?? []}
+            existingGroups={groups ?? []}
             onUpdated={loadTestDetails}
           />
         </>

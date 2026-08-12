@@ -336,8 +336,57 @@ export async function getStudentToeicAttemptReview(
   const { data, error } = await supabase.rpc('get_student_toeic_attempt_review', {
     p_attempt_id: attemptId,
   });
-
   if (error) return { success: false, error: error.message };
   return { success: true, data: data as StudentToeicAttemptReviewPayload };
 }
+
+/** Fetch Part 7 Structure Lock Status & Current DB Grouping (with fallback if RPC missing) */
+export async function getPart7StructureStatus(
+  testId: string
+): Promise<{ success: boolean; data?: any; fallback?: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc('admin_get_toeic_part7_structure_status', {
+      p_test_id: testId,
+    });
+
+    if (error) {
+      // Fallback if RPC or migration does not exist on DB yet
+      return {
+        success: true,
+        fallback: true,
+        data: {
+          status: 'UNVERIFIED',
+          matches_lock: false,
+          fallback_message: 'Structure Guard chưa được kích hoạt trên database.',
+        },
+      };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    return {
+      success: true,
+      fallback: true,
+      data: {
+        status: 'UNVERIFIED',
+        matches_lock: false,
+        fallback_message: 'Structure Guard chưa được kích hoạt trên database.',
+      },
+    };
+  }
+}
+
+/** Atomically apply Part 7 structure repair and lock */
+export async function applyPart7Structure(
+  testId: string,
+  payload: any
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const { data, error } = await supabase.rpc('admin_apply_toeic_part7_structure', {
+    p_test_id: testId,
+    p_payload: payload,
+  });
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, data };
+}
+
 
