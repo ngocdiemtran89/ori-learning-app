@@ -5,53 +5,66 @@
 -- ============================================================
 
 -- PREFLIGHT_01_V2_TABLE_EXISTENCE
--- Verify whether V2 tables already exist in Production (Outputs explicit target table name even if absent)
+-- Verify whether V2 tables already exist in public schema (Explicit public subquery join)
 select
   'PREFLIGHT_01_V2_TABLE_EXISTENCE' as check_section,
   t.target_table,
-  info.table_name as existing_table_name,
-  case when info.table_name is not null then 'EXISTS (UNEXPECTED BEFORE MIGRATION)' else 'ABSENT (EXPECTED)' end as status
+  tbl.table_name as existing_table_name,
+  case when tbl.table_name is not null then 'EXISTS (UNEXPECTED BEFORE MIGRATION)' else 'ABSENT (EXPECTED)' end as status
 from (
   select 'toeic_learning_items' as target_table
   union all select 'toeic_question_learning_items'
   union all select 'toeic_learning_practice_events'
 ) t
-left join information_schema.tables info
-  on info.table_schema = 'public' and info.table_name = t.target_table;
+left join (
+  select table_name
+  from information_schema.tables
+  where table_schema = 'public'
+) tbl on tbl.table_name = t.target_table;
+
 
 -- PREFLIGHT_01_RPC_EXISTENCE
--- Verify whether V2 RPCs already exist in Production (Outputs explicit target RPC name even if absent)
+-- Verify whether V2 RPCs already exist in public schema (Explicit public schema subquery join)
 select
   'PREFLIGHT_01_RPC_EXISTENCE' as check_section,
   r.target_rpc,
-  p.proname as existing_routine_name,
-  pg_get_function_identity_arguments(p.oid) as existing_arguments,
-  case when p.proname is not null then 'EXISTS (UNEXPECTED BEFORE MIGRATION)' else 'ABSENT (EXPECTED)' end as status
+  fn.proname as existing_routine_name,
+  pg_get_function_identity_arguments(fn.oid) as existing_arguments,
+  case when fn.proname is not null then 'EXISTS (UNEXPECTED BEFORE MIGRATION)' else 'ABSENT (EXPECTED)' end as status
 from (
   select 'admin_import_v2_question_learning_links' as target_rpc
   union all select 'student_get_safe_v2_practice_questions'
   union all select 'student_check_v2_practice_answer'
 ) r
-left join pg_proc p on p.proname = r.target_rpc
-left join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public';
+left join (
+  select p.*
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+) fn on fn.proname = r.target_rpc;
 
 
 -- PREFLIGHT_02_REQUIRED_FUNCTIONS
--- Inspect existing legacy helper function signatures and security definer status
+-- Inspect required legacy helper functions strictly in public schema (Owner, signature, security definer)
 select
   'PREFLIGHT_02_REQUIRED_FUNCTIONS' as check_section,
   r.target_function,
-  p.proname as actual_name,
-  pg_get_function_identity_arguments(p.oid) as arguments,
-  case when p.prosecdef then 'SECURITY DEFINER' else 'SECURITY INVOKER' end as security_mode,
-  case when p.proname is not null then 'FOUND (EXPECTED)' else 'MISSING (CRITICAL)' end as status
+  fn.proname as actual_name,
+  pg_get_function_identity_arguments(fn.oid) as arguments,
+  pg_get_userbyid(fn.proowner) as function_owner,
+  case when fn.prosecdef then 'SECURITY DEFINER' else 'SECURITY INVOKER' end as security_mode,
+  case when fn.proname is not null then 'FOUND (EXPECTED)' else 'MISSING (CRITICAL)' end as status
 from (
   select 'is_admin' as target_function
   union all select 'has_active_access'
   union all select 'admin_create_toeic_test_with_content'
 ) r
-left join pg_proc p on p.proname = r.target_function
-left join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public';
+left join (
+  select p.*
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+) fn on fn.proname = r.target_function;
 
 
 -- PREFLIGHT_03_CANONICAL_COLUMNS_CONTRACT
@@ -94,30 +107,30 @@ order by req.target_table, req.required_column;
 
 
 -- PREFLIGHT_04_PART_DISTRIBUTION
--- READ-ONLY inspection of part representations for ALL questions and PUBLISHED+ACTIVE questions separately
+-- READ-ONLY inspection of part representations for ALL questions and PUBLISHED+ACTIVE questions separately (Type-safe lower(part::text))
 select
   'PREFLIGHT_04_PART_DISTRIBUTION_ALL' as check_section,
-  part,
+  lower(part::text) as part_text,
   count(*) as question_count
 from public.toeic_test_questions
-group by part
+group by lower(part::text)
 union all
 select
   'PREFLIGHT_04_PART_DISTRIBUTION_PUBLISHED_ACTIVE' as check_section,
-  q.part,
+  lower(q.part::text) as part_text,
   count(*) as question_count
 from public.toeic_test_questions q
 join public.toeic_tests t on t.id = q.test_id
 where t.is_published = true and q.is_active = true
-group by q.part
-order by check_section, part;
+group by lower(q.part::text)
+order by check_section, part_text;
 
 
 -- PREFLIGHT_05_OPTIONS_TYPE_AND_LENGTH_DISTRIBUTION
--- READ-ONLY inspection of options JSON types and array length distribution per Part
+-- READ-ONLY inspection of options JSON types and array length distribution per Part (Type-safe lower(part::text))
 select
   'PREFLIGHT_05_OPTIONS_TYPE_AND_LENGTH_DISTRIBUTION' as check_section,
-  part,
+  lower(part::text) as part_text,
   jsonb_typeof(to_jsonb(options)) as options_type,
   case
     when jsonb_typeof(to_jsonb(options)) = 'array' then jsonb_array_length(to_jsonb(options))::text
@@ -126,40 +139,40 @@ select
   end as array_length_or_shape,
   count(*) as question_count
 from public.toeic_test_questions
-group by part, jsonb_typeof(to_jsonb(options)), array_length_or_shape
-order by part, options_type;
+group by lower(part::text), jsonb_typeof(to_jsonb(options)), array_length_or_shape
+order by part_text, options_type;
 
 
 -- PREFLIGHT_06_OPTIONS_OBJECT_KEY_DISTRIBUTION
 -- READ-ONLY deterministic aggregation of sorted object keys per Part (Zero text/answers exposed)
 select
   'PREFLIGHT_06_OPTIONS_OBJECT_KEY_DISTRIBUTION' as check_section,
-  part,
+  part_text,
   keys_summary,
   count(*) as question_count
 from (
   select
-    q.part,
+    lower(q.part::text) as part_text,
     q.id,
     (select string_agg(k, ',' order by k) from jsonb_object_keys(to_jsonb(q.options)) k) as keys_summary
   from public.toeic_test_questions q
   where jsonb_typeof(to_jsonb(q.options)) = 'object'
 ) sub
-group by part, keys_summary
-order by part, keys_summary;
+group by part_text, keys_summary
+order by part_text, keys_summary;
 
 
 -- PREFLIGHT_07_ARRAY_LABEL_CONSISTENCY
 -- READ-ONLY structural classification of array option label patterns per Part (Zero text/answers exposed)
 select
   'PREFLIGHT_07_ARRAY_LABEL_CONSISTENCY' as check_section,
-  part,
+  part_text,
   array_length,
   canonical_label_order,
   count(*) as question_count
 from (
   select
-    q.part,
+    lower(q.part::text) as part_text,
     jsonb_array_length(to_jsonb(q.options)) as array_length,
     case
       when jsonb_array_length(to_jsonb(q.options)) = 3
@@ -189,23 +202,23 @@ from (
   from public.toeic_test_questions q
   where jsonb_typeof(to_jsonb(q.options)) = 'array'
 ) sub
-group by part, array_length, canonical_label_order
-order by part, array_length, canonical_label_order;
+group by part_text, array_length, canonical_label_order
+order by part_text, array_length, canonical_label_order;
 
 
 -- PREFLIGHT_08_NULL_MALFORMED_OPTIONS_COUNTS
 -- Explicit counts per Part for null options, malformed types, empty collections, and length bounds
 select
   'PREFLIGHT_08_NULL_MALFORMED_OPTIONS_COUNTS' as check_section,
-  part,
+  lower(part::text) as part_text,
   count(case when options is null then 1 end) as null_options_count,
   count(case when options is not null and jsonb_typeof(to_jsonb(options)) not in ('array', 'object') then 1 end) as malformed_type_count,
   count(case when jsonb_typeof(to_jsonb(options)) = 'array' and jsonb_array_length(to_jsonb(options)) = 0 then 1 end) as empty_array_count,
   count(case when jsonb_typeof(to_jsonb(options)) = 'object' and to_jsonb(options) = '{}'::jsonb then 1 end) as empty_object_count,
   count(case when jsonb_typeof(to_jsonb(options)) = 'array' and (jsonb_array_length(to_jsonb(options)) < 1 or jsonb_array_length(to_jsonb(options)) > 4) then 1 end) as length_out_of_bounds_count
 from public.toeic_test_questions
-group by part
-order by part;
+group by lower(part::text)
+order by part_text;
 
 
 -- PREFLIGHT_09_STRUCTURAL_INTEGRITY
@@ -298,11 +311,15 @@ select
   (
     select count(*)
     from public.toeic_test_questions
-    where options is null or jsonb_typeof(to_jsonb(options)) not in ('array', 'object')
+    where options is null
+       or jsonb_typeof(to_jsonb(options)) not in ('array', 'object')
+       or (jsonb_typeof(to_jsonb(options)) = 'array' and jsonb_array_length(to_jsonb(options)) = 0)
+       or (jsonb_typeof(to_jsonb(options)) = 'object' and to_jsonb(options) = '{}'::jsonb)
+       or (jsonb_typeof(to_jsonb(options)) = 'array' and (jsonb_array_length(to_jsonb(options)) < 1 or jsonb_array_length(to_jsonb(options)) > 4))
   ) as malformed_options,
 
   (
     select count(*)
     from public.toeic_test_questions
-    where lower(part) not in ('p1','p2','p3','p4','p5','p6','p7','part1','part2','part3','part4','part5','part6','part7','1','2','3','4','5','6','7')
+    where lower(part::text) not in ('p1','p2','p3','p4','p5','p6','p7','part1','part2','part3','part4','part5','part6','part7','1','2','3','4','5','6','7')
   ) as unsupported_part_shapes;

@@ -9,37 +9,40 @@
 select
   'VERIFY_01_TABLES_EXISTENCE' as verify_section,
   t.target_table,
-  info.table_name as existing_table,
-  case when info.table_name is not null then 'PASS: Table exists' else 'FAIL: Table missing' end as result
+  tbl.table_name as existing_table,
+  case when tbl.table_name is not null then 'PASS: Table exists' else 'FAIL: Table missing' end as result
 from (
   select 'toeic_learning_items' as target_table
   union all select 'toeic_question_learning_items'
   union all select 'toeic_learning_practice_events'
 ) t
-left join information_schema.tables info
-  on info.table_schema = 'public' and info.table_name = t.target_table;
+left join (
+  select table_name
+  from information_schema.tables
+  where table_schema = 'public'
+) tbl on tbl.table_name = t.target_table;
 
 
--- VERIFY_02_COLUMNS_AND_DEFAULTS
--- Verify NOT NULL and DEFAULT constraints on critical V2 columns
+-- VERIFY_02_COLUMNS_AND_APPROVAL_DEFAULTS
+-- Verify NOT NULL and DEFAULT FALSE constraints on critical V2 approval columns
 select
-  'VERIFY_02_COLUMNS_AND_DEFAULTS' as verify_section,
-  table_name,
-  column_name,
-  is_nullable,
-  column_default,
+  'VERIFY_02_COLUMNS_AND_APPROVAL_DEFAULTS' as verify_section,
+  cols.table_name,
+  cols.column_name,
+  cols.is_nullable,
+  cols.column_default as raw_column_default,
   case
-    when column_name in ('question_id', 'item_id') and is_nullable = 'NO' then 'PASS: NOT NULL'
-    when column_name = 'is_approved' and is_nullable = 'NO' and column_default like '%false%' then 'PASS: NOT NULL DEFAULT FALSE'
-    else 'CHECK_CONSTRAINT'
+    when cols.column_name in ('question_id', 'item_id') and cols.is_nullable = 'NO' then 'PASS: NOT NULL'
+    when cols.column_name = 'is_approved' and cols.is_nullable = 'NO' and (cols.column_default like '%false%' or cols.column_default = 'false') then 'PASS: NOT NULL DEFAULT FALSE'
+    else 'FAIL: Constraint violation'
   end as status
-from information_schema.columns
-where table_schema = 'public'
+from information_schema.columns cols
+where cols.table_schema = 'public'
   and (
-    (table_name = 'toeic_question_learning_items' and column_name in ('question_id', 'item_id', 'is_approved')) or
-    (table_name = 'toeic_learning_items' and column_name = 'is_approved')
+    (cols.table_name = 'toeic_question_learning_items' and cols.column_name in ('question_id', 'item_id', 'is_approved')) or
+    (cols.table_name = 'toeic_learning_items' and cols.column_name = 'is_approved')
   )
-order by table_name, column_name;
+order by cols.table_name, cols.column_name;
 
 
 -- VERIFY_03_RLS_ENABLED
@@ -57,98 +60,132 @@ from (
 left join pg_tables p on p.schemaname = 'public' and p.tablename = t.target_table;
 
 
--- VERIFY_04_PG_POLICIES
--- Inspect active RLS policies in pg_policies for all 3 V2 tables
+-- VERIFY_04_POLICY_EXPECTATION_SUMMARY
+-- Compact expectation summary verifying presence of required RLS policies and absence of student direct write policies
 select
-  'VERIFY_04_PG_POLICIES' as verify_section,
-  tablename,
-  policyname,
-  cmd,
-  roles,
-  qual,
-  with_check
-from pg_policies
-where schemaname = 'public'
-  and tablename in ('toeic_learning_items', 'toeic_question_learning_items', 'toeic_learning_practice_events')
-order by tablename, policyname;
-
-
--- VERIFY_05_TABLE_PRIVILEGES_MATRIX
--- Verify privilege matrix for PUBLIC, anon, authenticated, service_role using information_schema.table_privileges (Exposes PUBLIC grants)
-select
-  'VERIFY_05_TABLE_PRIVILEGES_MATRIX' as verify_section,
-  table_name,
-  grantee,
-  privilege_type,
-  case
-    when table_name = 'toeic_learning_practice_events' and grantee = 'authenticated' and privilege_type = 'SELECT' then 'PASS: Student Practice History Read'
-    when table_name = 'toeic_learning_practice_events' and grantee = 'authenticated' and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE') then 'FAIL: Student direct write granted!'
-    when grantee in ('PUBLIC', 'anon') and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE') then 'FAIL: Unauthenticated write granted!'
-    else 'INFO'
-  end as audit_status
-from information_schema.table_privileges
-where table_schema = 'public'
-  and table_name in ('toeic_learning_items', 'toeic_question_learning_items', 'toeic_learning_practice_events')
-  and grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')
-order by table_name, grantee, privilege_type;
-
-
--- VERIFY_06_PRACTICE_EVENTS_STUDENT_WRITE_DENIAL
--- Dedicated audit verifying authenticated student direct write denial on practice events
-select
-  'VERIFY_06_PRACTICE_EVENTS_STUDENT_WRITE_DENIAL' as verify_section,
-  grantee,
-  privilege_type,
-  case
-    when privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER') then 'FAIL: Direct write privilege present!'
-    else 'PASS: Direct write revoked'
-  end as result
-from information_schema.table_privileges
-where table_schema = 'public'
-  and table_name = 'toeic_learning_practice_events'
-  and grantee = 'authenticated'
-  and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER');
-
-
--- VERIFY_07_RPCS_SIGNATURE_AND_SECURITY
--- Verify RPC existence, SECURITY DEFINER status, owner, and search_path= in proconfig
-select
-  'VERIFY_07_RPCS_SIGNATURE_AND_SECURITY' as verify_section,
-  r.target_rpc,
-  p.proname as actual_name,
-  pg_get_function_identity_arguments(p.oid) as identity_arguments,
-  case when p.prosecdef then 'PASS: SECURITY DEFINER' else 'FAIL: NOT SECURITY DEFINER' end as security_mode,
-  array_to_string(p.proconfig, ',') as proconfig,
-  case
-    when array_to_string(p.proconfig, ',') like '%search_path=%' then 'PASS: empty search_path set'
-    else 'FAIL: search_path NOT set'
-  end as search_path_check
+  'VERIFY_04_POLICY_EXPECTATION_SUMMARY' as verify_section,
+  req.tablename,
+  req.expected_policy,
+  req.expected_cmd,
+  pol.policyname as actual_policy_name,
+  case when pol.policyname is not null then 'PASS: Policy found' else 'FAIL: Policy missing' end as status
 from (
-  select 'admin_import_v2_question_learning_links' as target_rpc
-  union all select 'student_get_safe_v2_practice_questions'
-  union all select 'student_check_v2_practice_answer'
-) r
-left join pg_proc p on p.proname = r.target_rpc
-left join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public';
+  select 'toeic_learning_items' as tablename, 'learning_items_select' as expected_policy, 'SELECT' as expected_cmd
+  union all select 'toeic_learning_items', 'admin_learning_items_all', 'ALL'
+  union all select 'toeic_question_learning_items', 'question_learning_select', 'SELECT'
+  union all select 'toeic_question_learning_items', 'admin_question_learning_all', 'ALL'
+  union all select 'toeic_learning_practice_events', 'user_practice_events_select', 'SELECT'
+) req
+left join pg_policies pol on pol.schemaname = 'public' and pol.tablename = req.tablename and pol.policyname = req.expected_policy;
 
-
--- VERIFY_08_RPC_EXECUTE_PRIVILEGES
--- Verify EXECUTE privileges on V2 RPCs using information_schema.routine_privileges
 select
-  'VERIFY_08_RPC_EXECUTE_PRIVILEGES' as verify_section,
-  routine_name,
-  grantee,
-  privilege_type,
+  'VERIFY_04_PRACTICE_NO_DIRECT_WRITE_POLICIES' as verify_section,
+  pol.policyname,
+  pol.cmd,
+  pol.roles,
+  case when pol.cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL') and (pol.roles @> array['authenticated'::name] or pol.roles @> array['public'::name]) then 'FAIL: Unsafe direct write policy found!' else 'PASS: Safe' end as status
+from pg_policies pol
+where pol.schemaname = 'public' and pol.tablename = 'toeic_learning_practice_events' and pol.cmd in ('INSERT', 'UPDATE', 'DELETE');
+
+
+-- VERIFY_05_AUTHORITATIVE_TABLE_PRIVILEGES_MATRIX
+-- Authoritative cross-join matrix for 3 V2 tables x 4 roles x 7 privileges using PostgreSQL has_table_privilege
+select
+  'VERIFY_05_AUTHORITATIVE_TABLE_PRIVILEGES_MATRIX' as verify_section,
+  tbl.target_table,
+  r.role_name,
+  p.priv_type,
+  has_table_privilege(r.role_name, 'public.' || tbl.target_table, p.priv_type) as has_privilege,
   case
-    when grantee in ('PUBLIC', 'anon') then 'FAIL: Unauthenticated EXECUTE granted!'
-    when grantee = 'authenticated' and privilege_type = 'EXECUTE' then 'PASS: Authenticated EXECUTE granted'
+    when tbl.target_table = 'toeic_learning_practice_events' and r.role_name = 'authenticated' and p.priv_type = 'SELECT' then
+      case when has_table_privilege(r.role_name, 'public.' || tbl.target_table, p.priv_type) then 'PASS: Practice History Read' else 'FAIL: Missing read' end
+    when tbl.target_table = 'toeic_learning_practice_events' and r.role_name = 'authenticated' and p.priv_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER') then
+      case when not has_table_privilege(r.role_name, 'public.' || tbl.target_table, p.priv_type) then 'PASS: Student Direct Write Revoked' else 'FAIL: Direct Student Write Granted!' end
+    when r.role_name in ('PUBLIC', 'anon') then
+      case when not has_table_privilege(r.role_name, 'public.' || tbl.target_table, p.priv_type) then 'PASS: Unauthenticated Access Revoked' else 'FAIL: Unauthenticated Privilege Present!' end
     else 'INFO'
-  end as audit_status
-from information_schema.routine_privileges
-where routine_schema = 'public'
-  and routine_name in (
-    'admin_import_v2_question_learning_links',
-    'student_get_safe_v2_practice_questions',
-    'student_check_v2_practice_answer'
-  )
-  and grantee in ('PUBLIC', 'anon', 'authenticated');
+  end as audit_result
+from (
+  select 'toeic_learning_items' as target_table
+  union all select 'toeic_question_learning_items'
+  union all select 'toeic_learning_practice_events'
+) tbl
+cross join (
+  select 'PUBLIC' as role_name
+  union all select 'anon'
+  union all select 'authenticated'
+  union all select 'service_role'
+) r
+cross join (
+  select 'SELECT' as priv_type
+  union all select 'INSERT'
+  union all select 'UPDATE'
+  union all select 'DELETE'
+  union all select 'TRUNCATE'
+  union all select 'REFERENCES'
+  union all select 'TRIGGER'
+) p
+order by tbl.target_table, r.role_name, p.priv_type;
+
+
+-- VERIFY_06_RPCS_SIGNATURE_OWNER_AND_SECURITY
+-- Verify exact identity arguments, public schema membership, owner, prosecdef, and EMPTY search_path configuration
+select
+  'VERIFY_06_RPCS_SIGNATURE_OWNER_AND_SECURITY' as verify_section,
+  req.target_rpc,
+  req.expected_arguments,
+  pg_get_function_identity_arguments(fn.oid) as actual_arguments,
+  case when pg_get_function_identity_arguments(fn.oid) = req.expected_arguments then 'PASS: Signature matches' else 'FAIL: Signature mismatch' end as signature_match,
+  pg_get_userbyid(fn.proowner) as function_owner,
+  case when fn.prosecdef then 'PASS: SECURITY DEFINER' else 'FAIL: NOT SECURITY DEFINER' end as security_mode,
+  array_to_string(fn.proconfig, ',') as raw_proconfig,
+  case
+    when array_to_string(fn.proconfig, ',') ~ 'search_path=(|""|'''')($|,)'
+         and array_to_string(fn.proconfig, ',') !~ 'search_path=[a-zA-Z0-9_]'
+      then 'EMPTY'
+    when array_to_string(fn.proconfig, ',') like '%search_path=%' then 'NON_EMPTY'
+    else 'MISSING'
+  end as search_path_config_value,
+  case
+    when array_to_string(fn.proconfig, ',') ~ 'search_path=(|""|'''')($|,)'
+         and array_to_string(fn.proconfig, ',') !~ 'search_path=[a-zA-Z0-9_]'
+      then 'PASS: Empty search_path set'
+    else 'FAIL: search_path not empty'
+  end as empty_search_path_pass
+from (
+  select 'admin_import_v2_question_learning_links' as target_rpc, 'links_payload jsonb' as expected_arguments
+  union all select 'student_get_safe_v2_practice_questions', 'p_kind text, p_item_key text'
+  union all select 'student_check_v2_practice_answer', 'p_question_id uuid, p_item_key text, p_selected_option text'
+) req
+left join (
+  select p.*
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+) fn on fn.proname = req.target_rpc;
+
+
+-- VERIFY_07_AUTHORITATIVE_RPC_EXECUTE_MATRIX
+-- Authoritative cross-join matrix for 3 RPC signatures x 3 roles using PostgreSQL has_function_privilege
+select
+  'VERIFY_07_AUTHORITATIVE_RPC_EXECUTE_MATRIX' as verify_section,
+  rpc.rpc_signature,
+  r.role_name,
+  has_function_privilege(r.role_name, 'public.' || rpc.rpc_signature, 'EXECUTE') as has_execute,
+  case when r.role_name = 'authenticated' then true else false end as expected_execute,
+  case
+    when has_function_privilege(r.role_name, 'public.' || rpc.rpc_signature, 'EXECUTE') = (case when r.role_name = 'authenticated' then true else false end)
+      then 'PASS'
+    else 'FAIL: EXECUTE privilege mismatch'
+  end as audit_result
+from (
+  select 'admin_import_v2_question_learning_links(jsonb)' as rpc_signature
+  union all select 'student_get_safe_v2_practice_questions(text,text)'
+  union all select 'student_check_v2_practice_answer(uuid,text,text)'
+) rpc
+cross join (
+  select 'PUBLIC' as role_name
+  union all select 'anon'
+  union all select 'authenticated'
+) r
+order by rpc.rpc_signature, r.role_name;

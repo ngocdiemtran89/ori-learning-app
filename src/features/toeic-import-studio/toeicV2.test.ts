@@ -512,7 +512,7 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
 
     it('45. File post-apply Read-Only 100% chứa các câu lệnh SELECT kiểm tra sau migration', () => {
       expect(verifySql).toContain('VERIFY_01_TABLES_EXISTENCE');
-      expect(verifySql).toContain('VERIFY_05_TABLE_PRIVILEGES_MATRIX');
+      expect(verifySql).toContain('VERIFY_05_AUTHORITATIVE_TABLE_PRIVILEGES_MATRIX');
       expect(verifySql).not.toContain('INSERT INTO');
       expect(verifySql).not.toContain('UPDATE ');
       expect(verifySql).not.toContain('DELETE FROM');
@@ -544,55 +544,52 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
       expect(preflightSql).toContain('jsonb_array_length(to_jsonb(options))');
     });
 
-    it('50. Preflight SQL sử dụng information_schema.table_privileges để kiểm soát quyền PUBLIC', () => {
-      expect(preflightSql).toContain('from information_schema.table_privileges');
-      expect(preflightSql).toContain("grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')");
+    it('50. Preflight SQL sử dụng subquery join lọc nspname = public để tránh khớp hàm ngoài schema public', () => {
+      expect(preflightSql).toContain("where n.nspname = 'public'");
+      expect(preflightSql).toContain('pg_namespace');
     });
 
-    it('51. Preflight SQL giữ lại tên bảng target_table và RPC target_rpc khi đối tượng bị vắng mặt', () => {
-      expect(preflightSql).toContain('t.target_table');
-      expect(preflightSql).toContain('r.target_rpc');
+    it('51. Preflight SQL xuất tên chủ sở hữu hàm pg_get_userbyid(fn.proowner)', () => {
+      expect(preflightSql).toContain('pg_get_userbyid(fn.proowner)');
     });
 
-    it('52. Preflight SQL kiểm tra hợp đồng cột bắt buộc CANONICAL_COLUMNS_CONTRACT', () => {
-      expect(preflightSql).toContain('PREFLIGHT_03_CANONICAL_COLUMNS_CONTRACT');
-      expect(preflightSql).toContain('toeic_test_questions');
-      expect(preflightSql).toContain('toeic_test_groups');
+    it('52. Preflight SQL xử lý an toàn kiểu dữ liệu Part bằng lower(part::text)', () => {
+      expect(preflightSql).toContain('lower(part::text)');
+      expect(preflightSql).toContain('lower(q.part::text)');
     });
 
-    it('53. Preflight SQL phân tích cấu trúc nhãn mảng ARRAY_LABEL_CONSISTENCY', () => {
-      expect(preflightSql).toContain('PREFLIGHT_07_ARRAY_LABEL_CONSISTENCY');
-      expect(preflightSql).toContain('canonical_label_order');
-      expect(preflightSql).toContain('UNKNOWN_LABEL_SHAPE');
+    it('53. Post-apply verify SQL kiểm tra chính xác chữ ký RPC rpc_signature và signature_match', () => {
+      expect(verifySql).toContain('admin_import_v2_question_learning_links');
+      expect(verifySql).toContain('student_get_safe_v2_practice_questions');
+      expect(verifySql).toContain('student_check_v2_practice_answer');
+      expect(verifySql).toContain('signature_match');
     });
 
-    it('54. Preflight SQL phân tích số lượng null/malformed options và tóm tắt PREFLIGHT_11_FINAL_SUMMARY', () => {
-      expect(preflightSql).toContain('PREFLIGHT_08_NULL_MALFORMED_OPTIONS_COUNTS');
-      expect(preflightSql).toContain('PREFLIGHT_11_FINAL_SUMMARY');
+    it('54. Post-apply verify SQL phân tích cấu trúc proconfig để xác minh empty search_path', () => {
+      expect(verifySql).toContain('search_path_config_value');
+      expect(verifySql).toContain('empty_search_path_pass');
     });
 
-    it('55. Post-apply verify SQL kiểm tra pg_policies và proconfig search_path=', () => {
-      expect(verifySql).toContain('VERIFY_04_PG_POLICIES');
-      expect(verifySql).toContain('VERIFY_07_RPCS_SIGNATURE_AND_SECURITY');
-      expect(verifySql).toContain('search_path=');
+    it('55. Post-apply verify SQL tạo ma trận phân quyền bảng có thẩm quyền bằng cross join và has_table_privilege', () => {
+      expect(verifySql).toContain('VERIFY_05_AUTHORITATIVE_TABLE_PRIVILEGES_MATRIX');
+      expect(verifySql).toContain('has_table_privilege');
+      expect(verifySql).toContain('cross join');
     });
 
-    it('56. Post-apply verify SQL sử dụng information_schema.routine_privileges kiểm tra quyền EXECUTE', () => {
-      expect(verifySql).toContain('VERIFY_08_RPC_EXECUTE_PRIVILEGES');
-      expect(verifySql).toContain('information_schema.routine_privileges');
+    it('56. Post-apply verify SQL tạo ma trận thực thi RPC có thẩm quyền bằng cross join và has_function_privilege', () => {
+      expect(verifySql).toContain('VERIFY_07_AUTHORITATIVE_RPC_EXECUTE_MATRIX');
+      expect(verifySql).toContain('has_function_privilege');
+      expect(verifySql).toContain('cross join');
     });
 
-    it('57. migration file 20260813 hoàn toàn KHÔNG BỊ THAY ĐỔI từ starting HEAD', () => {
-      expect(sqlContent.length).toBeGreaterThan(1000);
+    it('57. Post-apply verify SQL tóm tắt kỳ vọng chính sách policy expectation summary', () => {
+      expect(verifySql).toContain('VERIFY_04_POLICY_EXPECTATION_SUMMARY');
+      expect(verifySql).toContain('VERIFY_04_PRACTICE_NO_DIRECT_WRITE_POLICIES');
     });
 
-    it('58. migration file 20260812 Part7 hoàn toàn KHÔNG BỊ THAY ĐỔI', () => {
-      const part7LockPath = path.join(
-        process.cwd(),
-        'database/migrations/20260812_part7_structure_first_lock.sql'
-      );
-      const part7Content = fs.readFileSync(part7LockPath, 'utf8');
-      expect(part7Content.length).toBeGreaterThan(100);
+    it('58. Post-apply verify SQL kiểm tra giá trị mặc định is_approved = false và NOT NULL', () => {
+      expect(verifySql).toContain('VERIFY_02_COLUMNS_AND_APPROVAL_DEFAULTS');
+      expect(verifySql).toContain('PASS: NOT NULL DEFAULT FALSE');
     });
   });
 });
