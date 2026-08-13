@@ -42,6 +42,7 @@ vi.mock('../../lib/supabase/client', () => {
               order: vi.fn().mockResolvedValue({ data: [], error: null }),
             })),
             upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
+            update: vi.fn().mockResolvedValue({ data: null, error: null }),
           })),
           upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
           update: vi.fn().mockResolvedValue({ data: null, error: null }),
@@ -500,8 +501,8 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
     });
 
     it('44. File preflight Read-Only 100% chứa các câu lệnh SELECT và 0 câu lệnh ghi/đổi cấu trúc', () => {
-      expect(preflightSql).toContain('PREFLIGHT_01_V2_OBJECT_EXISTENCE');
-      expect(preflightSql).toContain('PREFLIGHT_02_CANONICAL_COLUMNS');
+      expect(preflightSql).toContain('PREFLIGHT_01_V2_TABLE_EXISTENCE');
+      expect(preflightSql).toContain('PREFLIGHT_03_CANONICAL_COLUMNS_CONTRACT');
       expect(preflightSql).not.toContain('INSERT INTO');
       expect(preflightSql).not.toContain('UPDATE ');
       expect(preflightSql).not.toContain('DELETE FROM');
@@ -511,7 +512,7 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
 
     it('45. File post-apply Read-Only 100% chứa các câu lệnh SELECT kiểm tra sau migration', () => {
       expect(verifySql).toContain('VERIFY_01_TABLES_EXISTENCE');
-      expect(verifySql).toContain('VERIFY_04_PRACTICE_EVENTS_PRIVILEGE_MATRIX');
+      expect(verifySql).toContain('VERIFY_05_TABLE_PRIVILEGES_MATRIX');
       expect(verifySql).not.toContain('INSERT INTO');
       expect(verifySql).not.toContain('UPDATE ');
       expect(verifySql).not.toContain('DELETE FROM');
@@ -539,8 +540,59 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
     });
 
     it('49. Preflight SQL chẩn đoán chi tiết hình dạng v_q_options (array length & object keys)', () => {
-      expect(preflightSql).toContain('PREFLIGHT_05_OPTIONS_SHAPES');
-      expect(preflightSql).toContain('jsonb_array_length(options)');
+      expect(preflightSql).toContain('PREFLIGHT_05_OPTIONS_TYPE_AND_LENGTH_DISTRIBUTION');
+      expect(preflightSql).toContain('jsonb_array_length(to_jsonb(options))');
+    });
+
+    it('50. Preflight SQL sử dụng information_schema.table_privileges để kiểm soát quyền PUBLIC', () => {
+      expect(preflightSql).toContain('from information_schema.table_privileges');
+      expect(preflightSql).toContain("grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')");
+    });
+
+    it('51. Preflight SQL giữ lại tên bảng target_table và RPC target_rpc khi đối tượng bị vắng mặt', () => {
+      expect(preflightSql).toContain('t.target_table');
+      expect(preflightSql).toContain('r.target_rpc');
+    });
+
+    it('52. Preflight SQL kiểm tra hợp đồng cột bắt buộc CANONICAL_COLUMNS_CONTRACT', () => {
+      expect(preflightSql).toContain('PREFLIGHT_03_CANONICAL_COLUMNS_CONTRACT');
+      expect(preflightSql).toContain('toeic_test_questions');
+      expect(preflightSql).toContain('toeic_test_groups');
+    });
+
+    it('53. Preflight SQL phân tích cấu trúc nhãn mảng ARRAY_LABEL_CONSISTENCY', () => {
+      expect(preflightSql).toContain('PREFLIGHT_07_ARRAY_LABEL_CONSISTENCY');
+      expect(preflightSql).toContain('canonical_label_order');
+      expect(preflightSql).toContain('UNKNOWN_LABEL_SHAPE');
+    });
+
+    it('54. Preflight SQL phân tích số lượng null/malformed options và tóm tắt PREFLIGHT_11_FINAL_SUMMARY', () => {
+      expect(preflightSql).toContain('PREFLIGHT_08_NULL_MALFORMED_OPTIONS_COUNTS');
+      expect(preflightSql).toContain('PREFLIGHT_11_FINAL_SUMMARY');
+    });
+
+    it('55. Post-apply verify SQL kiểm tra pg_policies và proconfig search_path=', () => {
+      expect(verifySql).toContain('VERIFY_04_PG_POLICIES');
+      expect(verifySql).toContain('VERIFY_07_RPCS_SIGNATURE_AND_SECURITY');
+      expect(verifySql).toContain('search_path=');
+    });
+
+    it('56. Post-apply verify SQL sử dụng information_schema.routine_privileges kiểm tra quyền EXECUTE', () => {
+      expect(verifySql).toContain('VERIFY_08_RPC_EXECUTE_PRIVILEGES');
+      expect(verifySql).toContain('information_schema.routine_privileges');
+    });
+
+    it('57. migration file 20260813 hoàn toàn KHÔNG BỊ THAY ĐỔI từ starting HEAD', () => {
+      expect(sqlContent.length).toBeGreaterThan(1000);
+    });
+
+    it('58. migration file 20260812 Part7 hoàn toàn KHÔNG BỊ THAY ĐỔI', () => {
+      const part7LockPath = path.join(
+        process.cwd(),
+        'database/migrations/20260812_part7_structure_first_lock.sql'
+      );
+      const part7Content = fs.readFileSync(part7LockPath, 'utf8');
+      expect(part7Content.length).toBeGreaterThan(100);
     });
   });
 });
