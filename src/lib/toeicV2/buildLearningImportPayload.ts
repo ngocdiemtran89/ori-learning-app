@@ -15,6 +15,7 @@ export function buildLearningImportPayload(
     definition: item.definition || null,
     example: item.example || null,
     difficulty_level: item.difficulty_level || 3,
+    is_approved: false, // Default: pending ORI manual review
   }));
 
   const linksPayload = extracted.links.map((link) => ({
