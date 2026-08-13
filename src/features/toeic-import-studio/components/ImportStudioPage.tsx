@@ -349,6 +349,8 @@ export const ImportStudioPage: React.FC = () => {
         <ChatGptHybridTab
           listeningReport={listeningReport}
           readingReport={readingReport}
+          listeningPdf={listeningPdf}
+          readingPdf={readingPdf}
           onImportChatGptJson={handleImportChatGptJson}
         />
       )}

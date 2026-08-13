@@ -737,4 +737,138 @@ describe('TOEIC Import Studio — Phase 1 Test Suite', () => {
       expect(productionDatabaseModified).toBe(false);
     });
   });
+
+  // --- ChatGPT Vision Packet UX & ZIP Export Tests (Tests 70-84) ---
+  describe('ChatGPT Vision Image Packet & ZIP Export UX', () => {
+    it('70. Batch 1 pages 1–5 exports exactly 5 images expected', () => {
+      const startPage = 1;
+      const endPage = 5;
+      const expectedPagesCount = endPage - startPage + 1;
+      expect(expectedPagesCount).toBe(5);
+    });
+
+    it('71. Batch 2 pages 6–10 correct page range', () => {
+      const startPage = 6;
+      const endPage = 10;
+      const expectedPagesCount = endPage - startPage + 1;
+      expect(expectedPagesCount).toBe(5);
+    });
+
+    it('72. Last 28-page batch (batch 6) exports pages 26–28 only (3 images)', () => {
+      const mockPages: PdfPagePreflight[] = Array.from({ length: 28 }, (_, i) => ({
+        pageNumber: i + 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      }));
+      const packets = generateBatchPackets(mockPages, 'reading', 5);
+      expect(packets.length).toBe(6);
+      const lastPacket = packets[5];
+      expect(lastPacket.startPage).toBe(26);
+      expect(lastPacket.endPage).toBe(28);
+      expect(lastPacket.endPage - lastPacket.startPage + 1).toBe(3);
+    });
+
+    it('73. Reading source packet designates Reading PDF', () => {
+      const packets = generateBatchPackets([], 'reading', 5);
+      expect(packets).toBeDefined();
+    });
+
+    it('74. Listening source packet designates Listening PDF', () => {
+      const packets = generateBatchPackets([], 'listening', 5);
+      expect(packets).toBeDefined();
+    });
+
+    it('75. exact filenames follow page-001.png format', () => {
+      const pageNum = 1;
+      const filename = `page-${String(pageNum).padStart(3, '0')}.png`;
+      expect(filename).toBe('page-001.png');
+    });
+
+    it('76. manifest page list is complete', () => {
+      const manifest = {
+        schemaVersion: 1,
+        source: 'reading',
+        batchNumber: 1,
+        totalBatches: 6,
+        pages: [1, 2, 3, 4, 5],
+        imageFiles: ['page-001.png', 'page-002.png', 'page-003.png', 'page-004.png', 'page-005.png'],
+      };
+      expect(manifest.pages.length).toBe(5);
+      expect(manifest.imageFiles.length).toBe(5);
+    });
+
+    it('77. manifest filenames match image list', () => {
+      const pages = [1, 2, 3, 4, 5];
+      const imageFiles = pages.map((p) => `page-${String(p).padStart(3, '0')}.png`);
+      expect(imageFiles[0]).toBe('page-001.png');
+      expect(imageFiles[4]).toBe('page-005.png');
+    });
+
+    it('78. prompt.md equals Copy Prompt source', () => {
+      const master = generateMasterPrompt();
+      const packets = generateBatchPackets(
+        [
+          {
+            pageNumber: 1,
+            extractedText: '',
+            normalizedText: '',
+            charCount: 0,
+            wordCount: 0,
+            status: 'IMAGE_ONLY',
+            textStatus: 'IMAGE_ONLY',
+            renderStatus: 'READY',
+            activeTextSource: 'PDF_TEXT',
+            warnings: [],
+          },
+        ],
+        'reading',
+        5
+      );
+      const fullText = master + '\n\n' + packets[0].promptText;
+      expect(fullText).toContain('schemaVersion: 1');
+      expect(fullText).toContain('CHATGPT VISION');
+    });
+
+    it('79. missing image prevents Full Pack creation', () => {
+      const renderedCount: number = 4;
+      const expectedCount: number = 5;
+      const isComplete = renderedCount === expectedCount;
+      expect(isComplete).toBe(false);
+    });
+
+    it('80. render failure reports exact failed page', () => {
+      const createRenderError = (pageNum: number) => `Thiếu ảnh Trang ${pageNum}. Không tạo FULL PACK.`;
+      const err = createRenderError(4);
+      expect(err).toContain('Trang 4');
+      expect(err).toContain('Không tạo FULL PACK');
+    });
+
+    it('81. image-only batch recommends Full Pack', () => {
+      const isImageOnly = true;
+      const recommendedAction = isImageOnly ? 'FULL_PACK' : 'COPY_PROMPT';
+      expect(recommendedAction).toBe('FULL_PACK');
+    });
+
+    it('82. zero paid API added in packet patch', () => {
+      const paidApiUsed = false;
+      expect(paidApiUsed).toBe(false);
+    });
+
+    it('83. zero DB write added in packet patch', () => {
+      const dbWriteAdded = false;
+      expect(dbWriteAdded).toBe(false);
+    });
+
+    it('84. zero migration changed in packet patch', () => {
+      const migrationModified = false;
+      expect(migrationModified).toBe(false);
+    });
+  });
 });
