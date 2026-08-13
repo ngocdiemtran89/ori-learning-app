@@ -17,6 +17,7 @@ import { PdfPreflightReport, ChatGptBatchPacket } from '../types';
 import { generateMasterPrompt, generateBatchPackets } from '../pdf/packetGenerator';
 import { loadPdfDocument } from '../../../lib/cms/pdfUtils';
 import { PDF_PAGE_RENDER_SCALE } from '../constants';
+import { downloadBlob, downloadTextFile } from '../utils/downloadHelper';
 
 interface ChatGptHybridTabProps {
   listeningReport: PdfPreflightReport | null;
@@ -155,12 +156,7 @@ export const ChatGptHybridTab: React.FC<ChatGptHybridTabProps> = ({
       );
 
       images.forEach((img) => {
-        const url = URL.createObjectURL(img.blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${activeSource}-${img.filename}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(img.blob, img.filename);
       });
 
       setExportStatusMessage(`Đã xuất thành công ${images.length}/${images.length} ảnh trang PDF!`);
@@ -214,18 +210,19 @@ export const ChatGptHybridTab: React.FC<ChatGptHybridTabProps> = ({
         zip.file(img.filename, img.blob);
       });
 
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const zipUrl = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = zipUrl;
+      const zipBlob = await zip.generateAsync({
+        type: 'blob',
+        mimeType: 'application/zip',
+      });
+
       const startP = String(packet.startPage).padStart(3, '0');
       const endP = String(packet.endPage).padStart(3, '0');
       const batchNum = String(packet.batchIndex).padStart(2, '0');
-      a.download = `ori-${activeSource}-chatgpt-batch-${batchNum}-pages-${startP}-${endP}.zip`;
-      a.click();
-      URL.revokeObjectURL(zipUrl);
+      const zipFilename = `ori-${activeSource}-chatgpt-batch-${batchNum}-pages-${startP}-${endP}.zip`;
 
-      setExportStatusMessage(`Đã xuất gói 📦 FULL PACK .ZIP (${images.length} ảnh + prompt.md + manifest.json) thành công!`);
+      downloadBlob(zipBlob, zipFilename);
+
+      setExportStatusMessage(`Đã tải: ${zipFilename}`);
     } catch (err: any) {
       console.error('Failed to export full pack zip:', err);
       setExportError(err?.message || 'Lỗi khi tạo gói ZIP FULL PACK.');
@@ -444,13 +441,11 @@ export const ChatGptHybridTab: React.FC<ChatGptHybridTabProps> = ({
                       <button
                         onClick={() => {
                           const fullText = generateMasterPrompt() + '\n\n' + pkt.promptText;
-                          const blob = new Blob([fullText], { type: 'text/plain' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `ori-toeic-batch-${pkt.batchIndex}-pages-${pkt.startPage}-${pkt.endPage}.txt`;
-                          a.click();
-                          URL.revokeObjectURL(url);
+                          const startP = String(pkt.startPage).padStart(3, '0');
+                          const endP = String(pkt.endPage).padStart(3, '0');
+                          const batchNum = String(pkt.batchIndex).padStart(2, '0');
+                          const txtFilename = `ori-${activeSource}-chatgpt-batch-${batchNum}-pages-${startP}-${endP}-prompt.txt`;
+                          downloadTextFile(fullText, txtFilename, 'text/plain;charset=utf-8');
                         }}
                         className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-[11px] rounded-xl inline-flex items-center gap-1 transition-colors"
                         title="Tải prompt về file .txt"

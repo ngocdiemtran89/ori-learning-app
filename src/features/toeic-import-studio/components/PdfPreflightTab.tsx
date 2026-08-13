@@ -16,6 +16,7 @@ import {
 import { PdfPreflightReport, PdfPagePreflight } from '../types';
 import { loadPdfDocument } from '../../../lib/cms/pdfUtils';
 import { renderPdfPageToCanvasSafe } from '../pdf/pdfPreflight';
+import { downloadBlob } from '../utils/downloadHelper';
 
 interface PdfPreflightTabProps {
   listeningReport: PdfPreflightReport | null;
@@ -167,11 +168,12 @@ export const PdfPreflightTab: React.FC<PdfPreflightTabProps> = ({
   const handleDownloadPageImage = () => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const url = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeReportType}-page-${String(selectedPageNum).padStart(3, '0')}.png`;
-    a.click();
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const filename = `page-${String(selectedPageNum).padStart(3, '0')}.png`;
+        downloadBlob(blob, filename);
+      }
+    }, 'image/png', 0.95);
   };
 
   const handleCopyText = (text: string) => {

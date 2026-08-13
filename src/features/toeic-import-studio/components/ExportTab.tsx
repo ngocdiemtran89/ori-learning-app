@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, CheckCircle2, AlertCircle } from 'lucide-react';
 import { StagingQuestion, StagingGroup, AudioSegment, FullValidationReport, OriFullToeicImportSchema } from '../types';
+import { downloadJsonFile } from '../utils/downloadHelper';
 
 interface ExportTabProps {
   testTitle: string;
@@ -52,18 +53,9 @@ export const ExportTab: React.FC<ExportTabProps> = ({
       },
     };
 
-    const jsonStr = JSON.stringify(payload, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
     const cleanTitle = (testTitle || 'ori-full-toeic').toLowerCase().replace(/\s+/g, '-');
-    link.href = url;
-    link.download = `${cleanTitle}-import-v1.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const filename = `${cleanTitle}-import-v1.json`;
+    downloadJsonFile(payload, filename);
   };
 
   return (

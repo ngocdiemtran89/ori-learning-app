@@ -8,6 +8,7 @@ import {
   exportSegments,
   importSegments,
 } from '../../../lib/audioCutter/toeicAudioCutter';
+import { downloadTextFile } from '../utils/downloadHelper';
 
 interface AudioTabProps {
   audioFile: File | null;
@@ -122,13 +123,7 @@ export const AudioTab: React.FC<AudioTabProps> = ({
 
   const handleExportAudioJson = () => {
     const jsonStr = exportSegments(audioFile?.name || 'listening.mp3', audioDuration, segments);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'toeic-listening-audio-timestamps.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadTextFile(jsonStr, 'toeic-listening-audio-timestamps.json', 'application/json;charset=utf-8');
   };
 
   const handleImportAudioJson = (e: React.ChangeEvent<HTMLInputElement>) => {
