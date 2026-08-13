@@ -38,6 +38,7 @@ import { AdminContentImportPage } from './pages/AdminContentImportPage';
 import { AdminToeicTestBankPage } from './pages/AdminToeicTestBankPage';
 import { AdminToeicTestEditPage } from './pages/AdminToeicTestEditPage';
 import { AdminToeicClassifierPage } from './pages/AdminToeicClassifierPage';
+import { AdminToeicAudioCutterPage } from './pages/AdminToeicAudioCutterPage';
 import { ToeicTestLibraryPage } from './pages/ToeicTestLibraryPage';
 import { ToeicTestOverviewPage } from './pages/ToeicTestOverviewPage';
 import { ToeicTestRunnerPage } from './pages/ToeicTestRunnerPage';
@@ -122,6 +123,9 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/test-bank/classify" element={<AdminToeicClassifierPage />} />
                 <Route path="/admin/content/test-bank/new" element={<AdminToeicTestEditPage />} />
                 <Route path="/admin/content/test-bank/:testId/edit" element={<AdminToeicTestEditPage />} />
+
+                {/* Admin Tools: TOEIC Audio Cutter */}
+                <Route path="/admin/tools/toeic-audio-cutter" element={<AdminToeicAudioCutterPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

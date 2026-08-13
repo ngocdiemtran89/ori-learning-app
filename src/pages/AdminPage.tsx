@@ -51,6 +51,24 @@ export const AdminPage: React.FC = () => {
           </div>
           <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
         </NavLink>
+
+        <NavLink
+          to="/admin/tools/toeic-audio-cutter"
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between sm:col-span-2"
+        >
+          <div className="space-y-2">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <span className="text-lg">🎧</span>
+            </div>
+            <h3 className="font-extrabold text-slate-900 text-base group-hover:text-emerald-600 transition-colors">
+              🎧 TOEIC Audio Cutter (Cắt Mốc Audio Listening)
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Công cụ cắt mốc thời gian bài nghe TOEIC 100 câu (1 MP3 duy nhất + Mốc phân đoạn). Tự động tạo khung Part 1-4, tinh chỉnh miligiây, Import/Export JSON.
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+        </NavLink>
       </div>
     </div>
   );
