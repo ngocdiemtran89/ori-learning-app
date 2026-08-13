@@ -1,6 +1,6 @@
 /**
  * Part 7 Canonical Structure Manifest & Fingerprint Builder
- * Enforces exact Q147-200 completeness (54 unique questions) and builds structureHash.
+ * Enforces exact Q147-200 completeness (54 unique questions) and builds exact-membership structureHash.
  */
 
 import { Part7DetectedStructureGroup } from './part7StructureParser';
@@ -13,6 +13,7 @@ export interface Part7StructureManifestGroup {
   sourceHeader: string;
   documentKind?: string;
   passageFingerprint?: string;
+  targetGroupId?: string;
 }
 
 export interface Part7StructureManifest {
@@ -38,13 +39,31 @@ export interface ManifestValidationResult {
 }
 
 /**
- * Computes a deterministic structureHash based ONLY on group question ranges.
- * Format: "147-148|149-151|152-154|..."
+ * Computes exact-membership structureHash from groups.
+ * Canonical representation: "147,148|149,150,151|152,153,154|..."
+ * Explicitly distinguishes [147,148,149] from malformed [147,149].
  */
-export function computeStructureHash(groups: { startQuestion: number; endQuestion: number }[]): string {
+export function computeStructureHash(groups: { startQuestion: number; endQuestion: number; questionNumbers?: number[] }[]): string {
   if (!groups || groups.length === 0) return '';
-  const sorted = [...groups].sort((a, b) => a.startQuestion - b.startQuestion);
-  return sorted.map((g) => `${g.startQuestion}-${g.endQuestion}`).join('|');
+  const sorted = [...groups].sort((a, b) => {
+    const minA = a.questionNumbers && a.questionNumbers.length > 0 ? Math.min(...a.questionNumbers) : a.startQuestion;
+    const minB = b.questionNumbers && b.questionNumbers.length > 0 ? Math.min(...b.questionNumbers) : b.startQuestion;
+    return minA - minB;
+  });
+
+  return sorted
+    .map((g) => {
+      let qNums: number[] = [];
+      if (g.questionNumbers && g.questionNumbers.length > 0) {
+        qNums = [...g.questionNumbers].sort((x, y) => x - y);
+      } else {
+        for (let q = g.startQuestion; q <= g.endQuestion; q++) {
+          qNums.push(q);
+        }
+      }
+      return qNums.join(',');
+    })
+    .join('|');
 }
 
 /**
@@ -129,7 +148,7 @@ export function buildPart7StructureManifest(detectedGroups: Part7DetectedStructu
       order: idx + 1,
       startQuestion: g.startQuestion,
       endQuestion: g.endQuestion,
-      questionNumbers: g.questionNumbers,
+      questionNumbers: [...g.questionNumbers].sort((x, y) => x - y),
       sourceHeader: g.sourceHeader,
       documentKind: g.documentKind,
       passageFingerprint: g.passageFingerprint,

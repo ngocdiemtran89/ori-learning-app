@@ -6,7 +6,7 @@ describe('Part 7 Structure Scanner UI & Gating Integration Suite', () => {
 
   it('55. UNVERIFIED status renders when structure lock hash is null', () => {
     const lockHash: string | null = null;
-    const currentHash = '147-148|149-151';
+    const currentHash = '147,148|149,150,151';
 
     let status = 'UNVERIFIED';
     if (lockHash) {
@@ -17,16 +17,16 @@ describe('Part 7 Structure Scanner UI & Gating Integration Suite', () => {
   });
 
   it('56. LOCKED status renders when DB structure hash equals locked hash', () => {
-    const lockHash = '147-148|149-151';
-    const currentHash = '147-148|149-151';
+    const lockHash = '147,148|149,150,151';
+    const currentHash = '147,148|149,150,151';
 
     const status = lockHash === currentHash ? 'LOCKED' : 'DRIFT';
     expect(status).toBe('LOCKED');
   });
 
   it('57. DRIFT status renders when DB structure hash differs from locked hash', () => {
-    const lockHash: string = '147-148|149-151';
-    const currentHash: string = '147-149|150-151'; // DB group boundary changed!
+    const lockHash: string = '147,148|149,150,151';
+    const currentHash: string = '147,148,149|150,151'; // DB group boundary changed!
 
     const status = lockHash === currentHash ? 'LOCKED' : 'DRIFT';
     expect(status).toBe('DRIFT');

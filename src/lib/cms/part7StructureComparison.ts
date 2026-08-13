@@ -3,7 +3,7 @@
  * Compares detected source manifest against active DB question membership and passage fingerprints.
  */
 
-import { Part7StructureManifest } from './part7StructureManifest';
+import { Part7StructureManifest, computeStructureHash } from './part7StructureManifest';
 import { computePassageFingerprint } from './part7StructureParser';
 
 export interface DbGroupInfo {
@@ -54,13 +54,14 @@ export interface Part7RepairPlan {
 }
 
 /**
- * Computes structure hash from DB groups array.
+ * Computes exact-membership structure hash from DB groups array.
+ * Canonical representation: "147,148|149,150,151|..."
  */
 export function computeDbStructureHash(dbGroups: DbGroupInfo[]): string {
   if (!dbGroups || dbGroups.length === 0) return '';
   const valid = dbGroups.filter((g) => g.question_numbers && g.question_numbers.length > 0);
   const sorted = [...valid].sort((a, b) => a.min_qn - b.min_qn);
-  return sorted.map((g) => `${g.min_qn}-${g.max_qn}`).join('|');
+  return sorted.map((g) => [...g.question_numbers].sort((x, y) => x - y).join(',')).join('|');
 }
 
 /**
@@ -73,7 +74,10 @@ export function compareStructureWithDatabase(
   isPublished: boolean
 ): Part7RepairPlan {
   const currentDbHash = computeDbStructureHash(dbGroups);
-  const targetHash = manifest.structureHash;
+
+  // Compute exact-membership target structure hash from manifest
+  const targetHash = computeStructureHash(manifest.groups);
+  manifest.structureHash = targetHash;
 
   const sourceGroups = manifest.groups;
   const dbGroupCount = dbGroups.length;
@@ -111,6 +115,11 @@ export function compareStructureWithDatabase(
   sourceGroups.forEach((sg, sIdx) => {
     const targetDbGroup = groupCountMatch ? sortedDbGroups[sIdx] : undefined;
     const targetGroupId = targetDbGroup?.id;
+
+    // Attach targetGroupId to manifest group object for server-side derivation
+    if (targetGroupId) {
+      sg.targetGroupId = targetGroupId;
+    }
 
     const sourceRangeStr = `Q${sg.startQuestion}–${sg.endQuestion}`;
     const dbRangeStr = targetDbGroup ? `Q${targetDbGroup.min_qn}–${targetDbGroup.max_qn}` : undefined;
