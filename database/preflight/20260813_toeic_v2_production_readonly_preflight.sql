@@ -70,15 +70,20 @@ order by part;
 
 
 -- PREFLIGHT_05_OPTIONS_SHAPES
--- READ-ONLY inspection of options JSON shapes and key counts per Part
+-- READ-ONLY inspection of options JSON shapes, array length distribution & object key counts per Part
 select
   'PREFLIGHT_05_OPTIONS_SHAPES' as check_section,
   part,
   jsonb_typeof(options) as options_type,
+  case
+    when jsonb_typeof(options) = 'array' then jsonb_array_length(options)::text
+    when jsonb_typeof(options) = 'object' then 'object_keys'
+    else 'other'
+  end as shape_detail,
   count(*) as count,
   count(case when options is null then 1 end) as null_options_count
 from public.toeic_test_questions
-group by part, jsonb_typeof(options)
+group by part, jsonb_typeof(options), shape_detail
 order by part;
 
 

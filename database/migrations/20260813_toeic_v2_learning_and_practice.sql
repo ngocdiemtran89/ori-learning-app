@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration: 20260813_toeic_v2_learning_and_practice.sql
 -- Description: Adds ORI TOEIC Website V2 Learning Items, Question Linkages, Practice Events & Safe Practice RPCs
--- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS, REVOKE/GRANT, Two-Phase Link Authorization, Direct Table Privilege Hardening & Structural Invariants.
+-- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS with explicit outer table column qualification, REVOKE ALL resets, Two-Phase Link Authorization & Direct Student Table Write Revocation.
 -- Invariants: Preserves legacy toeic_test_questions.difficulty TEXT; uses difficulty_level SMALLINT
 -- ============================================================
 
@@ -25,9 +25,8 @@ create index if not exists idx_toeic_learning_items_approved on public.toeic_lea
 
 alter table public.toeic_learning_items enable row level security;
 
--- TABLE PRIVILEGES: Explicit privilege matrix for toeic_learning_items
-revoke all on table public.toeic_learning_items from public, anon;
-revoke truncate, references, trigger on table public.toeic_learning_items from authenticated;
+-- TABLE PRIVILEGES: Deterministic REVOKE ALL reset for public, anon, authenticated
+revoke all on table public.toeic_learning_items from public, anon, authenticated;
 grant select, insert, update, delete on table public.toeic_learning_items to authenticated;
 grant all on table public.toeic_learning_items to service_role;
 
@@ -65,13 +64,12 @@ create index if not exists idx_q_learning_approved on public.toeic_question_lear
 
 alter table public.toeic_question_learning_items enable row level security;
 
--- TABLE PRIVILEGES: Explicit privilege matrix for toeic_question_learning_items
-revoke all on table public.toeic_question_learning_items from public, anon;
-revoke truncate, references, trigger on table public.toeic_question_learning_items from authenticated;
+-- TABLE PRIVILEGES: Deterministic REVOKE ALL reset for public, anon, authenticated
+revoke all on table public.toeic_question_learning_items from public, anon, authenticated;
 grant select, insert, update, delete on table public.toeic_question_learning_items to authenticated;
 grant all on table public.toeic_question_learning_items to service_role;
 
--- RLS for toeic_question_learning_items: Require canonical question existence
+-- RLS for toeic_question_learning_items: Require canonical question existence with EXPLICIT outer table column qualification
 drop policy if exists "question_learning_select" on public.toeic_question_learning_items;
 create policy "question_learning_select" on public.toeic_question_learning_items
 for select to authenticated
@@ -80,15 +78,21 @@ using (
   (
     is_approved = true and
     exists (
-      select 1 from public.toeic_tests t
+      select 1
+      from public.toeic_tests t
       join public.toeic_test_questions q on q.test_id = t.id
-      where t.id = test_id
-        and q.id = question_id
-        and q.question_number = question_number
+      where t.id = public.toeic_question_learning_items.test_id
+        and q.id = public.toeic_question_learning_items.question_id
+        and q.question_number = public.toeic_question_learning_items.question_number
         and t.is_published = true
         and q.is_active = true
     ) and
-    exists (select 1 from public.toeic_learning_items item where item.id = item_id and item.is_approved = true) and
+    exists (
+      select 1
+      from public.toeic_learning_items item
+      where item.id = public.toeic_question_learning_items.item_id
+        and item.is_approved = true
+    ) and
     public.has_active_access()
   )
 );
@@ -116,14 +120,13 @@ create index if not exists idx_practice_events_key on public.toeic_learning_prac
 
 alter table public.toeic_learning_practice_events enable row level security;
 
--- TABLE PRIVILEGES: Explicitly revoke direct INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER from public, anon, authenticated
+-- TABLE PRIVILEGES: Deterministic REVOKE ALL reset from public, anon, authenticated
 -- Only SECURITY DEFINER RPC (student_check_v2_practice_answer) can INSERT practice events!
-revoke all on table public.toeic_learning_practice_events from public, anon;
-revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;
+revoke all on table public.toeic_learning_practice_events from public, anon, authenticated;
 grant select on table public.toeic_learning_practice_events to authenticated;
 grant all on table public.toeic_learning_practice_events to service_role;
 
--- RLS: Students can ONLY SELECT THEIR OWN events (auth.uid() = user_id). DIRECT INSERT IS DENIED BY POLICY + REVOKE.
+-- RLS: Students can ONLY SELECT THEIR OWN events (auth.uid() = user_id). DIRECT WRITES ARE DENIED BY POLICY + REVOKE.
 drop policy if exists "user_practice_events_select" on public.toeic_learning_practice_events;
 create policy "user_practice_events_select" on public.toeic_learning_practice_events
 for select to authenticated

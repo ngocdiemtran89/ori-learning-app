@@ -454,8 +454,8 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
       expect(sqlContent).toContain('using (auth.uid() = user_id or public.is_admin())');
     });
 
-    it('36. Thu hồi trực tiếp quyền INSERT/UPDATE/DELETE trên toeic_learning_practice_events từ học viên', () => {
-      expect(sqlContent).toContain('revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;');
+    it('36. Thu hồi trực tiếp tất cả quyền trên toeic_learning_practice_events bằng REVOKE ALL', () => {
+      expect(sqlContent).toContain('revoke all on table public.toeic_learning_practice_events from public, anon, authenticated;');
       expect(sqlContent).toContain('grant select on table public.toeic_learning_practice_events to authenticated;');
       expect(sqlContent).not.toContain('create policy "user_practice_events_insert"');
     });
@@ -481,10 +481,10 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
       expect(sqlContent).toContain('-- PHASE B: MUTATE (UPSERT) LINKS');
     });
 
-    it('41. Thu hồi các quyền nguy hiểm TRUNCATE/REFERENCES/TRIGGER từ vai trò authenticated trên 3 bảng V2', () => {
-      expect(sqlContent).toContain('revoke truncate, references, trigger on table public.toeic_learning_items from authenticated;');
-      expect(sqlContent).toContain('revoke truncate, references, trigger on table public.toeic_question_learning_items from authenticated;');
-      expect(sqlContent).toContain('revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;');
+    it('41. Thu hồi các quyền nguy hiểm REVOKE ALL ON TABLE từ vai trò authenticated trên các bảng V2', () => {
+      expect(sqlContent).toContain('revoke all on table public.toeic_learning_items from public, anon, authenticated;');
+      expect(sqlContent).toContain('revoke all on table public.toeic_question_learning_items from public, anon, authenticated;');
+      expect(sqlContent).toContain('revoke all on table public.toeic_learning_practice_events from public, anon, authenticated;');
     });
 
     it('42. RPC admin_import_v2_question_learning_links từ chối payload NULL hoặc rỗng []', () => {
@@ -523,6 +523,24 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
         'database/migrations/20260812_part7_structure_first_lock.sql'
       );
       expect(fs.existsSync(part7LockPath)).toBe(true);
+    });
+
+    it('47. Policy RLS toeic_question_learning_items định danh rõ ràng cột outer row (explicit table qualification)', () => {
+      expect(sqlContent).toContain('where t.id = public.toeic_question_learning_items.test_id');
+      expect(sqlContent).toContain('and q.id = public.toeic_question_learning_items.question_id');
+      expect(sqlContent).toContain('and q.question_number = public.toeic_question_learning_items.question_number');
+      expect(sqlContent).toContain('where item.id = public.toeic_question_learning_items.item_id');
+    });
+
+    it('48. Thực hiện REVOKE ALL ON TABLE cho vai trò public, anon, authenticated trước khi cấp lại quyền cụ thể', () => {
+      expect(sqlContent).toContain('revoke all on table public.toeic_learning_items from public, anon, authenticated;');
+      expect(sqlContent).toContain('revoke all on table public.toeic_question_learning_items from public, anon, authenticated;');
+      expect(sqlContent).toContain('revoke all on table public.toeic_learning_practice_events from public, anon, authenticated;');
+    });
+
+    it('49. Preflight SQL chẩn đoán chi tiết hình dạng v_q_options (array length & object keys)', () => {
+      expect(preflightSql).toContain('PREFLIGHT_05_OPTIONS_SHAPES');
+      expect(preflightSql).toContain('jsonb_array_length(options)');
     });
   });
 });
