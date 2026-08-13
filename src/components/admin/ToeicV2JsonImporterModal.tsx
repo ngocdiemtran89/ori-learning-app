@@ -5,8 +5,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FileJson, Upload, AlertTriangle, CheckCircle, X, Play, FileCode } from 'lucide-react';
-import { OriToeicV2Package, V2ValidationReport } from '../../lib/toeicV2/types';
+import { V2ValidationReport } from '../../lib/toeicV2/types';
 import { validateV2Package } from '../../lib/toeicV2/validatePackage';
+import { adaptToCanonicalPackage } from '../../lib/toeicV2/canonicalAdapter';
 import { importV2ToeicPackage } from '../../lib/toeicV2/importCoordinator';
 
 interface Props {
@@ -20,7 +21,7 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
   const [report, setReport] = useState<V2ValidationReport | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [parsedPackage, setParsedPackage] = useState<OriToeicV2Package | null>(null);
+  const [parsedPackage, setParsedPackage] = useState<any | null>(null);
 
   if (!isOpen) return null;
 
@@ -34,9 +35,10 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
     }
 
     try {
-      const pkg = JSON.parse(text) as OriToeicV2Package;
-      setParsedPackage(pkg);
-      const valReport = validateV2Package(pkg);
+      const rawPkg = JSON.parse(text);
+      const canonicalPkg = adaptToCanonicalPackage(rawPkg);
+      setParsedPackage(canonicalPkg);
+      const valReport = validateV2Package(canonicalPkg);
       setReport(valReport);
     } catch (err: any) {
       setParsedPackage(null);
@@ -44,7 +46,14 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
         isValid: false,
         errors: [{ code: 'JSON_SYNTAX_ERROR', message: `Cú pháp JSON không hợp lệ: ${err.message}`, severity: 'error' }],
         warnings: [],
-        summary: { totalQuestions: 0, totalGroups: 0, partCounts: { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0, P6: 0, P7: 0 } },
+        summary: {
+          totalQuestions: 0,
+          totalGroups: 0,
+          partCounts: { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0, P6: 0, P7: 0 },
+          hasTranslations: false,
+          mediaCount: 0,
+          learningUnitsCount: 0,
+        },
       });
     }
   };
@@ -109,8 +118,8 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
               <FileJson className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800">Import GPT JSON V2 Studio</h3>
-              <p className="text-xs text-slate-500">Kiểm duyệt strict 200 câu TOEIC & tạo bản nháp DRAFT</p>
+              <h3 className="text-lg font-bold text-slate-800">Import GPT JSON V2 / Import Studio Studio</h3>
+              <p className="text-xs text-slate-500">Kiểm duyệt strict 200 câu TOEIC & Xem trước bản nháp DRAFT</p>
             </div>
           </div>
           <button
@@ -123,14 +132,14 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-5">
-          {/* Controls */}
+          {/* File Upload Controls */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
             <label className="flex items-center gap-2 px-4 py-2 bg-white text-blue-600 border border-blue-200 rounded-xl cursor-pointer hover:bg-blue-50 font-semibold text-sm transition-colors shadow-sm">
               <Upload className="w-4 h-4" />
-              Tải file JSON V2
+              Tải file JSON (V1 / V2 / GPT)
               <input type="file" accept=".json" onChange={handleFileUpload} className="hidden" />
             </label>
-            <span className="text-xs text-slate-500">hoặc dán trực tiếp dữ liệu JSON vào ô bên dưới</span>
+            <span className="text-xs text-slate-500">tự động nhận dạng OriToeicPackageV1 & V2 Canonical model</span>
           </div>
 
           {/* Text Area */}
@@ -139,22 +148,59 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
             <textarea
               value={jsonText}
               onChange={(e) => handleParseAndValidate(e.target.value)}
-              placeholder='Dán nội dung JSON V2 vào đây... {"metadata": {"title": "..."}, "groups": [...], "questions": [...]}'
-              className="w-full h-44 p-3 font-mono text-xs bg-slate-900 text-slate-100 rounded-xl border border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              placeholder='Dán nội dung JSON vào đây...'
+              className="w-full h-36 p-3 font-mono text-xs bg-slate-900 text-slate-100 rounded-xl border border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
           </div>
 
-          {/* Validation Summary Report */}
+          {/* Live Validation & Structured Preview Section */}
           {report && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-100 text-xs font-medium">
-                <span className="flex items-center gap-2">
-                  <FileCode className="w-4 h-4 text-slate-500" />
-                  Tổng số câu: <strong className="text-slate-900">{report.summary.totalQuestions}</strong> / 200
-                </span>
-                <span>Part Counts: P1:{report.summary.partCounts.P1} P2:{report.summary.partCounts.P2} P3:{report.summary.partCounts.P3} P4:{report.summary.partCounts.P4} P5:{report.summary.partCounts.P5} P6:{report.summary.partCounts.P6} P7:{report.summary.partCounts.P7}</span>
+            <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+              <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <FileCode className="w-4 h-4 text-blue-600" /> Bản xem trước gói dữ liệu (Import Preview)
+              </h4>
+
+              {/* Title & Type */}
+              {parsedPackage && (
+                <div className="bg-white p-3 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+                  <span className="font-extrabold text-slate-800">Tiêu đề: {parsedPackage.metadata?.title}</span>
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-700 font-bold rounded-md">
+                    {parsedPackage.metadata?.test_type || 'full'}
+                  </span>
+                </div>
+              )}
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 block">TỔNG SỐ CÂU</span>
+                  <span className={`font-extrabold ${report.summary.totalQuestions === 200 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {report.summary.totalQuestions} / 200
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 block">TỔNG SỐ GROUP</span>
+                  <span className="font-extrabold text-slate-800">{report.summary.totalGroups}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 block">SONG NGỮ</span>
+                  <span className="font-extrabold text-slate-800">{report.summary.hasTranslations ? 'Có dịch VI' : 'Chưa có'}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 block">LEARNING UNITS</span>
+                  <span className="font-extrabold text-blue-600">{report.summary.learningUnitsCount} mục</span>
+                </div>
               </div>
 
+              {/* Part Counts */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 text-xs font-medium">
+                <span className="font-bold text-slate-700">Phân bổ Part:</span>
+                <span className="font-mono text-slate-900 font-bold">
+                  P1:{report.summary.partCounts.P1} P2:{report.summary.partCounts.P2} P3:{report.summary.partCounts.P3} P4:{report.summary.partCounts.P4} P5:{report.summary.partCounts.P5} P6:{report.summary.partCounts.P6} P7:{report.summary.partCounts.P7}
+                </span>
+              </div>
+
+              {/* Errors Block */}
               {report.errors.length > 0 && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2 max-h-40 overflow-y-auto">
                   <h4 className="text-xs font-bold text-red-700 flex items-center gap-1.5">
@@ -168,10 +214,11 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
                 </div>
               )}
 
+              {/* Success Banner */}
               {report.isValid && report.errors.length === 0 && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 text-xs font-semibold">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 text-xs font-semibold">
                   <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  Gói đề thi V2 vượt qua tất cả quy tắc kiểm duyệt 200 câu nghiêm ngặt! Sẵn sàng khởi tạo bản nháp.
+                  Bản xem trước hợp lệ! Sẵn sàng để khởi tạo bản nháp (Create DRAFT).
                 </div>
               )}
             </div>
@@ -208,7 +255,7 @@ export const ToeicV2JsonImporterModal: React.FC<Props> = ({ isOpen, onClose }) =
               className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-lg shadow-blue-500/25 disabled:opacity-50 flex items-center gap-2"
             >
               <FileJson className="w-4 h-4" />
-              Tạo bản nháp (Create DRAFT)
+              Xác nhận Tạo bản nháp (Confirm DRAFT)
             </button>
           </div>
         </div>

@@ -3,15 +3,35 @@
 // ============================================================
 
 import {
-  OriToeicV2Package,
+  CanonicalToeicImportPackage,
   ToeicPart,
   V2ValidationError,
   V2ValidationReport,
 } from './types';
+import { adaptToCanonicalPackage } from './canonicalAdapter';
 
-export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
+export function validateV2Package(rawPkg: any): V2ValidationReport {
   const errors: V2ValidationError[] = [];
   const warnings: V2ValidationError[] = [];
+
+  let pkg: CanonicalToeicImportPackage;
+  try {
+    pkg = adaptToCanonicalPackage(rawPkg);
+  } catch (err: any) {
+    return {
+      isValid: false,
+      errors: [{ code: 'ADAPTER_ERROR', message: `Lỗi cấu trúc dữ liệu JSON: ${err.message}`, severity: 'error' }],
+      warnings: [],
+      summary: {
+        totalQuestions: 0,
+        totalGroups: 0,
+        partCounts: { P1: 0, P2: 0, P3: 0, P4: 0, P5: 0, P6: 0, P7: 0 },
+        hasTranslations: false,
+        mediaCount: 0,
+        learningUnitsCount: 0,
+      },
+    };
+  }
 
   const questions = pkg.questions || [];
   const groups = pkg.groups || [];
@@ -26,7 +46,9 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
     P7: 0,
   };
 
-  // Helper to add error
+  let mediaCount = 0;
+  let hasTranslations = false;
+
   const addError = (code: string, message: string, question_number?: number, group_key?: string) => {
     errors.push({ code, message, question_number, group_key, severity: 'error' });
   };
@@ -36,21 +58,39 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
     addError('METADATA_NO_TITLE', 'Tiêu đề đề thi không được để trống.');
   }
 
-  // 2. Base64 / Data URI check
+  // 2. Deep Base64 / Data URI check in all fields
   const checkMediaUrl = (url: string | null | undefined, contextStr: string) => {
-    if (url && (url.startsWith('data:') || url.includes('base64,'))) {
+    if (!url) return;
+    if (url.startsWith('data:') || url.includes('base64,')) {
       addError('BASE64_MEDIA_BLOCKED', `Không chấp nhận URL media dạng base64/data URI tại ${contextStr}.`);
+    } else {
+      mediaCount++;
     }
   };
 
   questions.forEach((q) => {
     checkMediaUrl(q.audio_url, `Câu ${q.question_number} audio`);
     checkMediaUrl(q.image_url, `Câu ${q.question_number} image`);
+    if (q.translation_vi) hasTranslations = true;
   });
 
   groups.forEach((g) => {
     checkMediaUrl(g.audio_url, `Group ${g.group_key} audio`);
     checkMediaUrl(g.image_url, `Group ${g.group_key} image`);
+    
+    // Check nested documents
+    if (Array.isArray(g.documents)) {
+      g.documents.forEach((doc: any, dIdx: number) => {
+        if (typeof doc === 'string' && (doc.startsWith('data:') || doc.includes('base64,'))) {
+          addError('BASE64_MEDIA_BLOCKED', `Group ${g.group_key} document #${dIdx + 1} chứa base64.`);
+        } else if (typeof doc === 'object' && doc !== null) {
+          const docStr = JSON.stringify(doc);
+          if (docStr.includes('data:image') || docStr.includes('base64,')) {
+            addError('BASE64_MEDIA_BLOCKED', `Group ${g.group_key} document #${dIdx + 1} chứa base64.`);
+          }
+        }
+      });
+    }
   });
 
   // 3. Question Count & Duplicate / Missing check
@@ -118,7 +158,6 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
       }
 
       if (Array.isArray(q.options) && q.options.length > 3) {
-        // Check if 4th option is non-empty
         const fourth = q.options[3];
         if (fourth && String(fourth).trim() !== '') {
           addError('P2_FOUR_OPTIONS_BLOCKED', `Câu Part 2 (câu ${qNum}) không được phép chứa lựa chọn thứ 4 (D).`, qNum);
@@ -178,7 +217,6 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
         groupQuestionsMap.get(q.group_key)?.push(q.question_number);
       }
     } else {
-      // Group required for P3, P4, P6, P7
       if (['P3', 'P4', 'P6', 'P7'].includes(q.part)) {
         addError(
           'QUESTION_MISSING_GROUP',
@@ -241,6 +279,9 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
     }
   });
 
+  const learningUnitsCount = (pkg.learning_units?.length || 0) +
+    questions.reduce((acc, q) => acc + (q.learning_units?.length || 0), 0);
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -249,6 +290,9 @@ export function validateV2Package(pkg: OriToeicV2Package): V2ValidationReport {
       totalQuestions: questions.length,
       totalGroups: groups.length,
       partCounts,
+      hasTranslations,
+      mediaCount,
+      learningUnitsCount,
     },
   };
 }

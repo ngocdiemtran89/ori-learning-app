@@ -16,7 +16,7 @@ export interface V2LearningUnit {
   ai_suggested?: boolean;
 }
 
-export interface V2Question {
+export interface CanonicalToeicQuestion {
   question_number: number;
   part: ToeicPart;
   question_text?: string | null;
@@ -27,10 +27,11 @@ export interface V2Question {
   audio_url?: string | null;
   image_url?: string | null;
   cue_target?: string | null;
+  translation_vi?: string | null;
   learning_units?: V2LearningUnit[];
 }
 
-export interface V2Group {
+export interface CanonicalToeicGroup {
   group_key: string;
   part: ToeicPart;
   title?: string | null;
@@ -43,20 +44,23 @@ export interface V2Group {
   question_range?: [number, number];
 }
 
-export interface OriToeicV2Package {
+export interface CanonicalToeicImportPackage {
+  schema_version: 'ori.toeic.canonical.v1';
   metadata: {
     title: string;
     slug?: string;
     test_code?: string;
     description?: string;
-    test_type?: string;
+    test_type?: 'full' | 'mini';
     is_published?: boolean;
     status?: string;
   };
-  groups: V2Group[];
-  questions: V2Question[];
+  groups: CanonicalToeicGroup[];
+  questions: CanonicalToeicQuestion[];
   learning_units?: V2LearningUnit[];
 }
+
+export type OriToeicV2Package = CanonicalToeicImportPackage;
 
 export interface V2ValidationError {
   code: string;
@@ -74,5 +78,8 @@ export interface V2ValidationReport {
     totalQuestions: number;
     totalGroups: number;
     partCounts: Record<ToeicPart, number>;
+    hasTranslations: boolean;
+    mediaCount: number;
+    learningUnitsCount: number;
   };
 }

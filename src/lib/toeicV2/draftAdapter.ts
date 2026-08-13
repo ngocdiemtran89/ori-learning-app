@@ -2,12 +2,14 @@
 // ORI TOEIC Website V2 — Core Draft Adapter
 // ============================================================
 
-import { OriToeicV2Package } from './types';
-import { normalizeToeicOptions } from './optionNormalizer';
+import { adaptToCanonicalPackage } from './canonicalAdapter';
 import { importToeicTestDraft } from '../supabase/adminToeicClassifier';
 import { ParsedToeicTestDraft } from '../toeic/classifier/types';
+import { supabase } from '../supabase/client';
 
-export function convertV2ToCoreDraftPayload(pkg: OriToeicV2Package): ParsedToeicTestDraft {
+export function convertV2ToCoreDraftPayload(rawPkg: any): ParsedToeicTestDraft {
+  const pkg = adaptToCanonicalPackage(rawPkg);
+
   const title = pkg.metadata?.title || 'Đề thi TOEIC V2';
   const slugBase = (pkg.metadata?.slug || title)
     .toLowerCase()
@@ -42,7 +44,6 @@ export function convertV2ToCoreDraftPayload(pkg: OriToeicV2Package): ParsedToeic
   });
 
   const coreQuestions = (pkg.questions || []).map((q) => {
-    const normOptions = normalizeToeicOptions(q.options, q.part);
     const mappedGroupKey = q.group_key ? (groupKeyMap.get(q.group_key) || q.group_key) : null;
 
     return {
@@ -50,7 +51,7 @@ export function convertV2ToCoreDraftPayload(pkg: OriToeicV2Package): ParsedToeic
       question_number: q.question_number,
       part: q.part,
       question_text: q.question_text || null,
-      options: normOptions,
+      options: q.options as string[],
       correct_answer: q.correct_answer || 'A',
       explanation: q.explanation || null,
       audio_url: q.audio_url || null,
@@ -81,11 +82,29 @@ export function convertV2ToCoreDraftPayload(pkg: OriToeicV2Package): ParsedToeic
   };
 }
 
-export async function createCoreDraftFromV2(pkg: OriToeicV2Package): Promise<{
+export async function createCoreDraftFromV2(rawPkg: any): Promise<{
   success: boolean;
   testId?: string;
   error?: string;
 }> {
+  const pkg = adaptToCanonicalPackage(rawPkg);
+
+  // Check if existing test with same slug is already published -> BLOCK OVERWRITE!
+  if (pkg.metadata?.slug) {
+    const { data: existing } = await supabase
+      .from('toeic_tests')
+      .select('id, is_published')
+      .eq('slug', pkg.metadata.slug)
+      .maybeSingle();
+
+    if (existing && existing.is_published) {
+      return {
+        success: false,
+        error: `Đề thi "${pkg.metadata.title}" đã được xuất bản (Published). Không được phép ghi đè.`,
+      };
+    }
+  }
+
   const draftPayload = convertV2ToCoreDraftPayload(pkg);
   return importToeicTestDraft(draftPayload);
 }

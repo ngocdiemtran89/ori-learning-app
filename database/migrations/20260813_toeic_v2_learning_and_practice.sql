@@ -1,6 +1,7 @@
 -- ============================================================
 -- Migration: 20260813_toeic_v2_learning_and_practice.sql
 -- Description: Adds ORI TOEIC Website V2 Learning Items, Question Linkages, Practice Events & Safe Practice RPCs
+-- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS & REVOKE/GRANT policies.
 -- Invariants: Preserves legacy toeic_test_questions.difficulty TEXT; uses difficulty_level SMALLINT
 -- ============================================================
 
@@ -22,7 +23,7 @@ create index if not exists idx_toeic_learning_items_key on public.toeic_learning
 
 alter table public.toeic_learning_items enable row level security;
 
--- RLS: Authenticated users with active access or admins can view learning items
+-- RLS for toeic_learning_items
 drop policy if exists "learning_items_select" on public.toeic_learning_items;
 create policy "learning_items_select" on public.toeic_learning_items
 for select to authenticated
@@ -56,7 +57,7 @@ create index if not exists idx_q_learning_approved on public.toeic_question_lear
 
 alter table public.toeic_question_learning_items enable row level security;
 
--- RLS for links
+-- RLS for toeic_question_learning_items
 drop policy if exists "question_learning_select" on public.toeic_question_learning_items;
 create policy "question_learning_select" on public.toeic_question_learning_items
 for select to authenticated
@@ -92,6 +93,7 @@ create index if not exists idx_practice_events_key on public.toeic_learning_prac
 
 alter table public.toeic_learning_practice_events enable row level security;
 
+-- RLS: Students can only access/insert THEIR OWN events (auth.uid() = user_id)
 drop policy if exists "user_practice_events_select" on public.toeic_learning_practice_events;
 create policy "user_practice_events_select" on public.toeic_learning_practice_events
 for select to authenticated
@@ -103,11 +105,12 @@ for insert to authenticated
 with check (auth.uid() = user_id or public.is_admin());
 
 
--- 4. RPC for Admin Importing Learning Links
+-- 4. RPC: Admin Importing Learning Links
 create or replace function public.admin_import_v2_question_learning_links(links_payload jsonb)
 returns jsonb
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   v_link jsonb;
@@ -156,6 +159,10 @@ begin
 end;
 $$;
 
+revoke execute on function public.admin_import_v2_question_learning_links(jsonb) from public;
+revoke execute on function public.admin_import_v2_question_learning_links(jsonb) from anon;
+grant execute on function public.admin_import_v2_question_learning_links(jsonb) to authenticated;
+
 
 -- 5. Safe Student Practice Questions Fetch RPC
 create or replace function public.student_get_safe_v2_practice_questions(
@@ -165,6 +172,7 @@ create or replace function public.student_get_safe_v2_practice_questions(
 returns jsonb
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   v_questions jsonb;
@@ -203,6 +211,10 @@ begin
 end;
 $$;
 
+revoke execute on function public.student_get_safe_v2_practice_questions(text, text) from public;
+revoke execute on function public.student_get_safe_v2_practice_questions(text, text) from anon;
+grant execute on function public.student_get_safe_v2_practice_questions(text, text) to authenticated;
+
 
 -- 6. Safe Student Answer Check & Progress Recorder RPC
 create or replace function public.student_check_v2_practice_answer(
@@ -213,6 +225,7 @@ create or replace function public.student_check_v2_practice_answer(
 returns jsonb
 language plpgsql
 security definer
+set search_path = ''
 as $$
 declare
   v_correct_answer text;
@@ -239,7 +252,7 @@ begin
   v_correct_answer := upper(trim(v_q.correct_answer));
   v_is_correct := (upper(trim(p_selected_option)) = v_correct_answer);
 
-  -- Record event
+  -- Record event bound to auth.uid()
   if v_user_id is not null then
     insert into public.toeic_learning_practice_events (
       user_id, item_key, question_id, selected_option, is_correct
@@ -249,7 +262,7 @@ begin
     );
   end if;
 
-  -- Only NOW return correct_answer & explanation & transcript
+  -- Only NOW return correct_answer, explanation & transcript after server-side check
   return jsonb_build_object(
     'success', true,
     'is_correct', v_is_correct,
@@ -259,3 +272,7 @@ begin
   );
 end;
 $$;
+
+revoke execute on function public.student_check_v2_practice_answer(uuid, text, text) from public;
+revoke execute on function public.student_check_v2_practice_answer(uuid, text, text) from anon;
+grant execute on function public.student_check_v2_practice_answer(uuid, text, text) to authenticated;

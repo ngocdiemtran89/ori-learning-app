@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, NavLink } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, XCircle, BookOpen, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, BookOpen, ChevronRight, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase/client';
 import { ListeningMedia } from '../components/toeic/ListeningMedia';
 import { PassageDisplay } from '../components/toeic/PassageDisplay';
@@ -39,12 +39,14 @@ export const ToeicLearningPracticeV2Page: React.FC = () => {
   const [checking, setChecking] = useState<boolean>(false);
   const [result, setResult] = useState<AnswerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState(false);
 
   useEffect(() => {
     async function loadQuestions() {
       if (!key) return;
       setLoading(true);
       setError(null);
+      setIsBackendUnavailable(false);
       try {
         const { data, error: rpcErr } = await supabase.rpc('student_get_safe_v2_practice_questions', {
           p_kind: kind || 'vocabulary',
@@ -52,12 +54,16 @@ export const ToeicLearningPracticeV2Page: React.FC = () => {
         });
 
         if (rpcErr) {
-          setError(`Lỗi tải câu hỏi: ${rpcErr.message}`);
+          if (rpcErr.code === '42883' || rpcErr.code === 'PGRST202' || rpcErr.message.includes('function')) {
+            setIsBackendUnavailable(true);
+          } else {
+            setError(`Chưa có câu hỏi luyện tập nào được phê duyệt cho chủ điểm này.`);
+          }
         } else if (data) {
           setQuestions(data);
         }
       } catch (err: any) {
-        setError(err.message || 'Có lỗi xảy ra khi kết nối server.');
+        setIsBackendUnavailable(true);
       } finally {
         setLoading(false);
       }
@@ -107,6 +113,24 @@ export const ToeicLearningPracticeV2Page: React.FC = () => {
 
   if (loading) {
     return <div className="p-12 text-center text-slate-400 text-sm">Đang tải câu hỏi luyện tập...</div>;
+  }
+
+  if (isBackendUnavailable) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 bg-amber-50 rounded-3xl border border-amber-200 shadow-sm text-center space-y-4 my-8">
+        <AlertCircle className="w-12 h-12 text-amber-600 mx-auto" />
+        <h2 className="text-lg font-bold text-amber-900">Tính năng luyện tập đang được chuẩn bị</h2>
+        <p className="text-xs text-amber-700">
+          Dữ liệu luyện tập điểm kiến thức V2 đang được cập nhật. Vui lòng quay lại sau!
+        </p>
+        <NavLink
+          to="/toeic/learn"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-ori-600 text-white rounded-xl font-bold text-xs"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại thư viện kiến thức
+        </NavLink>
+      </div>
+    );
   }
 
   if (error || questions.length === 0) {

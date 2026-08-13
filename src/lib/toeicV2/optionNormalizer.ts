@@ -10,6 +10,7 @@
  * - Does NOT strip 'B' or letters from plain text (e.g., 'Beta' remains 'Beta').
  * - Preserves plain strings intact.
  * - Handles array of strings or key-value objects.
+ * - Throws a descriptive error for malformed shapes (e.g. [object Object]).
  */
 export function normalizeToeicOptions(
   inputOptions: string[] | Record<string, string> | null | undefined,
@@ -22,13 +23,23 @@ export function normalizeToeicOptions(
     return ['(A) Option A', '(B) Option B', '(C) Option C', '(D) Option D'];
   }
 
+  // Malformed check
+  const strRepr = String(inputOptions);
+  if (strRepr.includes('[object Object]') || typeof inputOptions === 'number' || typeof inputOptions === 'boolean') {
+    throw new Error(`Dữ liệu lựa chọn (options) bị sai cấu trúc: "${strRepr}".`);
+  }
+
   let rawList: { label: string; text: string }[] = [];
 
   if (Array.isArray(inputOptions)) {
     const labels = ['A', 'B', 'C', 'D'];
     rawList = inputOptions.map((opt, idx) => {
       const defaultLabel = labels[idx] || String.fromCharCode(65 + idx);
-      const strOpt = String(opt || '').trim();
+      const strOpt = typeof opt === 'object' && opt !== null ? JSON.stringify(opt) : String(opt || '').trim();
+
+      if (strOpt.includes('[object Object]')) {
+        throw new Error(`Phát hiện option không hợp lệ tại vị trí ${idx + 1}.`);
+      }
       
       // Match pattern (A) text, A. text, A) text
       const match = strOpt.match(/^\(?([A-D])\)?[\.\:\s\)\-]+(.*)$/i);
@@ -50,6 +61,10 @@ export function normalizeToeicOptions(
       const cleanLabel = key.replace(/[^A-Za-z]/g, '').toUpperCase() || 'A';
       const textVal = String(inputOptions[key] || '').trim();
       
+      if (textVal.includes('[object Object]')) {
+        throw new Error(`Phát hiện option không hợp lệ cho phím "${key}".`);
+      }
+
       const match = textVal.match(/^\(?([A-D])\)?[\.\:\s\)\-]+(.*)$/i);
       if (match) {
         return {
