@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration: 20260813_toeic_v2_learning_and_practice.sql
 -- Description: Adds ORI TOEIC Website V2 Learning Items, Question Linkages, Practice Events & Safe Practice RPCs
--- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS, REVOKE/GRANT & Two-Phase Link Authorization.
+-- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS, REVOKE/GRANT, Two-Phase Link Authorization & Direct Student Table Write Revocation.
 -- Invariants: Preserves legacy toeic_test_questions.difficulty TEXT; uses difficulty_level SMALLINT
 -- ============================================================
 
@@ -25,7 +25,7 @@ create index if not exists idx_toeic_learning_items_approved on public.toeic_lea
 
 alter table public.toeic_learning_items enable row level security;
 
--- RLS for toeic_learning_items: Only approved items or admins can be viewed by active students
+-- RLS for toeic_learning_items: Only approved items can be viewed by active students
 drop policy if exists "learning_items_select" on public.toeic_learning_items;
 create policy "learning_items_select" on public.toeic_learning_items
 for select to authenticated
@@ -96,16 +96,21 @@ create index if not exists idx_practice_events_key on public.toeic_learning_prac
 
 alter table public.toeic_learning_practice_events enable row level security;
 
--- RLS: Students can only access/insert THEIR OWN events (auth.uid() = user_id)
+-- TABLE PRIVILEGES: Explicitly revoke direct INSERT/UPDATE/DELETE from public, anon, authenticated
+-- Only SECURITY DEFINER RPC (student_check_v2_practice_answer) can INSERT practice events!
+revoke all on table public.toeic_learning_practice_events from public, anon;
+revoke insert, update, delete on table public.toeic_learning_practice_events from authenticated;
+grant select on table public.toeic_learning_practice_events to authenticated;
+grant all on table public.toeic_learning_practice_events to service_role;
+
+-- RLS: Students can ONLY SELECT THEIR OWN events (auth.uid() = user_id). DIRECT INSERT IS DENIED.
 drop policy if exists "user_practice_events_select" on public.toeic_learning_practice_events;
 create policy "user_practice_events_select" on public.toeic_learning_practice_events
 for select to authenticated
 using (auth.uid() = user_id or public.is_admin());
 
 drop policy if exists "user_practice_events_insert" on public.toeic_learning_practice_events;
-create policy "user_practice_events_insert" on public.toeic_learning_practice_events
-for insert to authenticated
-with check (auth.uid() = user_id or public.is_admin());
+-- Intentionally NO insert policy for authenticated students. Direct INSERT fails under RLS + REVOKE!
 
 
 -- 4. RPC: Admin Importing Learning Links (Two-Phase Validation-Before-Mutation)
@@ -205,7 +210,7 @@ revoke execute on function public.admin_import_v2_question_learning_links(jsonb)
 grant execute on function public.admin_import_v2_question_learning_links(jsonb) to authenticated;
 
 
--- 5. Safe Student Practice Questions Fetch RPC (Enforces p_kind and item join)
+-- 5. Safe Student Practice Questions Fetch RPC (Enforces p_kind, item join & structural invariants)
 create or replace function public.student_get_safe_v2_practice_questions(
   p_kind text,
   p_item_key text
@@ -256,9 +261,11 @@ begin
   where link.item_key = v_clean_key
     and item.item_key = v_clean_key
     and item.kind = v_clean_kind
-    and (link.is_approved = true or public.is_admin())
-    and (item.is_approved = true or public.is_admin())
-    and (t.is_published = true or public.is_admin())
+    and link.test_id = q.test_id
+    and link.question_number = q.question_number
+    and link.is_approved = true
+    and item.is_approved = true
+    and t.is_published = true
     and q.is_active = true;
 
   return v_questions;
@@ -270,7 +277,7 @@ revoke execute on function public.student_get_safe_v2_practice_questions(text, t
 grant execute on function public.student_get_safe_v2_practice_questions(text, text) to authenticated;
 
 
--- 6. Safe Student Answer Check & Progress Recorder RPC (Strict Relational Authorization)
+-- 6. Safe Student Answer Check & Progress Recorder RPC (Strict Relational Authorization & Option Validation)
 create or replace function public.student_check_v2_practice_answer(
   p_question_id uuid,
   p_item_key text,
@@ -287,6 +294,8 @@ declare
   v_q_transcript text;
   v_g_transcript text;
   v_final_transcript text;
+  v_q_part text;
+  v_q_options jsonb;
   v_is_correct boolean;
   v_user_id uuid;
   v_clean_opt text;
@@ -297,6 +306,10 @@ begin
   end if;
 
   v_user_id := auth.uid();
+  if v_user_id is null then
+    raise exception 'Unauthorized: User identity unverified';
+  end if;
+
   v_clean_opt := upper(trim(coalesce(p_selected_option, '')));
   v_clean_key := trim(coalesce(p_item_key, ''));
 
@@ -304,18 +317,21 @@ begin
     raise exception 'Invalid option selected';
   end if;
 
-  -- HARDENED AUTHORIZED RELATIONAL LOOKUP
-  -- Must prove: p_question_id belongs to a valid, published test, with active question, approved link, and approved item.
+  -- HARDENED AUTHORIZED RELATIONAL LOOKUP WITH STRUCTURAL INVARIANTS
   select
     upper(trim(q.correct_answer)),
     q.explanation,
     q.transcript,
-    g.transcript
+    g.transcript,
+    q.part,
+    q.options
   into
     v_correct_answer,
     v_q_explanation,
     v_q_transcript,
-    v_g_transcript
+    v_g_transcript,
+    v_q_part,
+    v_q_options
   from public.toeic_question_learning_items link
   join public.toeic_test_questions q on q.id = link.question_id
   join public.toeic_tests t on t.id = q.test_id
@@ -323,11 +339,13 @@ begin
   left join public.toeic_test_groups g on g.id = q.group_id
   where q.id = p_question_id
     and link.question_id = p_question_id
+    and link.test_id = q.test_id
+    and link.question_number = q.question_number
     and link.item_key = v_clean_key
     and item.item_key = v_clean_key
-    and (link.is_approved = true or public.is_admin())
-    and (item.is_approved = true or public.is_admin())
-    and (t.is_published = true or public.is_admin())
+    and link.is_approved = true
+    and item.is_approved = true
+    and t.is_published = true
     and q.is_active = true;
 
   -- Generic rejection if relational authorization fails (avoids information disclosure)
@@ -335,17 +353,26 @@ begin
     raise exception 'Practice question is unavailable';
   end if;
 
+  -- VALIDATE OPTION BY ACTUAL QUESTION PART
+  if lower(v_q_part) in ('p2', 'part2') or v_q_part = '2' then
+    if v_clean_opt not in ('A', 'B', 'C') then
+      raise exception 'Invalid option selected for Part 2 question';
+    end if;
+  else
+    if v_clean_opt not in ('A', 'B', 'C', 'D') then
+      raise exception 'Invalid option selected';
+    end if;
+  end if;
+
   v_is_correct := (v_clean_opt = v_correct_answer);
 
   -- Record practice event bound strictly to auth.uid()
-  if v_user_id is not null then
-    insert into public.toeic_learning_practice_events (
-      user_id, item_key, question_id, selected_option, is_correct
-    )
-    values (
-      v_user_id, v_clean_key, p_question_id, v_clean_opt, v_is_correct
-    );
-  end if;
+  insert into public.toeic_learning_practice_events (
+    user_id, item_key, question_id, selected_option, is_correct
+  )
+  values (
+    v_user_id, v_clean_key, p_question_id, v_clean_opt, v_is_correct
+  );
 
   v_final_transcript := coalesce(v_q_transcript, v_g_transcript);
 

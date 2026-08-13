@@ -441,5 +441,32 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
     it('35. RLS kiểm tra auth.uid() = user_id trên bảng practice events', () => {
       expect(sqlContent).toContain('using (auth.uid() = user_id or public.is_admin())');
     });
+
+    it('36. Thu hồi trực tiếp quyền INSERT/UPDATE/DELETE trên toeic_learning_practice_events từ học viên', () => {
+      expect(sqlContent).toContain('revoke insert, update, delete on table public.toeic_learning_practice_events from authenticated;');
+      expect(sqlContent).toContain('grant select on table public.toeic_learning_practice_events to authenticated;');
+      expect(sqlContent).not.toContain('create policy "user_practice_events_insert"');
+    });
+
+    it('37. RPC student_check_v2_practice_answer kiểm tra lựa chọn Part 2 A/B/C', () => {
+      expect(sqlContent).toContain("if lower(v_q_part) in ('p2', 'part2') or v_q_part = '2' then");
+      expect(sqlContent).toContain("if v_clean_opt not in ('A', 'B', 'C') then");
+      expect(sqlContent).toContain("raise exception 'Invalid option selected for Part 2 question';");
+    });
+
+    it('38. Bảng junction khống chế không cho phép null question_id và item_id', () => {
+      expect(sqlContent).toContain('question_id uuid not null references public.toeic_test_questions(id)');
+      expect(sqlContent).toContain('item_id uuid not null references public.toeic_learning_items(id)');
+    });
+
+    it('39. Ràng buộc quan hệ link.test_id = q.test_id và link.question_number = q.question_number trong RPCs', () => {
+      expect(sqlContent).toContain('and link.test_id = q.test_id');
+      expect(sqlContent).toContain('and link.question_number = q.question_number');
+    });
+
+    it('40. RPC admin_import_v2_question_learning_links thực hiện hai pha (Phase A validate -> Phase B mutate)', () => {
+      expect(sqlContent).toContain('-- PHASE A: VALIDATE ALL LINKS BEFORE ANY MUTATION');
+      expect(sqlContent).toContain('-- PHASE B: MUTATE (UPSERT) LINKS');
+    });
   });
 });
