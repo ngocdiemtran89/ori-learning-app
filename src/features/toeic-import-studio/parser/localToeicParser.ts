@@ -22,14 +22,26 @@ export function parsePartFromQuestionNumber(qNum: number): 1 | 2 | 3 | 4 | 5 | 6
 }
 
 export function parseLocalPdfPages(
-  pagesText: { pageNumber: number; text: string }[],
+  pagesText: Array<{
+    pageNumber: number;
+    text?: string;
+    extractedText?: string;
+    normalizedText?: string;
+    ocrText?: string;
+    activeTextSource?: string;
+  }>,
   defaultPdfType: 'listening' | 'reading'
 ): LocalParseResult {
   const questionsMap = new Map<number, StagingQuestion>();
   const groupsMap = new Map<string, StagingGroup>();
   const warnings: string[] = [];
 
-  pagesText.forEach(({ pageNumber, text }) => {
+  pagesText.forEach((p) => {
+    const pageNumber = p.pageNumber;
+    const isOcr = p.activeTextSource === 'OCR_TEXT' && p.ocrText;
+    const text = isOcr ? p.ocrText! : (p.normalizedText || p.extractedText || p.text || '');
+    const provenanceSource = isOcr ? 'OCR_LOCAL' : 'LOCAL';
+
     if (!text || text.trim().length === 0) return;
 
     // 1. Detect Group Headers ("Questions X–Y refer to...", "Question X refers to...")
@@ -110,10 +122,10 @@ export function parseLocalPdfPages(
               page: pageNumber,
             },
             provenance: {
-              questionTextSource: 'LOCAL',
-              optionsSource: 'LOCAL',
-              translationSource: 'LOCAL',
-              groupSource: 'LOCAL',
+              questionTextSource: provenanceSource as any,
+              optionsSource: provenanceSource as any,
+              translationSource: provenanceSource as any,
+              groupSource: provenanceSource as any,
             },
             confidence: 0.85,
             status: 'AUTO_OK',

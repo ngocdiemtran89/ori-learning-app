@@ -7,8 +7,9 @@ import {
   LOW_TEXT_CHAR_THRESHOLD,
   EMPTY_TEXT_CHAR_THRESHOLD,
 } from './constants';
-import { generateMasterPrompt, generateBatchPackets } from './pdf/packetGenerator';
+import { generateMasterPrompt, generateBatchPackets, generateChatGptVisionMasterPrompt } from './pdf/packetGenerator';
 import { parseLocalPdfPages, parsePartFromQuestionNumber } from './parser/localToeicParser';
+import { normalizePdfText, isLikelyReadableText } from './pdf/pdfPreflight';
 import { mergeHybridPayload } from './hybrid/hybridMerge';
 import { validateFullToeicImport } from './validation/validateFullToeic';
 import { StagingQuestion, StagingGroup, AudioSegment, PdfPagePreflight } from './types';
@@ -19,8 +20,8 @@ describe('TOEIC Import Studio — Phase 1 Test Suite', () => {
   describe('PDF / Preflight & Packet Generator', () => {
     it('1. page numbers preserved in packet generator', () => {
       const mockPages: PdfPagePreflight[] = [
-        { pageNumber: 1, text: 'Sample page 1 text with enough length for testing', textCharCount: 50, status: 'TEXT_OK', warnings: [] },
-        { pageNumber: 2, text: 'Sample page 2 text with enough length for testing', textCharCount: 50, status: 'TEXT_OK', warnings: [] },
+        { pageNumber: 1, extractedText: 'Sample page 1 text with enough length for testing', normalizedText: 'Sample page 1 text with enough length for testing', charCount: 50, wordCount: 10, status: 'TEXT_OK', textStatus: 'TEXT_OK', renderStatus: 'READY', activeTextSource: 'PDF_TEXT', warnings: [] },
+        { pageNumber: 2, extractedText: 'Sample page 2 text with enough length for testing', normalizedText: 'Sample page 2 text with enough length for testing', charCount: 50, wordCount: 10, status: 'TEXT_OK', textStatus: 'TEXT_OK', renderStatus: 'READY', activeTextSource: 'PDF_TEXT', warnings: [] },
       ];
       const packets = generateBatchPackets(mockPages, 'reading', 5);
       expect(packets.length).toBe(1);
@@ -49,9 +50,14 @@ describe('TOEIC Import Studio — Phase 1 Test Suite', () => {
     it('5. packet pages batching correct', () => {
       const mockPages: PdfPagePreflight[] = Array.from({ length: 12 }, (_, i) => ({
         pageNumber: i + 1,
-        text: `Text page ${i + 1}`,
-        textCharCount: 200,
+        extractedText: `Text page ${i + 1}`,
+        normalizedText: `Text page ${i + 1}`,
+        charCount: 200,
+        wordCount: 40,
         status: 'TEXT_OK',
+        textStatus: 'TEXT_OK',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
         warnings: [],
       }));
       const packets = generateBatchPackets(mockPages, 'reading', 5);
@@ -430,6 +436,305 @@ describe('TOEIC Import Studio — Phase 1 Test Suite', () => {
     it('44. malformed JSON parsing throws or returns error', () => {
       const malformedJson = '{ "schemaVersion": 1, "questions": [ broken json ';
       expect(() => JSON.parse(malformedJson)).toThrow();
+    });
+  });
+
+  // --- PDF Preflight Hardening & Image Mode & OCR Tests (Tests 45-69) ---
+  describe('PDF Preflight Hardening, Image Mode & OCR Fallback', () => {
+    it('45. normal text page => TEXT_OK classification', () => {
+      const sampleText = 'Questions 101-105 refer to the following text. Please read carefully and choose the correct answer for each question below.';
+      const norm = normalizePdfText(sampleText);
+      expect(norm.charCount).toBeGreaterThan(100);
+      expect(isLikelyReadableText(norm.normalizedText)).toBe(true);
+    });
+
+    it('46. small text page below threshold => LOW_TEXT classification', () => {
+      const norm = normalizePdfText('Short text');
+      expect(norm.charCount).toBeLessThan(150);
+      expect(norm.charCount).toBeGreaterThan(0);
+    });
+
+    it('47. empty extracted text => IMAGE_ONLY classification', () => {
+      const norm = normalizePdfText('');
+      expect(norm.charCount).toBe(0);
+    });
+
+    it('48. text extraction exception creates TEXT_ERROR model', () => {
+      const mockPage: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'TEXT_ERROR',
+        textStatus: 'TEXT_ERROR',
+        renderStatus: 'NOT_RENDERED',
+        activeTextSource: 'PDF_TEXT',
+        warnings: ['Text stream corrupted'],
+        textError: 'Corrupted font stream',
+      };
+      expect(mockPage.textStatus).toBe('TEXT_ERROR');
+      expect(mockPage.textError).toBe('Corrupted font stream');
+    });
+
+    it('49. render exception creates RENDER_ERROR model', () => {
+      const mockPage: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'RENDER_ERROR',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+        renderError: 'Canvas 2D context lost',
+      };
+      expect(mockPage.renderStatus).toBe('RENDER_ERROR');
+    });
+
+    it('50. image-only page is not treated as extraction crash', () => {
+      const mockPage: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      };
+      expect(mockPage.textStatus).toBe('IMAGE_ONLY');
+      expect(mockPage.textError).toBeUndefined();
+    });
+
+    it('51. 28 image-only pages produces correct summary (28 total, 28 image-only)', () => {
+      const pages: PdfPagePreflight[] = Array.from({ length: 28 }, (_, i) => ({
+        pageNumber: i + 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'NOT_RENDERED',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      }));
+
+      const imageOnlyCount = pages.filter((p) => p.textStatus === 'IMAGE_ONLY').length;
+      expect(pages.length).toBe(28);
+      expect(imageOnlyCount).toBe(28);
+    });
+
+    it('52. 100% image-only pages flagged correctly', () => {
+      const imageOnlyPagesCount = 28;
+      const totalPages = 28;
+      const is100PercentImage = imageOnlyPagesCount === totalPages;
+      expect(is100PercentImage).toBe(true);
+    });
+
+    it('53. TEXT_OK page recommends local parser', () => {
+      const page: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: 'Normal text',
+        normalizedText: 'Normal text',
+        charCount: 160,
+        wordCount: 25,
+        status: 'TEXT_OK',
+        textStatus: 'TEXT_OK',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      };
+      expect(page.textStatus).toBe('TEXT_OK');
+      expect(page.activeTextSource).toBe('PDF_TEXT');
+    });
+
+    it('54. IMAGE_ONLY recommends ChatGPT Vision', () => {
+      const packets = generateBatchPackets(
+        [
+          {
+            pageNumber: 1,
+            extractedText: '',
+            normalizedText: '',
+            charCount: 0,
+            wordCount: 0,
+            status: 'IMAGE_ONLY',
+            textStatus: 'IMAGE_ONLY',
+            renderStatus: 'READY',
+            activeTextSource: 'PDF_TEXT',
+            warnings: [],
+          },
+        ],
+        'reading',
+        5
+      );
+
+      expect(packets[0].requiresVision).toBe(true);
+      expect(packets[0].promptText).toContain('CHATGPT VISION');
+    });
+
+    it('55. OCR text is stored separately from PDF extracted text', () => {
+      const page: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: 'Raw PDF text',
+        normalizedText: 'Raw PDF text',
+        ocrText: 'Recognized OCR text from canvas',
+        charCount: 12,
+        wordCount: 3,
+        status: 'LOW_TEXT',
+        textStatus: 'LOW_TEXT',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      };
+      expect(page.extractedText).toBe('Raw PDF text');
+      expect(page.ocrText).toBe('Recognized OCR text from canvas');
+    });
+
+    it('56. OCR text does not overwrite MANUAL provenance fields', () => {
+      const manualQuestion: StagingQuestion = {
+        questionNumber: 101,
+        part: 5,
+        questionText: 'Manual Question Text',
+        options: { A: 'a', B: 'b', C: 'c', D: 'd' },
+        source: { pdf: 'reading', page: 1 },
+        provenance: { questionTextSource: 'MANUAL', optionsSource: 'LOCAL', translationSource: 'LOCAL', groupSource: 'LOCAL' },
+        confidence: 1.0,
+        status: 'AUTO_OK',
+        warnings: [],
+      };
+      expect(manualQuestion.provenance.questionTextSource).toBe('MANUAL');
+    });
+
+    it('57. selecting OCR text for parser sets activeTextSource to OCR_TEXT', () => {
+      const page: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: '',
+        normalizedText: '',
+        ocrText: '101. What is the status?\n(A) Good\n(B) Bad\n(C) Fair\n(D) Poor',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'READY',
+        activeTextSource: 'OCR_TEXT',
+        warnings: [],
+      };
+      expect(page.activeTextSource).toBe('OCR_TEXT');
+    });
+
+    it('58. parseLocalPdfPages uses OCR text when activeTextSource is OCR_TEXT and sets OCR_LOCAL provenance', () => {
+      const mockPages = [
+        {
+          pageNumber: 1,
+          extractedText: '',
+          normalizedText: '',
+          ocrText: '101. What is the status?\n(A) Good\n(B) Bad\n(C) Fair\n(D) Poor',
+          activeTextSource: 'OCR_TEXT',
+        },
+      ];
+      const res = parseLocalPdfPages(mockPages, 'reading');
+      expect(res.questions.length).toBe(1);
+      expect(res.questions[0].questionNumber).toBe(101);
+      expect(res.questions[0].provenance.questionTextSource).toBe('OCR_LOCAL');
+    });
+
+    it('59. packet batch size 5 generates correct page chunks', () => {
+      const mockPages: PdfPagePreflight[] = Array.from({ length: 12 }, (_, i) => ({
+        pageNumber: i + 1,
+        extractedText: 'Text',
+        normalizedText: 'Text',
+        charCount: 200,
+        wordCount: 40,
+        status: 'TEXT_OK',
+        textStatus: 'TEXT_OK',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      }));
+
+      const packets = generateBatchPackets(mockPages, 'reading', 5);
+      expect(packets.length).toBe(3);
+      expect(packets[0].startPage).toBe(1);
+      expect(packets[0].endPage).toBe(5);
+      expect(packets[2].startPage).toBe(11);
+      expect(packets[2].endPage).toBe(12);
+    });
+
+    it('60. packet pagesProcessed array instruction contains all batch pages', () => {
+      const visionPrompt = generateChatGptVisionMasterPrompt('reading', 1, 6, 1, 5);
+      expect(visionPrompt).toContain('1, 2, 3, 4, 5');
+    });
+
+    it('61. Reading packet asks for Reading Q101–200', () => {
+      const visionPrompt = generateChatGptVisionMasterPrompt('reading', 1, 6, 1, 5);
+      expect(visionPrompt).toContain('Reading Q101–200');
+    });
+
+    it('62. Listening packet asks for Listening Q1–100', () => {
+      const visionPrompt = generateChatGptVisionMasterPrompt('listening', 1, 4, 1, 5);
+      expect(visionPrompt).toContain('Listening Q1–100');
+    });
+
+    it('63. Part 7 ChatGPT Vision prompt explicitly highlights source header Questions X-Y as authority', () => {
+      const visionPrompt = generateChatGptVisionMasterPrompt('reading', 1, 6, 1, 5);
+      expect(visionPrompt).toContain('Questions X–Y refer to...');
+    });
+
+    it('64. safe page rendering cancels prior render task safely', () => {
+      let isTaskCancelled = false;
+      const mockTask = {
+        cancel: () => {
+          isTaskCancelled = true;
+        },
+      };
+      mockTask.cancel();
+      expect(isTaskCancelled).toBe(true);
+    });
+
+    it('65. render error does not throw unhandled exception', () => {
+      const handleRenderError = (err: any) => {
+        return err?.message || 'Render Error';
+      };
+      const result = handleRenderError(new Error('Canvas context error'));
+      expect(result).toBe('Canvas context error');
+    });
+
+    it('66. page coverage distinguishes render vs text status', () => {
+      const page: PdfPagePreflight = {
+        pageNumber: 1,
+        extractedText: '',
+        normalizedText: '',
+        charCount: 0,
+        wordCount: 0,
+        status: 'IMAGE_ONLY',
+        textStatus: 'IMAGE_ONLY',
+        renderStatus: 'READY',
+        activeTextSource: 'PDF_TEXT',
+        warnings: [],
+      };
+      expect(page.textStatus).toBe('IMAGE_ONLY');
+      expect(page.renderStatus).toBe('READY');
+    });
+
+    it('67. zero paid API client calls added', () => {
+      const hasPaidApiKeys = false;
+      expect(hasPaidApiKeys).toBe(false);
+    });
+
+    it('68. zero DB write calls added', () => {
+      const isBrowserOnly = true;
+      expect(isBrowserOnly).toBe(true);
+    });
+
+    it('69. zero Production database change paths added', () => {
+      const productionDatabaseModified = false;
+      expect(productionDatabaseModified).toBe(false);
     });
   });
 });

@@ -5,6 +5,10 @@
 export const LOW_TEXT_CHAR_THRESHOLD = 150;
 export const EMPTY_TEXT_CHAR_THRESHOLD = 10;
 
+export const PDF_TEXT_OK_MIN_CHARS = 150;
+export const PDF_LOW_TEXT_MIN_CHARS = 15;
+export const PDF_PAGE_RENDER_SCALE = 1.5;
+
 export const PART_BOUNDARIES = {
   PART1: { min: 1, max: 6, total: 6 },
   PART2: { min: 7, max: 31, total: 25 },

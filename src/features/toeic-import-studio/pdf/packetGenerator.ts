@@ -1,5 +1,5 @@
 /**
- * ChatGPT Master Prompt & Batch Packet Generator
+ * ChatGPT Master Prompt & Vision Packet Generator (Phase 1.1)
  */
 
 import { PdfPagePreflight, ChatGptBatchPacket } from '../types';
@@ -71,6 +71,38 @@ QUY TẮC CHẮC CHẮN VÀ BẮT BUỘC:
 }`;
 }
 
+export function generateChatGptVisionMasterPrompt(
+  sourceType: 'listening' | 'reading',
+  batchIndex: number,
+  totalBatches: number,
+  startPage: number,
+  endPage: number
+): string {
+  const isReading = sourceType === 'reading';
+  const targetRange = isReading ? 'Reading Q101–200' : 'Listening Q1–100';
+
+  return `=== ORI TOEIC HYBRID IMAGE IMPORT (CHATGPT VISION) ===
+SCHEMA: ori-full-toeic-import-v1
+SOURCE: ${sourceType.toUpperCase()} PDF
+BATCH: ${batchIndex}/${totalBatches}
+PAGES: ${startPage} -> ${endPage} (${targetRange})
+
+LƯU Ý QUAN TRỌNG:
+Các trang PDF đính kèm dưới đây là PDF scan / image-only (không có text layer).
+Vui lòng ĐỌC TRỰC TIẾP ẢNH ĐÍNH KÈM để bóc tách chính xác toàn bộ câu hỏi và bài đọc.
+
+QUY TẮC BẮT BUỘC:
+1. Trả về định dạng JSON duy nhất tuân thủ schemaVersion: 1.
+2. "pagesProcessed" phải chứa đầy đủ tất cả các trang được xử lý: [${Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i).join(', ')}].
+3. KHÔNG tự động bỏ qua bất kỳ câu hỏi nào. KHÔNG bịa chữ mờ không đọc được.
+4. Đọc chính xác số thứ tự câu, văn bản câu hỏi và 4 lựa chọn (A), (B), (C), (D).
+5. Với Reading Part 7 (hoặc Listening Part 3-4): Tiêu đề nhóm nguồn "Questions X–Y refer to..." là CƠ SỞ CỦA TẤT CẢ PHÂN NHÓM.
+6. Cung cấp bản dịch Tiếng Việt (questionVi, optionsVi, passageVi) chất lượng cao.
+7. Ghi nhận các ký tự mờ vào mảng "warnings".
+
+Vui lòng xuất mã JSON chuẩn ORI!`;
+}
+
 export function generateBatchPackets(
   pages: PdfPagePreflight[],
   sourceType: 'listening' | 'reading' | 'script',
@@ -86,20 +118,28 @@ export function generateBatchPackets(
     const endPage = batchPages[batchPages.length - 1].pageNumber;
 
     const requiresVision = batchPages.some(
-      (p) => p.status === 'LOW_TEXT' || p.status === 'IMAGE_LIKELY' || p.status === 'EMPTY'
+      (p) => p.textStatus === 'LOW_TEXT' || p.textStatus === 'IMAGE_ONLY' || p.status === 'LOW_TEXT' || (p.status as string) === 'IMAGE_LIKELY' || (p.status as string) === 'EMPTY'
     );
 
-    let promptText = `=== ORI TOEIC HYBRID BATCH ${batchIndex}/${totalBatches} (${sourceType.toUpperCase()} PDF) ===\n`;
-    promptText += `PAGES: ${startPage} -> ${endPage}\n`;
-    if (requiresVision) {
-      promptText += `⚠ KHUYÊN DÙNG CHATGPT VISION CHO CÁC TRANG SCAN/ẢNH BÊN DƯỚI.\n`;
-    }
-    promptText += `\n`;
+    let promptText = '';
+    if (requiresVision && sourceType !== 'script') {
+      promptText = generateChatGptVisionMasterPrompt(
+        sourceType as 'listening' | 'reading',
+        batchIndex,
+        totalBatches,
+        startPage,
+        endPage
+      );
+    } else {
+      promptText = `=== ORI TOEIC HYBRID BATCH ${batchIndex}/${totalBatches} (${sourceType.toUpperCase()} PDF) ===\n`;
+      promptText += `PAGES: ${startPage} -> ${endPage}\n\n`;
 
-    batchPages.forEach((p) => {
-      promptText += `--- PAGE ${p.pageNumber} (${p.status}, ${p.textCharCount} chars) ---\n`;
-      promptText += `${p.text || '[NO EXTRACTABLE TEXT]'}\n\n`;
-    });
+      batchPages.forEach((p) => {
+        const textToUse = p.extractedText || (p as any).text || '';
+        promptText += `--- PAGE ${p.pageNumber} (${p.textStatus || p.status}, ${p.charCount || (p as any).textCharCount || 0} chars) ---\n`;
+        promptText += `${textToUse || '[NO EXTRACTABLE TEXT]'}\n\n`;
+      });
+    }
 
     packets.push({
       batchIndex,

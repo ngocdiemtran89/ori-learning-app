@@ -2,18 +2,33 @@
  * ORI FULL TOEIC IMPORT STUDIO — Data Contracts & Types (Phase 1)
  */
 
-export type FieldProvenance = 'LOCAL' | 'CHATGPT' | 'MANUAL';
+export type FieldProvenance = 'LOCAL' | 'CHATGPT' | 'OCR_LOCAL' | 'MANUAL';
 
 export type QuestionStatus = 'AUTO_OK' | 'REVIEW' | 'ERROR';
 
-export type PdfPageStatus = 'TEXT_OK' | 'LOW_TEXT' | 'IMAGE_LIKELY' | 'EMPTY';
+export type PdfTextStatus = 'TEXT_OK' | 'LOW_TEXT' | 'IMAGE_ONLY' | 'TEXT_ERROR';
+
+export type PdfRenderStatus = 'NOT_RENDERED' | 'RENDERING' | 'READY' | 'RENDER_ERROR';
 
 export interface PdfPagePreflight {
   pageNumber: number;
-  text: string;
-  textCharCount: number;
-  status: PdfPageStatus;
+
+  extractedText: string;
+  normalizedText: string;
+  ocrText?: string;
+
+  charCount: number;
+  wordCount: number;
+
+  status: PdfTextStatus; // for backwards compatibility
+  textStatus: PdfTextStatus;
+  renderStatus: PdfRenderStatus;
+
+  activeTextSource: 'PDF_TEXT' | 'OCR_TEXT' | 'MANUAL';
+
   warnings: string[];
+  textError?: string;
+  renderError?: string;
 }
 
 export interface PdfPreflightReport {
@@ -21,7 +36,10 @@ export interface PdfPreflightReport {
   totalPages: number;
   pagesWithText: number;
   lowTextPages: number;
-  imageOrEmptyPages: number;
+  imageOnlyPages: number;
+  textErrorPages: number;
+  renderErrorPages: number;
+  imageOrEmptyPages: number; // for backwards compatibility
   pages: PdfPagePreflight[];
 }
 
