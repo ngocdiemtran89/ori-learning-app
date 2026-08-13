@@ -12,6 +12,7 @@ export interface Part7StructureManifestGroup {
   questionNumbers: number[];
   sourceHeader: string;
   documentKind?: string;
+  passageText?: string;
   passageFingerprint?: string;
   targetGroupId?: string;
 }

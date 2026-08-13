@@ -11,6 +11,7 @@ export interface DbGroupInfo {
   part: string;
   sort_order: number;
   passage: string;
+  documents?: any[];
   question_numbers: number[];
   min_qn: number;
   max_qn: number;
@@ -35,7 +36,7 @@ export interface GroupComparisonItem {
   dbStart?: number;
   dbEnd?: number;
   status: 'MATCH' | 'RANGE_MISMATCH' | 'MEMBERSHIP_MISMATCH' | 'PASSAGE_MISMATCH';
-  passageStatus: 'PASSAGE_MATCH' | 'PASSAGE_DIFFERENT' | 'PASSAGE_EMPTY';
+  passageStatus: 'PASSAGE_MATCH' | 'PASSAGE_DIFFERENT' | 'PASSAGE_EMPTY' | 'PASSAGE_NOT_FOUND' | 'PASSAGE_AMBIGUOUS';
   movedQuestions: { questionNumber: number; questionId?: string; fromGroupId: string; toGroupId: string }[];
 }
 
@@ -105,97 +106,115 @@ export function compareStructureWithDatabase(
 
   const groupCountMatch = dbGroupCount === sourceGroupCount;
 
-  // Sort DB groups stably by minimum question number
-  const sortedDbGroups = [...dbGroups]
-    .filter((g) => g.question_numbers && g.question_numbers.length > 0)
-    .sort((a, b) => a.min_qn - b.min_qn);
-
-  sourceGroups.forEach((sg, sIdx) => {
-    const targetDbGroup = groupCountMatch ? sortedDbGroups[sIdx] : undefined;
-    if (targetDbGroup) {
-      sg.targetGroupId = targetDbGroup.id;
-    }
-  });
-
-  const targetAssignmentHash = computeManifestAssignmentLockHash(sourceGroups);
-  manifest.structureHash = targetAssignmentHash;
+  // Compute passage fingerprints for each DB group
+  const dbGroupFingerprints = dbGroups.map((g) => ({
+    group: g,
+    fingerprint: computePassageFingerprint(g.passage, g.documents),
+  }));
 
   // Protected metadata check
   const hasProtectedMetadata = dbGroups.some((g) => g.has_bilingual_units || g.has_evidence);
-
-  let isApplyAllowed = true;
-  let blockReason: string | undefined = undefined;
-
-  if (isPublished) {
-    isApplyAllowed = false;
-    blockReason = '🟡 ĐỀ ĐANG PUBLISHED. Bạn có thể quét và xem Repair Plan. Để áp dụng sửa cấu trúc: hãy chuyển đề về Draft trước.';
-  } else if (hasProtectedMetadata) {
-    isApplyAllowed = false;
-    blockReason = '⚠ Nhóm này đã có bilingual units / evidence metadata. Cần review trước khi thay cấu trúc.';
-  } else if (!groupCountMatch && dbGroupCount > 0) {
-    isApplyAllowed = false;
-    blockReason = `⚠ Số group DB (${dbGroupCount}) khác số bài đọc nguồn (${sourceGroupCount}). Direct repair disabled.`;
-  }
 
   const groupComparisons: GroupComparisonItem[] = [];
   const questionMappings: { question_id: string; question_number: number; target_group_id: string }[] = [];
   let totalMovedQuestions = 0;
   const affectedGroupSet = new Set<string>();
 
-  sourceGroups.forEach((sg, sIdx) => {
-    const targetDbGroup = groupCountMatch ? sortedDbGroups[sIdx] : undefined;
-    const targetGroupId = targetDbGroup?.id;
+  // Track assigned target group IDs to detect duplicates/ambiguity
+  const assignedTargetGroupIds = new Set<string>();
 
-    const sourceRangeStr = `Q${sg.startQuestion}–${sg.endQuestion}`;
-    const dbRangeStr = targetDbGroup ? `Q${targetDbGroup.min_qn}–${targetDbGroup.max_qn}` : undefined;
-
-    // Check passage fingerprint
+  sourceGroups.forEach((sg) => {
+    let targetDbGroup: DbGroupInfo | undefined = undefined;
     let passageStatus: GroupComparisonItem['passageStatus'] = 'PASSAGE_EMPTY';
-    if (targetDbGroup && targetDbGroup.passage && targetDbGroup.passage.trim()) {
-      const dbPassageFp = computePassageFingerprint(targetDbGroup.passage);
-      if (sg.passageFingerprint && sg.passageFingerprint === dbPassageFp) {
+
+    const sourceFp = sg.passageFingerprint;
+
+    if (!sourceFp) {
+      passageStatus = 'PASSAGE_EMPTY';
+    } else {
+      // Find matching DB groups by passage fingerprint
+      const matchingDbGroups = dbGroupFingerprints.filter(
+        (dbg) => dbg.fingerprint && dbg.fingerprint === sourceFp
+      );
+
+      if (matchingDbGroups.length === 1) {
+        targetDbGroup = matchingDbGroups[0].group;
         passageStatus = 'PASSAGE_MATCH';
+      } else if (matchingDbGroups.length > 1) {
+        passageStatus = 'PASSAGE_AMBIGUOUS';
       } else {
-        passageStatus = 'PASSAGE_DIFFERENT';
+        // 0 matches found for this passage fingerprint
+        // If a targetGroupId was explicitly provided (e.g. from manal mapping), check that specific group
+        if (sg.targetGroupId) {
+          const explicitDbGroup = dbGroups.find((g) => g.id === sg.targetGroupId);
+          if (explicitDbGroup) {
+            const expFp = computePassageFingerprint(explicitDbGroup.passage, explicitDbGroup.documents);
+            if (expFp && expFp === sourceFp) {
+              targetDbGroup = explicitDbGroup;
+              passageStatus = 'PASSAGE_MATCH';
+            } else {
+              targetDbGroup = explicitDbGroup;
+              passageStatus = 'PASSAGE_DIFFERENT';
+            }
+          } else {
+            passageStatus = 'PASSAGE_NOT_FOUND';
+          }
+        } else {
+          passageStatus = 'PASSAGE_NOT_FOUND';
+        }
       }
     }
+
+    // Set or keep targetGroupId ONLY if we have a valid targetDbGroup
+    if (targetDbGroup) {
+      sg.targetGroupId = targetDbGroup.id;
+      assignedTargetGroupIds.add(targetDbGroup.id);
+    } else {
+      delete sg.targetGroupId;
+    }
+
+    const targetGroupId = targetDbGroup?.id;
+    const sourceRangeStr = `Q${sg.startQuestion}–${sg.endQuestion}`;
+    const dbRangeStr = targetDbGroup ? `Q${targetDbGroup.min_qn}–${targetDbGroup.max_qn}` : undefined;
 
     const movedForThisGroup: GroupComparisonItem['movedQuestions'] = [];
 
     // Map each question number in source group to target DB group ID
-    sg.questionNumbers.forEach((qNum) => {
-      const qObj = dbQuestions.find((q) => q.question_number === qNum);
-      if (qObj && targetGroupId) {
-        questionMappings.push({
-          question_id: qObj.id,
-          question_number: qNum,
-          target_group_id: targetGroupId,
-        });
-
-        if (qObj.group_id !== targetGroupId) {
-          totalMovedQuestions++;
-          affectedGroupSet.add(qObj.group_id);
-          affectedGroupSet.add(targetGroupId);
-          movedForThisGroup.push({
-            questionNumber: qNum,
-            questionId: qObj.id,
-            fromGroupId: qObj.group_id,
-            toGroupId: targetGroupId,
+    if (targetGroupId) {
+      sg.questionNumbers.forEach((qNum) => {
+        const qObj = dbQuestions.find((q) => q.question_number === qNum);
+        if (qObj) {
+          questionMappings.push({
+            question_id: qObj.id,
+            question_number: qNum,
+            target_group_id: targetGroupId,
           });
+
+          if (qObj.group_id !== targetGroupId) {
+            totalMovedQuestions++;
+            affectedGroupSet.add(qObj.group_id);
+            affectedGroupSet.add(targetGroupId);
+            movedForThisGroup.push({
+              questionNumber: qNum,
+              questionId: qObj.id,
+              fromGroupId: qObj.group_id,
+              toGroupId: targetGroupId,
+            });
+          }
         }
-      }
-    });
+      });
+    }
 
     // Evaluate status
     let status: GroupComparisonItem['status'] = 'MATCH';
-    if (!targetDbGroup) {
+    if (!targetDbGroup || passageStatus === 'PASSAGE_NOT_FOUND' || passageStatus === 'PASSAGE_AMBIGUOUS') {
       status = 'MEMBERSHIP_MISMATCH';
+    } else if (passageStatus === 'PASSAGE_DIFFERENT') {
+      status = 'PASSAGE_MISMATCH';
     } else if (sg.startQuestion !== targetDbGroup.min_qn || sg.endQuestion !== targetDbGroup.max_qn) {
       status = 'RANGE_MISMATCH';
     } else if (movedForThisGroup.length > 0) {
       status = 'MEMBERSHIP_MISMATCH';
-    } else if (passageStatus === 'PASSAGE_DIFFERENT') {
-      status = 'PASSAGE_MISMATCH';
     }
 
     groupComparisons.push({
@@ -214,6 +233,36 @@ export function compareStructureWithDatabase(
     });
   });
 
+  const targetAssignmentHash = computeManifestAssignmentLockHash(sourceGroups);
+  manifest.structureHash = targetAssignmentHash;
+
+  // Determine lock-readiness (isApplyAllowed)
+  let isApplyAllowed = true;
+  let blockReason: string | undefined = undefined;
+
+  const hasUnresolvedPassage = groupComparisons.some((gc) => !gc.targetGroupId);
+  const hasMismatchedPassage = groupComparisons.some((gc) => gc.passageStatus !== 'PASSAGE_MATCH');
+  const hasDuplicateTargets = assignedTargetGroupIds.size < sourceGroups.filter((g) => g.targetGroupId).length;
+
+  if (isPublished) {
+    isApplyAllowed = false;
+    blockReason = '🟡 ĐỀ ĐANG PUBLISHED. Bạn có thể quét và xem Repair Plan. Để áp dụng sửa cấu trúc: hãy chuyển đề về Draft trước.';
+  } else if (hasProtectedMetadata) {
+    isApplyAllowed = false;
+    blockReason = '⚠ Nhóm này đã có bilingual units / evidence metadata. Cần review trước khi thay cấu trúc.';
+  } else if (!groupCountMatch && dbGroupCount > 0) {
+    isApplyAllowed = false;
+    blockReason = `⚠ Số group DB (${dbGroupCount}) khác số bài đọc nguồn (${sourceGroupCount}). Direct repair disabled.`;
+  } else if (hasUnresolvedPassage || hasMismatchedPassage) {
+    isApplyAllowed = false;
+    const countUnresolved = groupComparisons.filter((gc) => !gc.targetGroupId).length;
+    const countMismatched = groupComparisons.filter((gc) => gc.passageStatus === 'PASSAGE_DIFFERENT').length;
+    blockReason = `⚠ Bài đọc chưa được ghép chính xác: ${countUnresolved} bài chưa tìm thấy/bị trùng lặp, ${countMismatched} bài bị sai khác nội dung (passage mismatch). Khóa cấu trúc bị chặn.`;
+  } else if (hasDuplicateTargets) {
+    isApplyAllowed = false;
+    blockReason = '⚠ Phát hiện trùng lặp targetGroupId giữa các bài đọc. Mọi bài đọc phải khớp 1-1 với DB group.';
+  }
+
   return {
     isApplyAllowed,
     blockReason,
@@ -228,3 +277,4 @@ export function compareStructureWithDatabase(
     questionMappings,
   };
 }
+
