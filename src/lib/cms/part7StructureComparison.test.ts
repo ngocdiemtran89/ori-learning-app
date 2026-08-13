@@ -145,11 +145,11 @@ describe('Part 7 DB Structure Comparison & Repair Plan Suite', () => {
 
   it('39. expectedCurrentStructureHash is correctly captured for stale-plan verification', () => {
     const plan = compareStructureWithDatabase(mockManifest, mockDbGroups, mockDbQuestions, false);
-    expect(plan.expectedCurrentStructureHash).toBe('147,148,149|150,151');
+    expect(plan.expectedCurrentStructureHash).toBe('g-1:147,148,149|g-2:150,151');
   });
 
   it('40. detectedStructureHash is correctly captured from manifest', () => {
     const plan = compareStructureWithDatabase(mockManifest, mockDbGroups, mockDbQuestions, false);
-    expect(plan.detectedStructureHash).toBe('147,148|149,150,151');
+    expect(plan.detectedStructureHash).toBe('g-1:147,148|g-2:149,150,151');
   });
 });

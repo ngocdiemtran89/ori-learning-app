@@ -3,7 +3,7 @@
  * Compares detected source manifest against active DB question membership and passage fingerprints.
  */
 
-import { Part7StructureManifest, computeStructureHash } from './part7StructureManifest';
+import { Part7StructureManifest } from './part7StructureManifest';
 import { computePassageFingerprint } from './part7StructureParser';
 
 export interface DbGroupInfo {
@@ -54,14 +54,38 @@ export interface Part7RepairPlan {
 }
 
 /**
- * Computes exact-membership structure hash from DB groups array.
- * Canonical representation: "147,148|149,150,151|..."
+ * Computes exact-membership source structure hash from DB groups array (group-ID independent).
+ * Representation: "147,148|149,150,151|..."
  */
 export function computeDbStructureHash(dbGroups: DbGroupInfo[]): string {
   if (!dbGroups || dbGroups.length === 0) return '';
   const valid = dbGroups.filter((g) => g.question_numbers && g.question_numbers.length > 0);
   const sorted = [...valid].sort((a, b) => a.min_qn - b.min_qn);
   return sorted.map((g) => [...g.question_numbers].sort((x, y) => x - y).join(',')).join('|');
+}
+
+/**
+ * Computes DB assignment lock hash incorporating group UUIDs:
+ * Format: "<group_uuid_A>:147,148|<group_uuid_B>:149,150,151|..."
+ * Distinguishes swapped group assignments between identical ranges!
+ */
+export function computeDbAssignmentLockHash(dbGroups: DbGroupInfo[]): string {
+  if (!dbGroups || dbGroups.length === 0) return '';
+  const valid = dbGroups.filter((g) => g.question_numbers && g.question_numbers.length > 0);
+  const sorted = [...valid].sort((a, b) => a.min_qn - b.min_qn);
+  return sorted.map((g) => `${g.id}:${[...g.question_numbers].sort((x, y) => x - y).join(',')}`).join('|');
+}
+
+/**
+ * Computes manifest assignment lock hash incorporating targetGroupId:
+ * Format: "<targetGroupId>:147,148|<targetGroupId>:149,150,151|..."
+ */
+export function computeManifestAssignmentLockHash(groups: { targetGroupId?: string; startQuestion: number; endQuestion: number; questionNumbers: number[] }[]): string {
+  if (!groups || groups.length === 0) return '';
+  const sorted = [...groups].sort((a, b) => a.startQuestion - b.startQuestion);
+  return sorted
+    .map((g) => `${g.targetGroupId || 'unassigned'}:${[...g.questionNumbers].sort((x, y) => x - y).join(',')}`)
+    .join('|');
 }
 
 /**
@@ -73,17 +97,28 @@ export function compareStructureWithDatabase(
   dbQuestions: DbQuestionInfo[],
   isPublished: boolean
 ): Part7RepairPlan {
-  const currentDbHash = computeDbStructureHash(dbGroups);
-
-  // Compute exact-membership target structure hash from manifest
-  const targetHash = computeStructureHash(manifest.groups);
-  manifest.structureHash = targetHash;
+  const currentDbAssignmentHash = computeDbAssignmentLockHash(dbGroups);
 
   const sourceGroups = manifest.groups;
   const dbGroupCount = dbGroups.length;
   const sourceGroupCount = sourceGroups.length;
 
   const groupCountMatch = dbGroupCount === sourceGroupCount;
+
+  // Sort DB groups stably by minimum question number
+  const sortedDbGroups = [...dbGroups]
+    .filter((g) => g.question_numbers && g.question_numbers.length > 0)
+    .sort((a, b) => a.min_qn - b.min_qn);
+
+  sourceGroups.forEach((sg, sIdx) => {
+    const targetDbGroup = groupCountMatch ? sortedDbGroups[sIdx] : undefined;
+    if (targetDbGroup) {
+      sg.targetGroupId = targetDbGroup.id;
+    }
+  });
+
+  const targetAssignmentHash = computeManifestAssignmentLockHash(sourceGroups);
+  manifest.structureHash = targetAssignmentHash;
 
   // Protected metadata check
   const hasProtectedMetadata = dbGroups.some((g) => g.has_bilingual_units || g.has_evidence);
@@ -102,11 +137,6 @@ export function compareStructureWithDatabase(
     blockReason = `⚠ Số group DB (${dbGroupCount}) khác số bài đọc nguồn (${sourceGroupCount}). Direct repair disabled.`;
   }
 
-  // Sort DB groups stably by minimum question number
-  const sortedDbGroups = [...dbGroups]
-    .filter((g) => g.question_numbers && g.question_numbers.length > 0)
-    .sort((a, b) => a.min_qn - b.min_qn);
-
   const groupComparisons: GroupComparisonItem[] = [];
   const questionMappings: { question_id: string; question_number: number; target_group_id: string }[] = [];
   let totalMovedQuestions = 0;
@@ -115,11 +145,6 @@ export function compareStructureWithDatabase(
   sourceGroups.forEach((sg, sIdx) => {
     const targetDbGroup = groupCountMatch ? sortedDbGroups[sIdx] : undefined;
     const targetGroupId = targetDbGroup?.id;
-
-    // Attach targetGroupId to manifest group object for server-side derivation
-    if (targetGroupId) {
-      sg.targetGroupId = targetGroupId;
-    }
 
     const sourceRangeStr = `Q${sg.startQuestion}–${sg.endQuestion}`;
     const dbRangeStr = targetDbGroup ? `Q${targetDbGroup.min_qn}–${targetDbGroup.max_qn}` : undefined;
@@ -197,8 +222,8 @@ export function compareStructureWithDatabase(
     dbGroupCount,
     totalMovedQuestions,
     affectedGroupCount: affectedGroupSet.size,
-    expectedCurrentStructureHash: currentDbHash,
-    detectedStructureHash: targetHash,
+    expectedCurrentStructureHash: currentDbAssignmentHash,
+    detectedStructureHash: targetAssignmentHash,
     groupComparisons,
     questionMappings,
   };
