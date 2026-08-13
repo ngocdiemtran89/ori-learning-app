@@ -43,6 +43,8 @@ import { ImportStudioPage } from './features/toeic-import-studio/components/Impo
 import { ToeicTestLibraryPage } from './pages/ToeicTestLibraryPage';
 import { ToeicTestOverviewPage } from './pages/ToeicTestOverviewPage';
 import { ToeicTestRunnerPage } from './pages/ToeicTestRunnerPage';
+import { ToeicLearningBankV2Page } from './pages/ToeicLearningBankV2Page';
+import { ToeicLearningPracticeV2Page } from './pages/ToeicLearningPracticeV2Page';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -84,6 +86,10 @@ export const App: React.FC = () => {
                 <Route path="/tests" element={<ToeicTestLibraryPage />} />
                 <Route path="/tests/:testId" element={<ToeicTestOverviewPage />} />
                 <Route path="/tests/:testId/take" element={<ToeicTestRunnerPage />} />
+
+                {/* ORI TOEIC V2 Student Learning Bank & Practice Routes */}
+                <Route path="/toeic/learn" element={<ToeicLearningBankV2Page />} />
+                <Route path="/toeic/learn/:kind/:key" element={<ToeicLearningPracticeV2Page />} />
               </Route>
 
               {/* Admin Only Routes (Requires Admin Role & Active Account) */}

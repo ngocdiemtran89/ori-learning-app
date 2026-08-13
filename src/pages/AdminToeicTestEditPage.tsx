@@ -36,6 +36,7 @@ import { SafePartContentImporterModal } from '../components/admin/PartContentImp
 import { Part6ManualGroupEditorModal } from '../components/admin/Part6ManualGroupEditorModal';
 import { Part7BatchWorkbenchModal } from '../components/admin/Part7BatchWorkbenchModal';
 import { Part7StructureScannerModal } from '../components/admin/Part7StructureScannerModal';
+import { ToeicLearningReviewPanel } from '../components/admin/ToeicLearningReviewPanel';
 import { getPart7StructureStatus } from '../lib/supabase/studentToeic';
 import { safeOptionText, hasOptionText } from '../lib/cms/toeicContentCompleteness';
 
@@ -624,6 +625,19 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                     <ImageIcon className="w-4 h-4" />
                     <span>Media Manager</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActivePart('learning' as any)}
+                    className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all whitespace-nowrap flex items-center gap-2 ${
+                      (activePart as any) === 'learning'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Learning V2 Units</span>
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -645,6 +659,11 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
                 </div>
               </div>
 
+              {/* Learning Review Tab */}
+              {(activePart as any) === 'learning' && (
+                <ToeicLearningReviewPanel testId={testId!} />
+              )}
+
               {/* Media Manager Tab */}
               {activePart === 'media' && (
                 <MediaManagerTab
@@ -664,7 +683,7 @@ export const AdminToeicTestEditPageInner: React.FC = () => {
               )}
 
               {/* Part Section */}
-              {activePart !== 'media' && (
+              {activePart !== 'media' && (activePart as any) !== 'learning' && (
                 <div className="space-y-6">
                   {/* Part Section Header */}
                   <div className="flex items-center justify-between bg-slate-50 p-4 rounded-2xl border border-slate-200">

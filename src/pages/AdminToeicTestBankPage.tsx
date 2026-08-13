@@ -21,6 +21,7 @@ import {
 } from '../lib/supabase/adminTestBank';
 import { ToeicTestPreviewModal } from '../components/admin/ToeicTestPreviewModal';
 import { ToeicPackageImporterModal } from '../components/admin/ToeicPackageImporterModal';
+import { ToeicV2JsonImporterModal } from '../components/admin/ToeicV2JsonImporterModal';
 
 export const AdminToeicTestBankPage: React.FC = () => {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ export const AdminToeicTestBankPage: React.FC = () => {
 
   // Package Importer Modal
   const [showPackageImporter, setShowPackageImporter] = useState<boolean>(false);
+  const [showV2Importer, setShowV2Importer] = useState<boolean>(false);
 
   useEffect(() => {
     loadTests();
@@ -132,6 +134,13 @@ export const AdminToeicTestBankPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> Quay lại CMS Hub
         </NavLink>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowV2Importer(true)}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded-2xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all"
+          >
+            <Sparkles className="w-4 h-4" /> IMPORT GPT JSON V2
+          </button>
           <button
             type="button"
             onClick={() => setShowPackageImporter(true)}
@@ -459,6 +468,12 @@ export const AdminToeicTestBankPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* TOEIC V2 JSON IMPORTER MODAL */}
+      <ToeicV2JsonImporterModal
+        isOpen={showV2Importer}
+        onClose={() => setShowV2Importer(false)}
+      />
 
       {/* TOEIC PACKAGE IMPORTER MODAL */}
       <ToeicPackageImporterModal
