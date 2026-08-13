@@ -54,7 +54,7 @@ export const AdminPage: React.FC = () => {
 
         <NavLink
           to="/admin/tools/toeic-audio-cutter"
-          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between sm:col-span-2"
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-emerald-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
         >
           <div className="space-y-2">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -68,6 +68,24 @@ export const AdminPage: React.FC = () => {
             </p>
           </div>
           <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
+        </NavLink>
+
+        <NavLink
+          to="/admin/tools/toeic-import-studio"
+          className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-indigo-500 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
+        >
+          <div className="space-y-2">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <span className="text-lg">🧰</span>
+            </div>
+            <h3 className="font-extrabold text-slate-900 text-base group-hover:text-indigo-600 transition-colors">
+              🧰 TOEIC Import Studio (Xử Lý & Chuẩn Hóa 200 Câu)
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Nhập đề TOEIC Full 200 câu từ PDF + ChatGPT Hybrid JSON, Staging Q1–200, kiểm tra tính toàn vẹn và xuất JSON chuẩn ORI (Phase 1 Local Only).
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
         </NavLink>
       </div>
     </div>
