@@ -1,7 +1,7 @@
 -- ============================================================
 -- Migration: 20260813_toeic_v2_learning_and_practice.sql
 -- Description: Adds ORI TOEIC Website V2 Learning Items, Question Linkages, Practice Events & Safe Practice RPCs
--- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS, REVOKE/GRANT, Two-Phase Link Authorization & Direct Student Table Write Revocation.
+-- Security: Hardened SECURITY DEFINER RPCs with search_path = '', schema qualification, RLS, REVOKE/GRANT, Two-Phase Link Authorization, Direct Table Privilege Hardening & Structural Invariants.
 -- Invariants: Preserves legacy toeic_test_questions.difficulty TEXT; uses difficulty_level SMALLINT
 -- ============================================================
 
@@ -24,6 +24,12 @@ create index if not exists idx_toeic_learning_items_key on public.toeic_learning
 create index if not exists idx_toeic_learning_items_approved on public.toeic_learning_items(is_approved);
 
 alter table public.toeic_learning_items enable row level security;
+
+-- TABLE PRIVILEGES: Explicit privilege matrix for toeic_learning_items
+revoke all on table public.toeic_learning_items from public, anon;
+revoke truncate, references, trigger on table public.toeic_learning_items from authenticated;
+grant select, insert, update, delete on table public.toeic_learning_items to authenticated;
+grant all on table public.toeic_learning_items to service_role;
 
 -- RLS for toeic_learning_items: Only approved items can be viewed by active students
 drop policy if exists "learning_items_select" on public.toeic_learning_items;
@@ -59,7 +65,13 @@ create index if not exists idx_q_learning_approved on public.toeic_question_lear
 
 alter table public.toeic_question_learning_items enable row level security;
 
--- RLS for toeic_question_learning_items
+-- TABLE PRIVILEGES: Explicit privilege matrix for toeic_question_learning_items
+revoke all on table public.toeic_question_learning_items from public, anon;
+revoke truncate, references, trigger on table public.toeic_question_learning_items from authenticated;
+grant select, insert, update, delete on table public.toeic_question_learning_items to authenticated;
+grant all on table public.toeic_question_learning_items to service_role;
+
+-- RLS for toeic_question_learning_items: Require canonical question existence
 drop policy if exists "question_learning_select" on public.toeic_question_learning_items;
 create policy "question_learning_select" on public.toeic_question_learning_items
 for select to authenticated
@@ -67,7 +79,15 @@ using (
   public.is_admin() or
   (
     is_approved = true and
-    exists (select 1 from public.toeic_tests t where t.id = test_id and t.is_published = true) and
+    exists (
+      select 1 from public.toeic_tests t
+      join public.toeic_test_questions q on q.test_id = t.id
+      where t.id = test_id
+        and q.id = question_id
+        and q.question_number = question_number
+        and t.is_published = true
+        and q.is_active = true
+    ) and
     exists (select 1 from public.toeic_learning_items item where item.id = item_id and item.is_approved = true) and
     public.has_active_access()
   )
@@ -96,24 +116,24 @@ create index if not exists idx_practice_events_key on public.toeic_learning_prac
 
 alter table public.toeic_learning_practice_events enable row level security;
 
--- TABLE PRIVILEGES: Explicitly revoke direct INSERT/UPDATE/DELETE from public, anon, authenticated
+-- TABLE PRIVILEGES: Explicitly revoke direct INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER from public, anon, authenticated
 -- Only SECURITY DEFINER RPC (student_check_v2_practice_answer) can INSERT practice events!
 revoke all on table public.toeic_learning_practice_events from public, anon;
-revoke insert, update, delete on table public.toeic_learning_practice_events from authenticated;
+revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;
 grant select on table public.toeic_learning_practice_events to authenticated;
 grant all on table public.toeic_learning_practice_events to service_role;
 
--- RLS: Students can ONLY SELECT THEIR OWN events (auth.uid() = user_id). DIRECT INSERT IS DENIED.
+-- RLS: Students can ONLY SELECT THEIR OWN events (auth.uid() = user_id). DIRECT INSERT IS DENIED BY POLICY + REVOKE.
 drop policy if exists "user_practice_events_select" on public.toeic_learning_practice_events;
 create policy "user_practice_events_select" on public.toeic_learning_practice_events
 for select to authenticated
 using (auth.uid() = user_id or public.is_admin());
 
 drop policy if exists "user_practice_events_insert" on public.toeic_learning_practice_events;
--- Intentionally NO insert policy for authenticated students. Direct INSERT fails under RLS + REVOKE!
+-- Intentionally NO insert/update/delete policy for authenticated students. Direct writes fail under RLS + REVOKE!
 
 
--- 4. RPC: Admin Importing Learning Links (Two-Phase Validation-Before-Mutation)
+-- 4. RPC: Admin Importing Learning Links (Two-Phase Validation-Before-Mutation & Strict Payload Validation)
 create or replace function public.admin_import_v2_question_learning_links(links_payload jsonb)
 returns jsonb
 language plpgsql
@@ -134,8 +154,8 @@ begin
     raise exception 'Unauthorized: Admin access required';
   end if;
 
-  if jsonb_typeof(links_payload) != 'array' then
-    raise exception 'Invalid payload: expected array of links';
+  if links_payload is null or jsonb_typeof(links_payload) != 'array' or jsonb_array_length(links_payload) = 0 then
+    raise exception 'Invalid payload: expected non-empty array of links';
   end if;
 
   -- PHASE A: VALIDATE ALL LINKS BEFORE ANY MUTATION
@@ -277,7 +297,7 @@ revoke execute on function public.student_get_safe_v2_practice_questions(text, t
 grant execute on function public.student_get_safe_v2_practice_questions(text, text) to authenticated;
 
 
--- 6. Safe Student Answer Check & Progress Recorder RPC (Strict Relational Authorization & Option Validation)
+-- 6. Safe Student Answer Check & Progress Recorder RPC (Strict Relational Authorization & Option Existence Validation)
 create or replace function public.student_check_v2_practice_answer(
   p_question_id uuid,
   p_item_key text,
@@ -300,6 +320,7 @@ declare
   v_user_id uuid;
   v_clean_opt text;
   v_clean_key text;
+  v_opt_idx integer;
 begin
   if not (public.is_admin() or public.has_active_access()) then
     raise exception 'Unauthorized: Active student subscription required';
@@ -353,7 +374,7 @@ begin
     raise exception 'Practice question is unavailable';
   end if;
 
-  -- VALIDATE OPTION BY ACTUAL QUESTION PART
+  -- VALIDATE OPTION BY QUESTION PART AND ACTUAL QUESTION OPTIONS SHAPE
   if lower(v_q_part) in ('p2', 'part2') or v_q_part = '2' then
     if v_clean_opt not in ('A', 'B', 'C') then
       raise exception 'Invalid option selected for Part 2 question';
@@ -361,6 +382,20 @@ begin
   else
     if v_clean_opt not in ('A', 'B', 'C', 'D') then
       raise exception 'Invalid option selected';
+    end if;
+  end if;
+
+  -- Option existence check against actual v_q_options
+  if v_q_options is not null then
+    if jsonb_typeof(v_q_options) = 'array' then
+      v_opt_idx := ascii(v_clean_opt) - 65;
+      if v_opt_idx < 0 or v_opt_idx >= jsonb_array_length(v_q_options) then
+        raise exception 'Invalid option selected for this question';
+      end if;
+    elsif jsonb_typeof(v_q_options) = 'object' then
+      if not (v_q_options ? v_clean_opt) then
+        raise exception 'Invalid option selected for this question';
+      end if;
     end if;
   end if;
 

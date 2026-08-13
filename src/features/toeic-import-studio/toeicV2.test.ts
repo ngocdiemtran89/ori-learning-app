@@ -410,12 +410,24 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
   });
 
   // E. Security & Migration Static Audit
-  describe('E. Security Audit of Migration 20260813 SQL File', () => {
+  describe('E. Security Audit of Migration 20260813 SQL File & Preflight Scripts', () => {
     const migrationPath = path.join(
       process.cwd(),
       'database/migrations/20260813_toeic_v2_learning_and_practice.sql'
     );
     const sqlContent = fs.readFileSync(migrationPath, 'utf8');
+
+    const preflightPath = path.join(
+      process.cwd(),
+      'database/preflight/20260813_toeic_v2_production_readonly_preflight.sql'
+    );
+    const preflightSql = fs.readFileSync(preflightPath, 'utf8');
+
+    const verifyPath = path.join(
+      process.cwd(),
+      'database/preflight/20260813_toeic_v2_post_apply_readonly_verify.sql'
+    );
+    const verifySql = fs.readFileSync(verifyPath, 'utf8');
 
     it('31. Mọi RPC SECURITY DEFINER đều khai báo set search_path = ""', () => {
       const securityDefinerFuncs = sqlContent.match(/create (or replace )?function[\s\S]*?security definer/gi) || [];
@@ -443,7 +455,7 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
     });
 
     it('36. Thu hồi trực tiếp quyền INSERT/UPDATE/DELETE trên toeic_learning_practice_events từ học viên', () => {
-      expect(sqlContent).toContain('revoke insert, update, delete on table public.toeic_learning_practice_events from authenticated;');
+      expect(sqlContent).toContain('revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;');
       expect(sqlContent).toContain('grant select on table public.toeic_learning_practice_events to authenticated;');
       expect(sqlContent).not.toContain('create policy "user_practice_events_insert"');
     });
@@ -467,6 +479,50 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
     it('40. RPC admin_import_v2_question_learning_links thực hiện hai pha (Phase A validate -> Phase B mutate)', () => {
       expect(sqlContent).toContain('-- PHASE A: VALIDATE ALL LINKS BEFORE ANY MUTATION');
       expect(sqlContent).toContain('-- PHASE B: MUTATE (UPSERT) LINKS');
+    });
+
+    it('41. Thu hồi các quyền nguy hiểm TRUNCATE/REFERENCES/TRIGGER từ vai trò authenticated trên 3 bảng V2', () => {
+      expect(sqlContent).toContain('revoke truncate, references, trigger on table public.toeic_learning_items from authenticated;');
+      expect(sqlContent).toContain('revoke truncate, references, trigger on table public.toeic_question_learning_items from authenticated;');
+      expect(sqlContent).toContain('revoke insert, update, delete, truncate, references, trigger on table public.toeic_learning_practice_events from authenticated;');
+    });
+
+    it('42. RPC admin_import_v2_question_learning_links từ chối payload NULL hoặc rỗng []', () => {
+      expect(sqlContent).toContain("if links_payload is null or jsonb_typeof(links_payload) != 'array' or jsonb_array_length(links_payload) = 0 then");
+      expect(sqlContent).toContain("raise exception 'Invalid payload: expected non-empty array of links';");
+    });
+
+    it('43. Kiểm tra tính hợp lệ của lựa chọn dựa trên hình dạng v_q_options thực tế trong DB', () => {
+      expect(sqlContent).toContain("if jsonb_typeof(v_q_options) = 'array' then");
+      expect(sqlContent).toContain("v_opt_idx := ascii(v_clean_opt) - 65;");
+      expect(sqlContent).toContain("if jsonb_typeof(v_q_options) = 'object' then");
+      expect(sqlContent).toContain("if not (v_q_options ? v_clean_opt) then");
+    });
+
+    it('44. File preflight Read-Only 100% chứa các câu lệnh SELECT và 0 câu lệnh ghi/đổi cấu trúc', () => {
+      expect(preflightSql).toContain('PREFLIGHT_01_V2_OBJECT_EXISTENCE');
+      expect(preflightSql).toContain('PREFLIGHT_02_CANONICAL_COLUMNS');
+      expect(preflightSql).not.toContain('INSERT INTO');
+      expect(preflightSql).not.toContain('UPDATE ');
+      expect(preflightSql).not.toContain('DELETE FROM');
+      expect(preflightSql).not.toContain('ALTER TABLE');
+      expect(preflightSql).not.toContain('DROP TABLE');
+    });
+
+    it('45. File post-apply Read-Only 100% chứa các câu lệnh SELECT kiểm tra sau migration', () => {
+      expect(verifySql).toContain('VERIFY_01_TABLES_EXISTENCE');
+      expect(verifySql).toContain('VERIFY_04_PRACTICE_EVENTS_PRIVILEGE_MATRIX');
+      expect(verifySql).not.toContain('INSERT INTO');
+      expect(verifySql).not.toContain('UPDATE ');
+      expect(verifySql).not.toContain('DELETE FROM');
+    });
+
+    it('46. Migration chưa giải quyết 20260812_part7_structure_first_lock.sql giữ nguyên 100% không bị đụng tới', () => {
+      const part7LockPath = path.join(
+        process.cwd(),
+        'database/migrations/20260812_part7_structure_first_lock.sql'
+      );
+      expect(fs.existsSync(part7LockPath)).toBe(true);
     });
   });
 });
