@@ -314,7 +314,6 @@ as $$
 declare
   v_correct_answer text;
   v_q_explanation text;
-  v_q_transcript text;
   v_g_transcript text;
   v_final_transcript text;
   v_q_part text;
@@ -345,14 +344,12 @@ begin
   select
     upper(trim(q.correct_answer)),
     q.explanation,
-    q.transcript,
     g.transcript,
     q.part,
     q.options
   into
     v_correct_answer,
     v_q_explanation,
-    v_q_transcript,
     v_g_transcript,
     v_q_part,
     v_q_options
@@ -412,7 +409,7 @@ begin
     v_user_id, v_clean_key, p_question_id, v_clean_opt, v_is_correct
   );
 
-  v_final_transcript := coalesce(v_q_transcript, v_g_transcript);
+  v_final_transcript := v_g_transcript;
 
   -- Only NOW return correct_answer, explanation & transcript after server-side check
   return jsonb_build_object(

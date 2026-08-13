@@ -591,5 +591,35 @@ describe('ORI TOEIC Website V2 Canonical Importer & Hardening Suite', () => {
       expect(verifySql).toContain('VERIFY_02_COLUMNS_AND_APPROVAL_DEFAULTS');
       expect(verifySql).toContain('PASS: NOT NULL DEFAULT FALSE');
     });
+
+    it('59. Migration 20260813 hoàn toàn KHÔNG tham chiếu q.transcript hay thêm cột transcript vào toeic_test_questions', () => {
+      expect(sqlContent).not.toContain('q.transcript');
+      expect(sqlContent).not.toContain('ALTER TABLE public.toeic_test_questions ADD COLUMN transcript');
+      expect(sqlContent).not.toContain('ALTER TABLE toeic_test_questions ADD COLUMN transcript');
+    });
+
+    it('60. RPC student_check_v2_practice_answer sử dụng g.transcript từ nhóm toeic_test_groups', () => {
+      expect(sqlContent).toContain('g.transcript');
+      expect(sqlContent).toContain('v_final_transcript := v_g_transcript;');
+    });
+
+    it('61. RPC student_get_safe_v2_practice_questions (safe fetch) KHÔNG trả về transcript trước khi nộp bài', () => {
+      const safeFetchBody = sqlContent.substring(
+        sqlContent.indexOf('create or replace function public.student_get_safe_v2_practice_questions'),
+        sqlContent.indexOf('create or replace function public.student_check_v2_practice_answer')
+      );
+      expect(safeFetchBody).not.toContain("'transcript'");
+      expect(safeFetchBody).toContain('SECURITY INVARIANT: DOES NOT RETURN correct_answer, explanation, transcript');
+    });
+
+    it('62. Preflight SQL loại bỏ toeic_test_questions.transcript khỏi hợp đồng cột bắt buộc nhưng vẫn giữ toeic_test_groups.transcript', () => {
+      expect(preflightSql).not.toContain("select 'toeic_test_questions', 'transcript'");
+      expect(preflightSql).toContain("select 'toeic_test_groups', 'transcript'");
+    });
+
+    it('63. Migration không chứa bất kỳ lệnh ALTER TABLE sửa đổi cấu trúc bảng canonical toeic_test_questions', () => {
+      expect(sqlContent).not.toContain('alter table public.toeic_test_questions');
+      expect(sqlContent).not.toContain('alter table toeic_test_questions');
+    });
   });
 });
