@@ -206,6 +206,8 @@ export function classifyPart2Topic(text: string): { primary: Part2SituationalTop
   return { primary: 'OTHER_TOPIC' };
 }
 
+export const classifyPart2Question = classifySinglePart2Question;
+
 // Single Part 2 Question Deterministic Classifier
 export function classifySinglePart2Question(q: Part2ClassificationInput): Part2ClassificationResult {
   const transcript = (q.transcript || '').trim();

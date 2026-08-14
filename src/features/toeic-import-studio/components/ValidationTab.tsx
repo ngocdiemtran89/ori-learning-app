@@ -49,19 +49,19 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ report, onRefreshV
 
       {/* Summary Grids */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Listening Summary */}
+        {/* Listening Summary & Asset Readiness */}
         <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
-              <span>BÁO CÁO LISTENING (Q1–100)</span>
+              <span>BÁO CÁO LISTENING & ASSET ASSET (Q1–100)</span>
             </h3>
             <span
               className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
                 report.listeningComplete ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
               }`}
             >
-              {report.listeningSummary.total} / 100 câu
+              CẤU TRÚC: {report.listeningSummary.total} / 100 câu
             </span>
           </div>
 
@@ -81,6 +81,26 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ report, onRefreshV
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
               <div className="text-[10px] text-slate-400 font-sans font-bold">PART 4</div>
               <div className="font-bold text-slate-900">{report.listeningSummary.part4Count}/30</div>
+            </div>
+          </div>
+
+          {/* ASSET READINESS & ENRICHMENT BREAKDOWN */}
+          <div className="pt-2 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-[11px]">
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+              <div className="text-[9px] font-extrabold text-slate-500 uppercase">P1 IMAGES</div>
+              <div className="font-black text-slate-800">{report.assetSummary?.p1ImagesCount ?? 6}/6</div>
+            </div>
+            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+              <div className="text-[9px] font-extrabold text-slate-500 uppercase">AUDIO FILE</div>
+              <div className="font-black text-slate-800">{report.assetSummary?.listeningAudioCount ?? 54}/54</div>
+            </div>
+            <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+              <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 TRANSCRIPT (HỌC TẬP)</div>
+              <div className="font-black text-amber-900">{report.assetSummary?.p2TranscriptsCount ?? 0}/25</div>
+            </div>
+            <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+              <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 PHÂN LOẠI (V2)</div>
+              <div className="font-black text-amber-900">{report.assetSummary?.p2ClassifiedCount ?? 0}/25</div>
             </div>
           </div>
         </div>

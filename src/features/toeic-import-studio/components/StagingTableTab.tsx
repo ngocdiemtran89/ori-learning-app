@@ -145,7 +145,23 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                     </td>
                     <td className="py-3 px-4 space-y-1">
                       <div className="font-semibold text-slate-900 line-clamp-2">
-                        {q.questionText || <span className="text-slate-400 italic">[Chưa có văn bản câu hỏi]</span>}
+                        {q.part === 1 ? (
+                          <span className="text-slate-600 font-bold flex items-center gap-1.5">
+                            📷 Audio-only Photograph (Q{q.questionNumber})
+                          </span>
+                        ) : q.part === 2 ? (
+                          (q as any).transcript ? (
+                            <span className="text-slate-800 font-medium">
+                              🎙 {(q as any).transcript}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 italic flex items-center gap-1">
+                              🎙 Spoken Prompt (Audio-only)
+                            </span>
+                          )
+                        ) : (
+                          q.questionText || <span className="text-slate-400 italic">[Chưa có văn bản câu hỏi]</span>
+                        )}
                       </div>
                       {q.questionVi && (
                         <div className="text-emerald-700 font-normal text-[11px] line-clamp-1">
@@ -154,7 +170,19 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-[11px] space-y-0.5">
-                      {q.options && (q.options.A || q.options.B) ? (
+                      {q.part === 1 ? (
+                        <span className="text-slate-500 font-mono font-bold">(A) (B) (C) (D) — Spoken audio</span>
+                      ) : q.part === 2 ? (
+                        (q as any).script_responses ? (
+                          <div className="space-y-0.5 text-[10px] text-slate-600">
+                            <div>A: {(q as any).script_responses.A}</div>
+                            <div>B: {(q as any).script_responses.B}</div>
+                            <div>C: {(q as any).script_responses.C}</div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 font-mono font-bold">(A) (B) (C) — Spoken audio</span>
+                        )
+                      ) : q.options && (q.options.A || q.options.B) ? (
                         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
                           <span>(A) {q.options.A}</span>
                           <span>(B) {q.options.B}</span>

@@ -163,6 +163,14 @@ export interface FullValidationReport {
     total: number;
   };
 
+  assetSummary?: {
+    p1ImagesCount: number;
+    listeningAudioCount: number;
+    p3p4GraphicsCount: number;
+    p2TranscriptsCount: number;
+    p2ClassifiedCount: number;
+  };
+
   pageCoverageSummary: {
     listeningTotal: number;
     listeningHandled: number;

@@ -30,7 +30,7 @@ export function parseLocalPdfPages(
     ocrText?: string;
     activeTextSource?: string;
   }>,
-  defaultPdfType: 'listening' | 'reading'
+  _defaultPdfType?: 'listening' | 'reading'
 ): LocalParseResult {
   const questionsMap = new Map<number, StagingQuestion>();
   const groupsMap = new Map<string, StagingGroup>();
@@ -118,7 +118,7 @@ export function parseLocalPdfPages(
             options,
             groupKey,
             source: {
-              pdf: defaultPdfType,
+              pdf: qNum <= 100 ? 'listening' : 'reading',
               page: pageNumber,
             },
             provenance: {
