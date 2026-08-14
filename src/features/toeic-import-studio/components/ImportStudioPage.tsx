@@ -34,10 +34,16 @@ import { AudioTab } from './AudioTab';
 import { ValidationTab } from './ValidationTab';
 import { ExportTab } from './ExportTab';
 
+import { createDefaultVisualAssetRegistry, ToeicVisualAssetRegistry } from '../../../lib/toeicPackage/visualAssetTypes';
+import { extractPart1ImagesFromPdf } from '../../../lib/toeicPackage/part1ImageExtractor';
+
 export const ImportStudioPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<number>(1);
   const [draftId] = useState<string>('ori-toeic-test-1');
   const [testTitle, setTestTitle] = useState<string>('ORI Full TOEIC Test 2026');
+
+  // Shared Visual Asset Registry State (Session scoped across tabs)
+  const [visualAssetsRegistry, setVisualAssetsRegistry] = useState<ToeicVisualAssetRegistry>(() => createDefaultVisualAssetRegistry());
 
   // Source Files State
   const [listeningPdf, setListeningPdf] = useState<File | null>(null);
@@ -95,12 +101,36 @@ export const ImportStudioPage: React.FC = () => {
     );
   }, [questions, groups, audioSegments, listeningReport, readingReport]);
 
-  // Handle PDF Preflight Loading
+  // Handle PDF Preflight Loading & Part 1 Auto Extraction
   const handleListeningPdfChange = async (file: File) => {
     setListeningPdf(file);
     try {
       const rep = await processPdfPreflight(file);
       setListeningReport(rep);
+
+      // Auto-extract Part 1 images into shared visual asset registry
+      const extractedP1 = await extractPart1ImagesFromPdf(file);
+      if (extractedP1 && Object.keys(extractedP1).length > 0) {
+        setVisualAssetsRegistry((prev) => {
+          const next = new Map(prev);
+          Object.values(extractedP1).forEach((item) => {
+            const key = `Q${item.questionNumber}`;
+            const previewUrl = URL.createObjectURL(item.blob);
+            next.set(key, {
+              assetType: 'P1_IMAGE',
+              ownerType: 'QUESTION',
+              ownerKey: key,
+              sourcePdf: 'listening',
+              sourcePage: item.sourcePage || 1,
+              blob: item.blob,
+              previewUrl,
+              status: item.status === 'AUTO_EXTRACTED' ? 'AUTO_EXTRACTED' : 'NEEDS_REVIEW',
+              confidence: 0.95,
+            });
+          });
+          return next;
+        });
+      }
     } catch (e: any) {
       alert(`Lỗi đọc PDF Listening: ${e?.message || e}`);
     }
@@ -359,6 +389,7 @@ export const ImportStudioPage: React.FC = () => {
         <StagingTableTab
           questions={questions}
           groups={groups}
+          visualAssetsRegistry={visualAssetsRegistry}
           onUpdateQuestion={handleUpdateQuestion}
           onUpdateGroup={handleUpdateGroup}
         />

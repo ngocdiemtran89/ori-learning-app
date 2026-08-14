@@ -85,22 +85,47 @@ export const ValidationTab: React.FC<ValidationTabProps> = ({ report, onRefreshV
           </div>
 
           {/* ASSET READINESS & ENRICHMENT BREAKDOWN */}
-          <div className="pt-2 border-t border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-[11px]">
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-              <div className="text-[9px] font-extrabold text-slate-500 uppercase">P1 IMAGES</div>
-              <div className="font-black text-slate-800">{report.assetSummary?.p1ImagesCount ?? 6}/6</div>
+          <div className="pt-3 border-t border-slate-100 space-y-3 text-xs">
+            <div className="font-extrabold text-slate-800 uppercase tracking-tight flex items-center justify-between text-[11px]">
+              <span>🎯 EXAM READINESS</span>
+              <span className={`px-2 py-0.5 rounded font-black ${
+                report.isReadyForDbImport ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                FULL TEST: {report.isReadyForDbImport ? 'READY ✅' : 'BLOCKED 🔴'}
+              </span>
             </div>
-            <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
-              <div className="text-[9px] font-extrabold text-slate-500 uppercase">AUDIO FILE</div>
-              <div className="font-black text-slate-800">{report.assetSummary?.listeningAudioCount ?? 54}/54</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-center text-[11px]">
+              <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                <div className="text-[9px] font-extrabold text-slate-500 uppercase">CẤU TRÚC</div>
+                <div className="font-black text-slate-900">200 / 200</div>
+              </div>
+              <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                <div className="text-[9px] font-extrabold text-slate-500 uppercase">P1 IMAGES</div>
+                <div className="font-black text-slate-900">{report.assetSummary?.p1ImagesCount ?? 6}/6</div>
+              </div>
+              <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                <div className="text-[9px] font-extrabold text-slate-500 uppercase">P3/P4 GRAPHICS</div>
+                <div className="font-black text-slate-900">{report.assetSummary?.p3p4GraphicsCount ?? 5}/5</div>
+              </div>
             </div>
-            <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
-              <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 TRANSCRIPT (HỌC TẬP)</div>
-              <div className="font-black text-amber-900">{report.assetSummary?.p2TranscriptsCount ?? 0}/25</div>
+
+            <div className="font-extrabold text-amber-900 uppercase tracking-tight flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+              <span>💡 LEARNING ENRICHMENT (V2)</span>
+              <span className={`px-2 py-0.5 rounded font-black ${
+                (report.assetSummary?.p2TranscriptsCount ?? 0) === 25 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                P2 STATUS: {(report.assetSummary?.p2TranscriptsCount ?? 0) === 25 ? 'COMPLETE ✅' : 'INCOMPLETE 🟡'}
+              </span>
             </div>
-            <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
-              <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 PHÂN LOẠI (V2)</div>
-              <div className="font-black text-amber-900">{report.assetSummary?.p2ClassifiedCount ?? 0}/25</div>
+            <div className="grid grid-cols-2 gap-2 text-center text-[11px]">
+              <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+                <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 TRANSCRIPTS</div>
+                <div className="font-black text-amber-900">{report.assetSummary?.p2TranscriptsCount ?? 0}/25</div>
+              </div>
+              <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+                <div className="text-[9px] font-extrabold text-amber-800 uppercase">P2 CLASSIFIED</div>
+                <div className="font-black text-amber-900">{report.assetSummary?.p2ClassifiedCount ?? 0}/25</div>
+              </div>
             </div>
           </div>
         </div>

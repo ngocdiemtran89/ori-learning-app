@@ -16,6 +16,7 @@ import JSZip from 'jszip';
 import { PdfPreflightReport, ChatGptBatchPacket } from '../types';
 import { generateMasterPrompt, generateBatchPackets } from '../pdf/packetGenerator';
 import { generatePart2AudioTranscriptPrompt } from '../../../lib/toeicPackage/p2TranscriptPatcher';
+import { exportPart2AudioTranscriptPackZip } from '../../../lib/toeicPackage/p2AudioPackExporter';
 import { loadPdfDocument } from '../../../lib/cms/pdfUtils';
 import { PDF_PAGE_RENDER_SCALE } from '../constants';
 import { downloadBlob, downloadTextFile } from '../utils/downloadHelper';
@@ -493,20 +494,35 @@ export const ChatGptHybridTab: React.FC<ChatGptHybridTabProps> = ({
 
           {/* PART 2 AUDIO TRANSCRIPT RECOVERY CARD */}
           <div className="mt-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 p-5 rounded-3xl space-y-3 shadow-xs">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h4 className="font-extrabold text-amber-950 text-xs uppercase tracking-tight flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-600" /> 🎙 PART 2 AUDIO TRANSCRIPT RECOVERY (Q7–Q31)
               </h4>
-              <button
-                onClick={() => {
-                  const prompt = generatePart2AudioTranscriptPrompt();
-                  navigator.clipboard.writeText(prompt);
-                  alert('✓ Đã sao chép Master Prompt cho Part 2 Audio Transcript!');
-                }}
-                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
-              >
-                <Copy className="w-3.5 h-3.5" /> [SAO CHÉP PROMPT P2 TRANSCRIPT]
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const prompt = generatePart2AudioTranscriptPrompt();
+                    navigator.clipboard.writeText(prompt);
+                    alert('✓ Đã sao chép Master Prompt cho Part 2 Audio Transcript!');
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Copy className="w-3.5 h-3.5" /> [SAO CHÉP PROMPT P2 TRANSCRIPT]
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await exportPart2AudioTranscriptPackZip([], 'ORI TOEIC Test 1');
+                      downloadBlob(res.zipBlob, 'ori-p2-audio-transcript-pack.zip');
+                    } catch (err: any) {
+                      alert(`Lỗi xuất gói ZIP P2 Transcript: ${err?.message || err}`);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Archive className="w-3.5 h-3.5 text-amber-400" /> [EXPORT P2 TRANSCRIPT PACK]
+                </button>
+              </div>
             </div>
             <p className="text-[11px] text-amber-900 font-medium">
               Văn bản bài nghe Part 2 không nằm trong sách PDF. Prompt & các câu trả lời A/B/C được trích xuất từ 25 file audio qua Whisper hoặc ChatGPT Hybrid.

@@ -1,21 +1,26 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Search, Edit3, AlertCircle, CheckCircle2, Filter } from 'lucide-react';
+import { Table, Search, Edit3, AlertCircle, CheckCircle2, Filter, Image as ImageIcon, Crop, Eye } from 'lucide-react';
 import { StagingQuestion, StagingGroup } from '../types';
+import { ToeicVisualAssetRegistry } from '../../../lib/toeicPackage/visualAssetTypes';
 import { QuestionEditorModal } from './QuestionEditorModal';
 import { GroupEditorModal } from './GroupEditorModal';
 
 interface StagingTableTabProps {
   questions: StagingQuestion[];
   groups: StagingGroup[];
+  visualAssetsRegistry?: ToeicVisualAssetRegistry;
   onUpdateQuestion: (updated: StagingQuestion) => void;
   onUpdateGroup: (updated: StagingGroup) => void;
+  onOpenCropModal?: (ownerKey: string) => void;
 }
 
 export const StagingTableTab: React.FC<StagingTableTabProps> = ({
   questions,
   groups,
+  visualAssetsRegistry,
   onUpdateQuestion,
   onUpdateGroup,
+  onOpenCropModal,
 }) => {
   const [filterPart, setFilterPart] = useState<'ALL' | 'LISTENING' | 'READING' | 'REVIEW' | 'ERROR'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -130,15 +135,36 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                     </td>
                     <td className="py-3 px-3 font-mono text-[11px] text-slate-600">
                       {q.groupKey ? (
-                        <button
-                          onClick={() => {
-                            const grp = groups.find((g) => g.groupKey === q.groupKey);
-                            if (grp) setEditingGroup(grp);
-                          }}
-                          className="hover:underline text-indigo-600 font-bold"
-                        >
-                          {q.groupKey}
-                        </button>
+                        <div className="space-y-1">
+                          <button
+                            onClick={() => {
+                              const grp = groups.find((g) => g.groupKey === q.groupKey);
+                              if (grp) setEditingGroup(grp);
+                            }}
+                            className="hover:underline text-indigo-600 font-bold"
+                          >
+                            {q.groupKey}
+                          </button>
+                          {['P3-Q62-64', 'P3-Q65-67', 'P3-Q68-70', 'P4-Q95-97', 'P4-Q98-100'].includes(q.groupKey) && (
+                            <div className="text-[10px]">
+                              {(() => {
+                                const asset = visualAssetsRegistry?.get(q.groupKey);
+                                const isReady = asset && (asset.blob || asset.previewUrl || asset.status === 'APPROVED');
+                                return (
+                                  <button
+                                    onClick={() => q.groupKey && onOpenCropModal?.(q.groupKey)}
+                                    className={`px-1.5 py-0.5 rounded font-extrabold flex items-center gap-1 ${
+                                      isReady ? 'bg-emerald-100 text-emerald-800' : 'bg-purple-100 text-purple-800'
+                                    }`}
+                                  >
+                                    <ImageIcon className="w-3 h-3" />
+                                    <span>GRAPHIC {isReady ? '✅' : '🖼'}</span>
+                                  </button>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-slate-400">Đơn lẻ</span>
                       )}
@@ -146,9 +172,56 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                     <td className="py-3 px-4 space-y-1">
                       <div className="font-semibold text-slate-900 line-clamp-2">
                         {q.part === 1 ? (
-                          <span className="text-slate-600 font-bold flex items-center gap-1.5">
-                            📷 Audio-only Photograph (Q{q.questionNumber})
-                          </span>
+                          (() => {
+                            const assetKey = `Q${q.questionNumber}`;
+                            const asset = visualAssetsRegistry?.get(assetKey);
+                            const imgUrl = asset?.previewUrl || (asset?.blob ? URL.createObjectURL(asset.blob) : null);
+                            return (
+                              <div className="flex items-center gap-3">
+                                {imgUrl ? (
+                                  <img
+                                    src={imgUrl}
+                                    alt={`Part 1 Q${q.questionNumber}`}
+                                    className="w-16 h-12 object-cover rounded-lg border border-slate-200 shadow-xs cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={() => window.open(imgUrl, '_blank')}
+                                  />
+                                ) : (
+                                  <div className="w-16 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-[10px] font-bold text-rose-600">
+                                    <ImageIcon className="w-4 h-4" />
+                                    <span>MISSING</span>
+                                  </div>
+                                )}
+                                <div className="space-y-1">
+                                  <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                                    <span>Photograph (Q{q.questionNumber})</span>
+                                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                      asset?.status === 'APPROVED' || asset?.status === 'AUTO_EXTRACTED'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                      {asset?.status || 'MISSING'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {imgUrl && (
+                                      <button
+                                        onClick={() => window.open(imgUrl, '_blank')}
+                                        className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-0.5"
+                                      >
+                                        <Eye className="w-3 h-3" /> XEM ẢNH
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => onOpenCropModal?.(assetKey)}
+                                      className="text-[10px] font-bold text-purple-600 hover:underline flex items-center gap-0.5"
+                                    >
+                                      <Crop className="w-3 h-3" /> CHỈNH CẮT
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()
                         ) : q.part === 2 ? (
                           (q as any).transcript ? (
                             <span className="text-slate-800 font-medium">
