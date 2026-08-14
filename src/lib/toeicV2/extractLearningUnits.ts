@@ -5,6 +5,7 @@
 import { OriToeicV2Package, V2LearningUnit } from './types';
 import { classifySinglePart5Question } from './part5Classifier';
 import { classifySinglePart2Question } from './part2Classifier';
+import { isPlaceholderString } from '../toeicPackage/contentIntegrity';
 
 export interface ExtractedQuestionLearningLink {
   question_number: number;
@@ -123,6 +124,9 @@ export function extractLearningUnitsFromV2Package(pkg: OriToeicV2Package): Extra
           });
         }
       } else if ((q.part as string) === 'P5' || (q.part as string) === 'part5' || (q.question_number >= 101 && q.question_number <= 130)) {
+        const isP5Placeholder = isPlaceholderString(q.question_text) || (Array.isArray(q.options) && q.options.some((opt: string) => isPlaceholderString(opt)));
+        if (isP5Placeholder) return;
+
         // Automatic Part 5 Classifier fallback
         const classified = classifySinglePart5Question({
           question_number: q.question_number,

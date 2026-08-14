@@ -3,6 +3,7 @@
 // ============================================================
 
 import { OriToeicPackageV1, ToeicPackageValidationReport, PackageIssue, getCanonicalToeicGroupType } from './types';
+import { validateToeicContentIntegrity } from './contentIntegrity';
 
 export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValidationReport {
   const blockers: PackageIssue[] = [];
@@ -384,6 +385,19 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
     });
   }
 
+  // Content Integrity & Placeholder Detection
+  const contentReport = validateToeicContentIntegrity(pkg);
+  if (!contentReport.isContentComplete) {
+    contentReport.blockers.forEach((b) => {
+      blockers.push({
+        severity: b.severity,
+        code: b.code,
+        message: b.message,
+        target: b.target,
+      });
+    });
+  }
+
   // isValidForDraft is strictly blockers.length === 0
   const isValidForDraft = blockers.length === 0;
 
@@ -412,6 +426,8 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
       missingImageCount,
       missingAnswerCount,
       conventions,
+      realContentQuestionsCount: contentReport.realContentQuestionsCount,
+      placeholderQuestionsCount: contentReport.placeholderQuestionsCount,
     },
   };
 }

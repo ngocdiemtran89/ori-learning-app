@@ -13,8 +13,14 @@ import { RawPackageSources, getCanonicalToeicGroupType } from './types';
 describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
   // Complete 54 physical audio files + 6 images for canonical valid test
   const sampleRawSources: RawPackageSources = {
-    listeningPdfText: 'PART 1 ... PART 2 ... PART 3 ... PART 4 ...',
-    readingPdfText: 'PART 5 ... PART 6 ... PART 7 ...',
+    listeningPdfText: Array.from({ length: 69 }, (_, i) => {
+      const qNum = 32 + i;
+      return `${qNum}. What is the main topic of discussion? (A) Meeting schedule (B) Project update (C) Travel budget (D) New policy`;
+    }).join('\n'),
+    readingPdfText: Array.from({ length: 100 }, (_, i) => {
+      const qNum = 101 + i;
+      return `${qNum}. The company plans to expand operations next year. (A) expand (B) expansion (C) expansive (D) expanding`;
+    }).join('\n'),
     answerKeyText: Array.from({ length: 200 }, (_, i) => `${i + 1}. A`).join('\n'),
     transcriptPdfText: 'Q32-34 Transcript for group 1',
     audioFiles: [
@@ -224,8 +230,8 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       ];
 
       const rawSources: RawPackageSources = {
-        listeningPdfText: 'PART 1 ... PART 2 ... PART 3 ... PART 4 ...',
-        readingPdfText: 'PART 5 ... PART 6 ... PART 7 ...',
+        listeningPdfText: sampleRawSources.listeningPdfText,
+        readingPdfText: sampleRawSources.readingPdfText,
         answerKeyText: Array.from({ length: 200 }, (_, i) => `${i + 1}. A`).join('\n'),
         audioFiles: realTest1AudioFiles,
         part1PdfCroppedImages: {
@@ -250,6 +256,7 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       expect(val.counts.readyMediaCount).toBe(60);
       expect(val.counts.conventions.p2Convention).toBe('P2_GLOBAL_QNUM');
 
+      console.log('BLOCKERS:', JSON.stringify(val.blockers, null, 2));
       expect(val.isValidForDraft).toBe(true);
       expect(val.blockers.length).toBe(0);
     });

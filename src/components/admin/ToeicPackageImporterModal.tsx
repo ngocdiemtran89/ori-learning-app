@@ -805,7 +805,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
                     <div>
                       <h3 className="font-extrabold text-sm uppercase tracking-wide">TRẠNG THÁI SỨC KHỎE GÓI ĐỀ THI</h3>
                       <p className={`text-xs font-black ${validationReport.isValidForDraft ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {validationReport.isValidForDraft ? 'READY TO CREATE DRAFT (ĐỦ ĐIỀU KIỆN TẠO DRAFT)' : 'BLOCKED — FIX REQUIRED (CÓ LỖI BLOCKER NGHỄN)'}
+                        {validationReport.isValidForDraft ? 'READY TO CREATE DRAFT (ĐỦ ĐIỀU KIỆN TẠO DRAFT)' : 'CONTENT EXTRACTION INCOMPLETE — BLOCKED (NỘI DUNG CHƯA HOÀN THIỆN)'}
                       </p>
                     </div>
                   </div>
@@ -815,16 +815,17 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
                   </div>
                 </div>
 
-                {/* ASSET COMPLEteness GRID */}
-                <div className="grid grid-cols-2 md:grid-cols-8 gap-2 text-center text-[11px] font-bold pt-2 border-t border-slate-700">
-                  <div className="bg-slate-700/60 p-2 rounded-xl">CÂU HỎI: {validationReport.counts.totalQuestions}/200</div>
+                {/* ASSET & CONTENT INTEGRITY GRID */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-center text-[11px] font-bold pt-2 border-t border-slate-700">
+                  <div className="bg-slate-700/60 p-2 rounded-xl">CẤU TRÚC: {validationReport.counts.totalQuestions}/200</div>
                   <div className="bg-slate-700/60 p-2 rounded-xl">ĐÁP ÁN: {validationReport.counts.totalAnswers}/200</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">P1 IMAGES: {validationReport.counts.p1ImageCount}/6</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">P1 AUDIO: {validationReport.counts.p1AudioCount}/6</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">P2 AUDIO: {validationReport.counts.p2AudioCount}/25</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">P3 AUDIO: {validationReport.counts.p3GroupAudioCount}/13</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">P4 AUDIO: {validationReport.counts.p4GroupAudioCount}/10</div>
-                  <div className="bg-slate-700/60 p-2 rounded-xl">TỔNG AUDIO: {validationReport.counts.totalAudioFiles}/54</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">MEDIA: {validationReport.counts.totalAudioFiles + validationReport.counts.p1ImageCount}/60</div>
+                  <div className={`p-2 rounded-xl ${(validationReport.counts.placeholderQuestionsCount || 0) > 0 ? 'bg-amber-500/30 text-amber-200 border border-amber-500/50' : 'bg-slate-700/60'}`}>
+                    NỘI DUNG THẬT: {validationReport.counts.realContentQuestionsCount ?? 200}/200
+                  </div>
+                  <div className={`p-2 rounded-xl ${(validationReport.counts.placeholderQuestionsCount || 0) > 0 ? 'bg-red-500/30 text-red-200 border border-red-500/50' : 'bg-slate-700/60'}`}>
+                    PLACEHOLDER: {validationReport.counts.placeholderQuestionsCount ?? 0} CÂU
+                  </div>
                 </div>
               </div>
 
@@ -832,7 +833,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               {validationReport.blockers.length > 0 && (
                 <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2 text-xs text-red-900">
                   <span className="font-extrabold uppercase flex items-center gap-1.5 text-red-700">
-                    <AlertOctagon className="w-4 h-4" /> LỖI NGHỄN BLOCKER THẮT NÚT ({validationReport.blockers.length}):
+                    <AlertOctagon className="w-4 h-4" /> HOÀN THIỆN NỘI DUNG TRƯỚC KHI TẠO DRAFT ({validationReport.blockers.length} LỖI NGHỄN):
                   </span>
                   <ul className="list-disc list-inside space-y-1 font-bold">
                     {validationReport.blockers.map((b, i) => (
@@ -872,7 +873,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Tải JSON Package (.json)</span>
+                  <span>Tải Package Manifest JSON</span>
                 </button>
               </div>
 

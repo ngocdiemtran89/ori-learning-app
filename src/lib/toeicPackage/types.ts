@@ -152,6 +152,8 @@ export interface ToeicPackageValidationReport {
     missingImageCount: number;
     missingAnswerCount: number;
     conventions: PackageMediaConventions;
+    realContentQuestionsCount?: number;
+    placeholderQuestionsCount?: number;
   };
 }
 

@@ -55,12 +55,10 @@ export function parseListeningPdfText(pdfText: string): ListeningParseResult {
     const qList: OriPackageQuestion[] = [];
 
     for (let qNum = startQ; qNum <= endQ; qNum++) {
-      // Look for question line like "32. What is the woman asking about?"
-      const qNumRegex = new RegExp(`(?:Q|Question|#)?\\s*${qNum}[\\s.:\\)\\-]+([\\s\\S]*?)(?=(?:Q|Question|#)?\\s*${qNum + 1}[\\s.:\\)\\-]|(A\\)|\\(A\\))|$)`, 'i');
+      const qNumRegex = new RegExp(`(?:Q|Question|#)?\\s*${qNum}[\\s.:\\)\\-]+([\\s\\S]*?)(?=(?:Q|Question|#)?\\s*${qNum + 1}[\\s.:\\)\\-]|$)`, 'i');
       const match = blockText.match(qNumRegex);
-      const qTextRaw = match ? match[1].trim() : `Question ${qNum}`;
+      const qBlock = match ? match[1].trim() : '';
 
-      // Options matching
       const options = [
         { label: 'A' as const, text: 'Option A' },
         { label: 'B' as const, text: 'Option B' },
@@ -68,21 +66,24 @@ export function parseListeningPdfText(pdfText: string): ListeningParseResult {
         { label: 'D' as const, text: 'Option D' },
       ];
 
-      const optA = blockText.match(/(?:A\)|[\(]A[\)]|\bA\.)\s*([^\n\r\(A-D]+)/i);
-      const optB = blockText.match(/(?:B\)|[\(]B[\)]|\bB\.)\s*([^\n\r\(A-D]+)/i);
-      const optC = blockText.match(/(?:C\)|[\(]C[\)]|\bC\.)\s*([^\n\r\(A-D]+)/i);
-      const optD = blockText.match(/(?:D\)|[\(]D[\)]|\bD\.)\s*([^\n\r\(A-D]+)/i);
+      const optA = qBlock.match(/(?:A\)|[\(]A[\)]|\bA\.)\s*([^\n\r\(A-D]+)/i);
+      const optB = qBlock.match(/(?:B\)|[\(]B[\)]|\bB\.)\s*([^\n\r\(A-D]+)/i);
+      const optC = qBlock.match(/(?:C\)|[\(]C[\)]|\bC\.)\s*([^\n\r\(A-D]+)/i);
+      const optD = qBlock.match(/(?:D\)|[\(]D[\)]|\bD\.)\s*([^\n\r\(A-D]+)/i);
 
       if (optA) options[0].text = optA[1].trim();
       if (optB) options[1].text = optB[1].trim();
       if (optC) options[2].text = optC[1].trim();
       if (optD) options[3].text = optD[1].trim();
 
+      const firstOptIdx = qBlock.search(/(?:A\)|[\(]A[\)]|\bA\.)/i);
+      const qText = firstOptIdx > 0 ? qBlock.substring(0, firstOptIdx).trim() : qBlock;
+
       qList.push({
         question_number: qNum,
         part,
         group_index: groupIndex,
-        question_text: qTextRaw || `Question ${qNum}`,
+        question_text: qText || `Question ${qNum}`,
         options,
       });
     }
