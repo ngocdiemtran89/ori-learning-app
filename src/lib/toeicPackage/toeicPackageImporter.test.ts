@@ -8,7 +8,7 @@ import { validateToeicPackage } from './validation';
 import { parseAnswerKeyText } from './answerKeyParser';
 import { matchPackageMedia, detectP2NumberingConvention } from './mediaMatcher';
 import { importToeicPackage } from './packageImporter';
-import { RawPackageSources } from './types';
+import { RawPackageSources, getCanonicalToeicGroupType } from './types';
 
 describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
   // Complete 54 physical audio files + 6 images for canonical valid test
@@ -252,6 +252,88 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
       expect(val.isValidForDraft).toBe(true);
       expect(val.blockers.length).toBe(0);
+    });
+  });
+
+  // GROUP_TYPE PRODUCTION CONTRACT SUITE
+  describe('GROUP_TYPE PRODUCTION CONTRACT REGRESSION SUITE', () => {
+    it('A. Part3 groups have group_type = conversation', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p3Groups = pkg.groups.filter(g => g.part === 'part3');
+      expect(p3Groups.length).toBe(13);
+      expect(p3Groups.every(g => g.group_type === 'conversation')).toBe(true);
+    });
+
+    it('B. Part4 groups have group_type = talk', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p4Groups = pkg.groups.filter(g => g.part === 'part4');
+      expect(p4Groups.length).toBe(10);
+      expect(p4Groups.every(g => g.group_type === 'talk')).toBe(true);
+    });
+
+    it('C. Part6 groups have group_type = text_completion', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p6Groups = pkg.groups.filter(g => g.part === 'part6');
+      expect(p6Groups.length).toBe(4);
+      expect(p6Groups.every(g => g.group_type === 'text_completion')).toBe(true);
+    });
+
+    it('D. Part7 groups have group_type = reading_set', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p7Groups = pkg.groups.filter(g => g.part === 'part7');
+      expect(p7Groups.length).toBeGreaterThan(0);
+      expect(p7Groups.every(g => g.group_type === 'reading_set')).toBe(true);
+    });
+
+    it('E. Null/missing group_type blocks Draft before RPC call', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      (pkg.groups[0] as any).group_type = null;
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'MISSING_GROUP_TYPE')).toBe(true);
+    });
+
+    it('F. Wrong Part/group_type pairing blocks Draft before RPC call', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p3g = pkg.groups.find(g => g.part === 'part3')!;
+      p3g.group_type = 'talk'; // Mismatch!
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'INVALID_GROUP_TYPE_PAIRING')).toBe(true);
+    });
+
+    it('G. Full Test 1 package has 0 null group_type across all groups', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(true);
+      expect(pkg.groups.every(g => Boolean(g.group_type))).toBe(true);
+      expect(pkg.groups.filter(g => !g.group_type).length).toBe(0);
+    });
+
+    it('H. Draft importer payload passes group_type through to classifier RPC caller', async () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const res = await importToeicPackage(pkg, { isDryRun: true });
+      expect(res.isDryRun).toBe(true);
+      expect(res.report.isValidForDraft).toBe(true);
+      expect(pkg.groups.every(g => typeof g.group_type === 'string' && g.group_type.length > 0)).toBe(true);
+    });
+
+    it('I. Part 7 group count remains dynamic and retains reading_set group_type', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const p7Groups = pkg.groups.filter(g => g.part === 'part7');
+      expect(p7Groups.length).toBe(15);
+      expect(p7Groups.every(g => g.group_type === 'reading_set')).toBe(true);
+    });
+
+    it('J. Helper getCanonicalToeicGroupType returns canonical values for normalized part strings', () => {
+      expect(getCanonicalToeicGroupType('part3')).toBe('conversation');
+      expect(getCanonicalToeicGroupType('p3')).toBe('conversation');
+      expect(getCanonicalToeicGroupType('part4')).toBe('talk');
+      expect(getCanonicalToeicGroupType('p4')).toBe('talk');
+      expect(getCanonicalToeicGroupType('part6')).toBe('text_completion');
+      expect(getCanonicalToeicGroupType('p6')).toBe('text_completion');
+      expect(getCanonicalToeicGroupType('part7')).toBe('reading_set');
+      expect(getCanonicalToeicGroupType('p7')).toBe('reading_set');
     });
   });
 

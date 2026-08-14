@@ -99,6 +99,7 @@ export function parseListeningPdfText(pdfText: string): ListeningParseResult {
     groups.push({
       group_index: groupIndex,
       part: 'part3',
+      group_type: 'conversation',
       start_question: startQ,
       end_question: endQ,
       title: `Part 3 Conversation (Q${startQ}–${endQ})`,
@@ -117,6 +118,7 @@ export function parseListeningPdfText(pdfText: string): ListeningParseResult {
     groups.push({
       group_index: groupIndex,
       part: 'part4',
+      group_type: 'talk',
       start_question: startQ,
       end_question: endQ,
       title: `Part 4 Talk (Q${startQ}–${endQ})`,

@@ -59,6 +59,7 @@ export function parseReadingPdfText(pdfText: string): ReadingParseResult {
     groups.push({
       group_index: groupIndex,
       part: 'part6',
+      group_type: 'text_completion',
       start_question: startQ,
       end_question: endQ,
       title: `Part 6 Passage (Q${startQ}–${endQ})`,
@@ -106,6 +107,7 @@ export function parseReadingPdfText(pdfText: string): ReadingParseResult {
     groups.push({
       group_index: groupIndex,
       part: 'part7',
+      group_type: 'reading_set',
       start_question: startQ,
       end_question: endQ,
       title: `Part 7 ${docTypeLabel} (Q${startQ}–${endQ})`,

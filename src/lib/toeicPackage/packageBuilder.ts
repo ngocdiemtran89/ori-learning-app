@@ -2,7 +2,7 @@
 // Phase P3.5G: One-Click TOEIC Test Package Importer - Package Builder
 // ============================================================
 
-import { OriToeicPackageV1, RawPackageSources, OriPackageQuestion, OriPackageGroup, OriPackageAnswerEntry } from './types';
+import { OriToeicPackageV1, RawPackageSources, OriPackageQuestion, OriPackageGroup, OriPackageAnswerEntry, getCanonicalToeicGroupType } from './types';
 import { parseListeningPdfText } from './listeningParser';
 import { parseReadingPdfText } from './readingParser';
 import { parseAnswerKeyText } from './answerKeyParser';
@@ -52,11 +52,14 @@ export function buildOriToeicPackage(sources: RawPackageSources, testTitle?: str
     }
   }
 
-  // 3. Merge Groups
+  // 3. Merge Groups & Ensure canonical group_type
   const allGroups: OriPackageGroup[] = [
     ...listeningRes.groups,
     ...readingRes.groups,
-  ];
+  ].map(g => ({
+    ...g,
+    group_type: g.group_type || getCanonicalToeicGroupType(g.part),
+  }));
 
   // 4. Answer Key
   const ansRes = parseAnswerKeyText(sources.answerKeyText || '');

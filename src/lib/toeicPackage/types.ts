@@ -38,6 +38,7 @@ export interface OriPackageQuestion {
 export interface OriPackageGroup {
   group_index: number;
   part: 'part3' | 'part4' | 'part6' | 'part7';
+  group_type?: 'conversation' | 'talk' | 'text_completion' | 'reading_set' | string;
   start_question: number;
   end_question: number;
   title?: string | null;
@@ -52,6 +53,17 @@ export interface OriPackageGroup {
   }>;
   local_audio_file?: File | null;
   local_image_file?: File | null;
+}
+
+export function getCanonicalToeicGroupType(part: string): string {
+  const p = (part || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  if (p === 'part3' || p === 'p3' || p === '3') return 'conversation';
+  if (p === 'part4' || p === 'p4' || p === '4') return 'talk';
+  if (p === 'part6' || p === 'p6' || p === '6') return 'text_completion';
+  if (p === 'part7' || p === 'p7' || p === '7') return 'reading_set';
+  if (p === 'part1' || p === 'p1' || p === '1') return 'photo';
+  if (p === 'part2' || p === 'p2' || p === '2') return 'question_response';
+  return 'reading_set';
 }
 
 export interface OriPackageAnswerEntry {

@@ -2,7 +2,7 @@
 // Phase P3.5G: One-Click TOEIC Test Package Importer - Package Validator
 // ============================================================
 
-import { OriToeicPackageV1, ToeicPackageValidationReport, PackageIssue } from './types';
+import { OriToeicPackageV1, ToeicPackageValidationReport, PackageIssue, getCanonicalToeicGroupType } from './types';
 
 export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValidationReport {
   const blockers: PackageIssue[] = [];
@@ -156,6 +156,34 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
       message: `Part 4 phải có đúng 10 nhóm câu hỏi (hiện tại: ${p4GroupCount}/10).`,
     });
   }
+
+  // 2.5 Group Type Validation
+  pkg.groups.forEach((g) => {
+    const expectedType = getCanonicalToeicGroupType(g.part);
+    if (!g.group_type || !g.group_type.trim()) {
+      blockers.push({
+        severity: 'BLOCKER',
+        code: 'MISSING_GROUP_TYPE',
+        message: `Nhóm câu Part ${g.part} (Q${g.start_question}–${g.end_question}) chưa có group_type hợp lệ.`,
+        target: `Q${g.start_question}–${g.end_question}`,
+      });
+    } else {
+      const actualType = g.group_type.trim().toLowerCase();
+      if (
+        (g.part === 'part3' && actualType !== 'conversation') ||
+        (g.part === 'part4' && actualType !== 'talk') ||
+        (g.part === 'part6' && actualType !== 'text_completion') ||
+        (g.part === 'part7' && !['reading_set', 'single_passage', 'double_passage', 'triple_passage'].includes(actualType))
+      ) {
+        blockers.push({
+          severity: 'BLOCKER',
+          code: 'INVALID_GROUP_TYPE_PAIRING',
+          message: `Nhóm câu Part ${g.part} (Q${g.start_question}–${g.end_question}) có group_type '${g.group_type}' không khớp với cấu trúc Production (kỳ vọng '${expectedType}').`,
+          target: `Q${g.start_question}–${g.end_question}`,
+        });
+      }
+    }
+  });
 
   // 3. Answer Key Validation
   const seenAnsQNums = new Set<number>();

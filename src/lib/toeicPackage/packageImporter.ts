@@ -2,7 +2,7 @@
 // Phase P3.5G: One-Click TOEIC Test Package Importer - Package Importer Core
 // ============================================================
 
-import { OriToeicPackageV1, ToeicPackageValidationReport } from './types';
+import { OriToeicPackageV1, ToeicPackageValidationReport, getCanonicalToeicGroupType } from './types';
 import { validateToeicPackage } from './validation';
 import { importToeicTestDraft } from '../supabase/adminToeicClassifier';
 import { importBilingualContent } from '../supabase/adminTestBank';
@@ -79,8 +79,12 @@ export async function importToeicPackage(
       groups: pkg.groups.map(g => ({
         group_temp_key: `grp_${g.group_index}`,
         part: g.part,
+        group_type: g.group_type || getCanonicalToeicGroupType(g.part),
         title: g.title || null,
         passage: g.passage || null,
+        transcript: g.transcript || null,
+        instruction: g.instruction_vi || null,
+        documents: g.documents || [],
       })),
     };
 
