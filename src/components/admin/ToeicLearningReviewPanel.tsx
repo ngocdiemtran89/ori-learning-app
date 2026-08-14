@@ -1,11 +1,12 @@
 // ============================================================
-// ORI TOEIC Website V2 — Learning Review Panel with GPT Hybrid Integration
+// ORI TOEIC Website V2 — Learning Review Panel with GPT Hybrid Integration (Part 2 & Part 5)
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
 import { BookOpen, CheckCircle, Clock, Sparkles, Download, Upload, CheckSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
 import { exportPart5GptHybridPacket, importPart5GptHybridResult, Part5ClassificationInput } from '../../lib/toeicV2/part5Classifier';
+import { exportPart2GptHybridPacket, importPart2GptHybridResult, Part2ClassificationInput } from '../../lib/toeicV2/part2Classifier';
 
 interface Props {
   testId: string;
@@ -113,24 +114,39 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
     try {
       const { data: questionsData } = await supabase
         .from('toeic_test_questions')
-        .select('question_number, part, question_text, options, correct_answer')
-        .eq('test_id', testId)
-        .eq('part', 'part5');
+        .select('question_number, part, question_text, options, correct_answer, explanation')
+        .eq('test_id', testId);
 
       if (questionsData && questionsData.length > 0) {
-        const inputs: Part5ClassificationInput[] = questionsData.map((q: any) => ({
-          question_number: q.question_number,
-          part: 'part5',
-          question_text: q.question_text,
-          options: q.options,
-          correct_answer: q.correct_answer,
-        }));
+        const p2Questions: Part2ClassificationInput[] = questionsData
+          .filter((q: any) => q.part === 'part2' || q.part === 'P2' || (q.question_number >= 7 && q.question_number <= 31))
+          .map((q: any) => ({
+            question_number: q.question_number,
+            part: 'part2',
+            transcript: q.question_text || q.explanation,
+            correct_answer: q.correct_answer,
+          }));
 
-        const packetJson = exportPart5GptHybridPacket(inputs);
+        const p5Questions: Part5ClassificationInput[] = questionsData
+          .filter((q: any) => q.part === 'part5' || q.part === 'P5' || (q.question_number >= 101 && q.question_number <= 130))
+          .map((q: any) => ({
+            question_number: q.question_number,
+            part: 'part5',
+            question_text: q.question_text,
+            options: q.options,
+            correct_answer: q.correct_answer,
+          }));
+
+        const packetJson = JSON.stringify({
+          schema_version: 'ori.toeic.gpt_hybrid_combined.v1',
+          part2: p2Questions.length > 0 ? JSON.parse(exportPart2GptHybridPacket(p2Questions)) : null,
+          part5: p5Questions.length > 0 ? JSON.parse(exportPart5GptHybridPacket(p5Questions)) : null,
+        }, null, 2);
+
         navigator.clipboard.writeText(packetJson);
-        alert('Đã copy Gói JSON GPT Hybrid vào Clipboard! Bạn có thể dán sang ChatGPT.');
+        alert('Đã copy Gói JSON GPT Hybrid Part 2 & Part 5 vào Clipboard! Bạn có thể dán sang ChatGPT.');
       } else {
-        alert('Không tìm thấy câu hỏi Part 5 nào trong đề thi này.');
+        alert('Không tìm thấy câu hỏi nào trong đề thi này.');
       }
     } catch (err: any) {
       alert(`Lỗi xuất GPT packet: ${err.message}`);
@@ -144,33 +160,77 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
     try {
       const { data: questionsData } = await supabase
         .from('toeic_test_questions')
-        .select('question_number, part, question_text, options, correct_answer')
-        .eq('test_id', testId)
-        .eq('part', 'part5');
+        .select('question_number, part, question_text, options, correct_answer, explanation')
+        .eq('test_id', testId);
 
-      const inputs: Part5ClassificationInput[] = (questionsData || []).map((q: any) => ({
-        question_number: q.question_number,
-        part: 'part5',
-        question_text: q.question_text,
-        options: q.options,
-        correct_answer: q.correct_answer,
-      }));
+      const p2Inputs: Part2ClassificationInput[] = (questionsData || [])
+        .filter((q: any) => q.part === 'part2' || q.part === 'P2' || (q.question_number >= 7 && q.question_number <= 31))
+        .map((q: any) => ({
+          question_number: q.question_number,
+          part: 'part2',
+          transcript: q.question_text || q.explanation,
+          correct_answer: q.correct_answer,
+        }));
 
-      const results = importPart5GptHybridResult(gptJsonInput, inputs);
+      const p5Inputs: Part5ClassificationInput[] = (questionsData || [])
+        .filter((q: any) => q.part === 'part5' || q.part === 'P5' || (q.question_number >= 101 && q.question_number <= 130))
+        .map((q: any) => ({
+          question_number: q.question_number,
+          part: 'part5',
+          question_text: q.question_text,
+          options: q.options,
+          correct_answer: q.correct_answer,
+        }));
 
-      // Save imported results
-      const itemsToUpsert = results.map((r) => ({
-        kind: r.kind,
-        item_key: r.item_key,
-        title: r.title,
-        definition: r.reasoning || '',
-        example: '',
-        difficulty_level: 3,
-        is_approved: false,
-      }));
+      let itemsToUpsert: any[] = [];
 
-      await supabase.from('toeic_learning_items').upsert(itemsToUpsert, { onConflict: 'item_key' });
-      await fetchLearningLinks();
+      try {
+        const parsed = JSON.parse(gptJsonInput);
+        if (parsed.part2 || parsed.schema_version === 'ori.toeic.gpt_hybrid_p2.v1') {
+          const p2Results = importPart2GptHybridResult(gptJsonInput, p2Inputs);
+          p2Results.forEach((r) => {
+            itemsToUpsert.push({
+              kind: 'grammar',
+              item_key: r.question_type_item_key,
+              title: r.question_type_label_vi,
+              definition: r.reasoning || '',
+              example: '',
+              difficulty_level: 3,
+              is_approved: false,
+            });
+            itemsToUpsert.push({
+              kind: 'vocabulary',
+              item_key: r.primary_topic_item_key,
+              title: r.primary_topic_label_vi,
+              definition: r.reasoning || '',
+              example: '',
+              difficulty_level: 3,
+              is_approved: false,
+            });
+          });
+        }
+        if (parsed.part5 || parsed.schema_version === 'ori.toeic.gpt_hybrid.v1') {
+          const p5Results = importPart5GptHybridResult(gptJsonInput, p5Inputs);
+          p5Results.forEach((r) => {
+            itemsToUpsert.push({
+              kind: r.kind,
+              item_key: r.item_key,
+              title: r.title,
+              definition: r.reasoning || '',
+              example: '',
+              difficulty_level: 3,
+              is_approved: false,
+            });
+          });
+        }
+      } catch (err: any) {
+        throw new Error(`Dữ liệu JSON nhập không đúng định dạng GPT Hybrid: ${err.message}`);
+      }
+
+      if (itemsToUpsert.length > 0) {
+        await supabase.from('toeic_learning_items').upsert(itemsToUpsert, { onConflict: 'item_key' });
+        await fetchLearningLinks();
+      }
 
       setGptStatusMsg('Đã nhập thành công phân tích GPT Hybrid!');
       setTimeout(() => setShowGptModal(false), 1200);
@@ -199,10 +259,10 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
         <div>
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-blue-600" />
-            Duyệt điểm kiến thức V2 (Learning Units)
+            Duyệt điểm kiến thức V2 (Part 2 Listening & Part 5 Reading)
           </h3>
           <p className="text-xs text-slate-500">
-            Các điểm ngữ pháp, từ vựng, collocation & paraphrase tự động trích xuất từ đề thi
+            Dạng câu hỏi nghe Part 2 (WH, How, Yes/No, Request...), Chủ đề ngữ cảnh & Điểm ngữ pháp Part 5
           </p>
         </div>
 
@@ -241,7 +301,7 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            {kind === 'all' ? 'Tất cả' : kind}
+            {kind === 'all' ? 'Tất cả' : kind === 'grammar' ? 'Dạng câu / Ngữ pháp' : kind === 'vocabulary' ? 'Chủ đề / Từ vựng' : kind}
           </button>
         ))}
       </div>
@@ -316,10 +376,10 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xl rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4">
             <h3 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-indigo-600" /> Nhập kết quả phân tích GPT Hybrid
+              <Sparkles className="w-5 h-5 text-indigo-600" /> Nhập kết quả phân tích GPT Hybrid (Part 2 & Part 5)
             </h3>
             <p className="text-xs text-slate-500 font-medium">
-              Dán đoạn JSON trả về từ ChatGPT chứa phân tích danh mục điểm kiến thức Part 5 vào đây:
+              Dán đoạn JSON trả về từ ChatGPT chứa phân tích danh mục điểm kiến thức vào đây:
             </p>
 
             <textarea
