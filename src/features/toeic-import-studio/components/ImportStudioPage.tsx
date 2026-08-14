@@ -40,7 +40,7 @@ import { extractPart1ImagesFromPdf } from '../../../lib/toeicPackage/part1ImageE
 export const ImportStudioPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<number>(1);
   const [draftId] = useState<string>('ori-toeic-test-1');
-  const [testTitle, setTestTitle] = useState<string>('ORI Full TOEIC Test 2026');
+  const [testTitle, setTestTitle] = useState<string>('ORI 2026 - Test 1');
 
   // Shared Visual Asset Registry State (Session scoped across tabs)
   const [visualAssetsRegistry, setVisualAssetsRegistry] = useState<ToeicVisualAssetRegistry>(() => createDefaultVisualAssetRegistry());

@@ -32,7 +32,7 @@ export const ExportTab: React.FC<ExportTabProps> = ({
     const payload: OriFullToeicImportSchema = {
       schemaVersion: 1,
       test: {
-        title: testTitle || 'ORI Full TOEIC Test 2026',
+        title: testTitle || 'ORI 2026 - Test 1',
       },
       sourceCoverage: {
         listeningPages: [],

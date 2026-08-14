@@ -11,6 +11,7 @@ import {
 import { exportPart2AudioTranscriptPackZip } from './p2AudioPackExporter';
 import { validateAndPatchPart2Transcripts } from './p2TranscriptPatcher';
 import { buildOriToeicPackage } from './packageBuilder';
+import { buildToeicTestRpcPayload } from '../supabase/adminToeicClassifier';
 import { RawPackageSources } from './types';
 import JSZip from 'jszip';
 import fs from 'fs';
@@ -217,6 +218,25 @@ describe('ORI TOEIC — Golden Test 1 Acceptance & Visual Asset Suite', () => {
       const summary = summarizeVisualAssetRegistry(registry);
       expect(summary.isAssetsReady).toBe(true);
       expect(summary.totalAssetsReady).toBe(11);
+    });
+  });
+
+  describe('G. Final Pre-RPC Dry Run Payload Checks (Section 3, 4, 7, 14, 17)', () => {
+    it('F. Sanitize media URLs prevents blob: URLs from polluting RPC payload', () => {
+      const draftWithBlobUrls: any = {
+        metadata: { title: 'ORI 2026 - Test 1', slug: 'ori-2026-test-1', test_type: 'full' },
+        questions: [
+          { question_number: 1, part: 'part1', image_url: 'blob:http://localhost/temp-img-1', audio_url: 'toeic/test-1/audio/q1.mp3' },
+        ],
+        groups: [
+          { group_temp_key: 'grp_1', part: 'part3', group_type: 'conversation', image_url: 'blob:http://localhost/temp-graphic-1' },
+        ],
+      };
+
+      const { groupsPayload, questionsPayload } = buildToeicTestRpcPayload(draftWithBlobUrls);
+      expect(questionsPayload[0].image_url).toBeNull();
+      expect(questionsPayload[0].audio_url).toBe('toeic/test-1/audio/q1.mp3');
+      expect(groupsPayload[0].image_url).toBeNull();
     });
   });
 });

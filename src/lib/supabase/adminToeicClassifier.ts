@@ -10,6 +10,14 @@ export function buildToeicTestRpcPayload(draft: ParsedToeicTestDraft) {
     test_type: draft.metadata.test_type
   };
 
+  const sanitizeMediaUrl = (url?: string | null): string | null => {
+    if (!url || typeof url !== 'string') return null;
+    if (url.startsWith('blob:') || url.startsWith('http://localhost') || url.startsWith('https://localhost')) {
+      return null; // Local browser transient memory URLs must NEVER be persisted to DB
+    }
+    return url;
+  };
+
   const groupsPayload = draft.groups.map(g => ({
     group_temp_key: g.group_temp_key,
     part: g.part,
@@ -18,8 +26,8 @@ export function buildToeicTestRpcPayload(draft: ParsedToeicTestDraft) {
     instruction: g.instruction,
     passage: g.passage,
     transcript: g.transcript,
-    audio_url: g.audio_url,
-    image_url: g.image_url,
+    audio_url: sanitizeMediaUrl(g.audio_url),
+    image_url: sanitizeMediaUrl(g.image_url),
     documents: g.documents
   }));
 
@@ -31,8 +39,8 @@ export function buildToeicTestRpcPayload(draft: ParsedToeicTestDraft) {
     options: q.options,
     correct_answer: q.correct_answer,
     explanation: q.explanation,
-    audio_url: q.audio_url,
-    image_url: q.image_url
+    audio_url: sanitizeMediaUrl(q.audio_url),
+    image_url: sanitizeMediaUrl(q.image_url)
   }));
 
   return { testPayload, groupsPayload, questionsPayload };
