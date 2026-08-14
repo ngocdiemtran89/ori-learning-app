@@ -1,10 +1,11 @@
 // ============================================================
-// ORI TOEIC Website V2 — Learning Review Panel
+// ORI TOEIC Website V2 — Learning Review Panel with GPT Hybrid Integration
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
-import { BookOpen, CheckCircle, Clock, Sparkles } from 'lucide-react';
+import { BookOpen, CheckCircle, Clock, Sparkles, Download, Upload, CheckSquare } from 'lucide-react';
 import { supabase } from '../../lib/supabase/client';
+import { exportPart5GptHybridPacket, importPart5GptHybridResult, Part5ClassificationInput } from '../../lib/toeicV2/part5Classifier';
 
 interface Props {
   testId: string;
@@ -29,6 +30,9 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
   const [links, setLinks] = useState<LearningLinkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeKind, setActiveKind] = useState<string>('all');
+  const [showGptModal, setShowGptModal] = useState(false);
+  const [gptJsonInput, setGptJsonInput] = useState('');
+  const [gptStatusMsg, setGptStatusMsg] = useState<string | null>(null);
 
   const fetchLearningLinks = async () => {
     setLoading(true);
@@ -87,6 +91,94 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
     }
   };
 
+  const handleBulkApprove = async () => {
+    const pendingIds = links.filter((l) => !l.is_approved).map((l) => l.id);
+    if (pendingIds.length === 0) return;
+
+    try {
+      const { error } = await supabase
+        .from('toeic_question_learning_items')
+        .update({ is_approved: true, updated_at: new Date().toISOString() })
+        .in('id', pendingIds);
+
+      if (!error) {
+        setLinks((prev) => prev.map((l) => ({ ...l, is_approved: true })));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleExportGptPacket = async () => {
+    try {
+      const { data: questionsData } = await supabase
+        .from('toeic_test_questions')
+        .select('question_number, part, question_text, options, correct_answer')
+        .eq('test_id', testId)
+        .eq('part', 'part5');
+
+      if (questionsData && questionsData.length > 0) {
+        const inputs: Part5ClassificationInput[] = questionsData.map((q: any) => ({
+          question_number: q.question_number,
+          part: 'part5',
+          question_text: q.question_text,
+          options: q.options,
+          correct_answer: q.correct_answer,
+        }));
+
+        const packetJson = exportPart5GptHybridPacket(inputs);
+        navigator.clipboard.writeText(packetJson);
+        alert('Đã copy Gói JSON GPT Hybrid vào Clipboard! Bạn có thể dán sang ChatGPT.');
+      } else {
+        alert('Không tìm thấy câu hỏi Part 5 nào trong đề thi này.');
+      }
+    } catch (err: any) {
+      alert(`Lỗi xuất GPT packet: ${err.message}`);
+    }
+  };
+
+  const handleImportGptResult = async () => {
+    if (!gptJsonInput.trim()) return;
+    setGptStatusMsg('Đang xử lý kết quả GPT Hybrid...');
+
+    try {
+      const { data: questionsData } = await supabase
+        .from('toeic_test_questions')
+        .select('question_number, part, question_text, options, correct_answer')
+        .eq('test_id', testId)
+        .eq('part', 'part5');
+
+      const inputs: Part5ClassificationInput[] = (questionsData || []).map((q: any) => ({
+        question_number: q.question_number,
+        part: 'part5',
+        question_text: q.question_text,
+        options: q.options,
+        correct_answer: q.correct_answer,
+      }));
+
+      const results = importPart5GptHybridResult(gptJsonInput, inputs);
+
+      // Save imported results
+      const itemsToUpsert = results.map((r) => ({
+        kind: r.kind,
+        item_key: r.item_key,
+        title: r.title,
+        definition: r.reasoning || '',
+        example: '',
+        difficulty_level: 3,
+        is_approved: false,
+      }));
+
+      await supabase.from('toeic_learning_items').upsert(itemsToUpsert, { onConflict: 'item_key' });
+      await fetchLearningLinks();
+
+      setGptStatusMsg('Đã nhập thành công phân tích GPT Hybrid!');
+      setTimeout(() => setShowGptModal(false), 1200);
+    } catch (err: any) {
+      setGptStatusMsg(`Lỗi: ${err.message}`);
+    }
+  };
+
   const filteredLinks = links.filter((l) => {
     if (activeKind === 'all') return true;
     return l.item?.kind === activeKind;
@@ -114,22 +206,44 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
           </p>
         </div>
 
-        {/* Filter Buttons */}
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
-          {['all', 'grammar', 'vocabulary', 'collocation', 'paraphrase'].map((kind) => (
-            <button
-              key={kind}
-              onClick={() => setActiveKind(kind)}
-              className={`px-3 py-1.5 rounded-lg capitalize transition-colors ${
-                activeKind === kind
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {kind === 'all' ? 'Tất cả' : kind}
-            </button>
-          ))}
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleBulkApprove}
+            className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+          >
+            <CheckSquare className="w-3.5 h-3.5" /> Duyệt tất cả
+          </button>
+          <button
+            onClick={handleExportGptPacket}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" /> Xuất GPT Hybrid
+          </button>
+          <button
+            onClick={() => setShowGptModal(true)}
+            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" /> Nhập GPT Hybrid
+          </button>
         </div>
+      </div>
+
+      {/* Filter Buttons */}
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold overflow-x-auto">
+        {['all', 'grammar', 'vocabulary', 'collocation', 'paraphrase'].map((kind) => (
+          <button
+            key={kind}
+            onClick={() => setActiveKind(kind)}
+            className={`px-3 py-1.5 rounded-lg capitalize transition-colors ${
+              activeKind === kind
+                ? 'bg-white text-blue-600 shadow-sm font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {kind === 'all' ? 'Tất cả' : kind}
+          </button>
+        ))}
       </div>
 
       {/* Items Grid */}
@@ -194,6 +308,45 @@ export const ToeicLearningReviewPanel: React.FC<Props> = ({ testId }) => {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* GPT HYBRID MODAL */}
+      {showGptModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl p-6 shadow-2xl border border-slate-100 space-y-4">
+            <h3 className="font-extrabold text-base text-slate-800 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" /> Nhập kết quả phân tích GPT Hybrid
+            </h3>
+            <p className="text-xs text-slate-500 font-medium">
+              Dán đoạn JSON trả về từ ChatGPT chứa phân tích danh mục điểm kiến thức Part 5 vào đây:
+            </p>
+
+            <textarea
+              rows={8}
+              value={gptJsonInput}
+              onChange={(e) => setGptJsonInput(e.target.value)}
+              placeholder="Dán JSON từ ChatGPT vào đây..."
+              className="w-full p-3 font-mono text-xs border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+
+            {gptStatusMsg && <p className="text-xs font-bold text-indigo-600">{gptStatusMsg}</p>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowGptModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleImportGptResult}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md"
+              >
+                Xác nhận nhập GPT
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
