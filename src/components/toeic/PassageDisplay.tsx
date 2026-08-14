@@ -56,10 +56,26 @@ export const PassageDisplay: React.FC<PassageDisplayProps> = ({ group, isPartMod
 
   // Listening groups (Part 3 / Part 4) MUST NOT render conversation/talk spoken transcripts
   if (group.part === 'part3' || group.part === 'part4') {
-    if (!group.instruction) return null;
+    if (!group.instruction && !group.image_url) return null;
     return (
-      <div className="text-xs font-bold text-slate-500 italic bg-slate-100/80 rounded-xl p-3">
-        {group.instruction}
+      <div className="space-y-3">
+        {group.instruction && (
+          <div className="text-xs font-bold text-slate-500 italic bg-slate-100/80 rounded-xl p-3">
+            {group.instruction}
+          </div>
+        )}
+        {group.image_url && (
+          <div className="flex flex-col items-center p-3 bg-white border border-slate-200 rounded-2xl shadow-xs">
+            <span className="text-[10px] font-extrabold uppercase text-slate-400 mb-1">
+              Visual Graphic ({group.title || group.part.toUpperCase()})
+            </span>
+            <img
+              src={group.image_url}
+              alt={group.title || 'Listening Graphic'}
+              className="max-h-80 w-auto rounded-xl object-contain"
+            />
+          </div>
+        )}
       </div>
     );
   }

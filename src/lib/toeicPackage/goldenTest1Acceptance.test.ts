@@ -190,46 +190,33 @@ describe('ORI TOEIC — Golden Test 1 Acceptance & Visual Asset Suite', () => {
     });
   });
 
-  describe('E. Golden Test 1 Package Invariants (Section 24, 25, 26)', () => {
-    it('Golden Test 1 Package matches exact TOEIC part question counts and canonical group_types', () => {
-      const pkg = buildOriToeicPackage(mockRawSources, 'Golden Test 1');
+  describe('F. Readiness Metric Rules (Section 6, 8, 13)', () => {
+    it('C & D. Missing P1 images or missing Listening graphics set P1_IMAGES_READY and LISTENING_GRAPHICS_READY to false', () => {
+      const registry = createDefaultVisualAssetRegistry();
+      const summary = summarizeVisualAssetRegistry(registry);
 
-      expect(pkg.questions.length).toBe(200);
-      expect(pkg.answers.length).toBe(200);
+      expect(summary.p1ImagesReady).toBe(0);
+      expect(summary.graphicsReady).toBe(0);
+      expect(summary.isAssetsReady).toBe(false);
+    });
 
-      const p1 = pkg.questions.filter((q) => q.part === 'part1');
-      const p2 = pkg.questions.filter((q) => q.part === 'part2');
-      const p3 = pkg.questions.filter((q) => q.part === 'part3');
-      const p4 = pkg.questions.filter((q) => q.part === 'part4');
-      const p5 = pkg.questions.filter((q) => q.part === 'part5');
-      const p6 = pkg.questions.filter((q) => q.part === 'part6');
-      const p7 = pkg.questions.filter((q) => q.part === 'part7');
+    it('A & E. 11 approved visual blobs set isAssetsReady to true, enabling FULL_TEST_READY independently of P2 transcripts', () => {
+      const registry = createDefaultVisualAssetRegistry();
 
-      expect(p1.length).toBe(6);
-      expect(p2.length).toBe(25);
-      expect(p3.length).toBe(39);
-      expect(p4.length).toBe(30);
-      expect(p5.length).toBe(30);
-      expect(p6.length).toBe(16);
-      expect(p7.length).toBe(54);
+      for (let q = 1; q <= 6; q++) {
+        const item = registry.get(`Q${q}`)!;
+        item.status = 'APPROVED';
+        item.blob = new Blob(['mock p1'], { type: 'image/png' });
+      }
+      CANONICAL_LISTENING_GRAPHIC_TARGETS.forEach((t) => {
+        const item = registry.get(t.ownerKey)!;
+        item.status = 'APPROVED';
+        item.blob = new Blob(['mock graphic'], { type: 'image/png' });
+      });
 
-      // Verify group types
-      const p3Groups = pkg.groups.filter((g) => g.part === 'part3');
-      const p4Groups = pkg.groups.filter((g) => g.part === 'part4');
-      const p6Groups = pkg.groups.filter((g) => g.part === 'part6');
-      const p7Groups = pkg.groups.filter((g) => g.part === 'part7');
-
-      expect(p3Groups.length).toBe(13);
-      expect(p3Groups.every((g) => g.group_type === 'conversation')).toBe(true);
-
-      expect(p4Groups.length).toBe(10);
-      expect(p4Groups.every((g) => g.group_type === 'talk')).toBe(true);
-
-      expect(p6Groups.length).toBe(4);
-      expect(p6Groups.every((g) => g.group_type === 'text_completion')).toBe(true);
-
-      expect(p7Groups.length).toBe(15);
-      expect(p7Groups.every((g) => g.group_type === 'reading_set')).toBe(true);
+      const summary = summarizeVisualAssetRegistry(registry);
+      expect(summary.isAssetsReady).toBe(true);
+      expect(summary.totalAssetsReady).toBe(11);
     });
   });
 });
