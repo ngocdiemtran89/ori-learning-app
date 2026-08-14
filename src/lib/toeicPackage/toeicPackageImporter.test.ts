@@ -55,7 +55,7 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       expect(media.find(m => m.filename.includes('part1/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q1');
       expect(media.find(m => m.filename.includes('part1/06.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q6');
 
-      // P2: 01 -> Q7, 02 -> Q8, 06 -> Q12, 07 -> Q13, 25 -> Q31
+      // P2: 01 -> Q7, 02 -> Q8, 06 -> Q12, 07 -> Q13, 25 -> Q31 (LOCAL INDEX 01-25)
       expect(media.find(m => m.filename.includes('part2/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q7');
       expect(media.find(m => m.filename.includes('part2/02.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q8');
       expect(media.find(m => m.filename.includes('part2/06.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q12');
@@ -89,32 +89,101 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
     });
   });
 
+  // BATCH CONVENTION TESTS FOR PART 2 (GLOBAL QNUM 07..31 & LOCAL INDEX 01..25)
+  describe('PART 2 BATCH NUMBERING CONVENTIONS', () => {
+    it('P2_GLOBAL_QNUM mode (suffixes 07..31) maps Test 01_Part 2_07.mp3..Test 01_Part 2_31.mp3 directly to Q7..Q31 without Q26-Q31 conflicts', () => {
+      const p2GlobalFiles = Array.from({ length: 25 }, (_, i) => {
+        const qNum = 7 + i;
+        const numStr = qNum < 10 ? `0${qNum}` : `${qNum}`;
+        return new File([''], `Test 01_Part 2_${numStr}.mp3`);
+      });
+
+      const media = matchPackageMedia({ audioFiles: p2GlobalFiles });
+      expect(media.conventions?.p2Convention).toBe('P2_GLOBAL_QNUM');
+
+      // Specific key assertions for user's real Test 1
+      expect(media.find(m => m.filename.includes('Part 2_07.mp3'))?.targetNumberOrRange).toBe('Q7');
+      expect(media.find(m => m.filename.includes('Part 2_12.mp3'))?.targetNumberOrRange).toBe('Q12');
+      expect(media.find(m => m.filename.includes('Part 2_13.mp3'))?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename.includes('Part 2_20.mp3'))?.targetNumberOrRange).toBe('Q20');
+      expect(media.find(m => m.filename.includes('Part 2_21.mp3'))?.targetNumberOrRange).toBe('Q21');
+      expect(media.find(m => m.filename.includes('Part 2_25.mp3'))?.targetNumberOrRange).toBe('Q25');
+      expect(media.find(m => m.filename.includes('Part 2_26.mp3'))?.targetNumberOrRange).toBe('Q26');
+      expect(media.find(m => m.filename.includes('Part 2_27.mp3'))?.targetNumberOrRange).toBe('Q27');
+      expect(media.find(m => m.filename.includes('Part 2_31.mp3'))?.targetNumberOrRange).toBe('Q31');
+
+      // CRITICAL: Prove Part 2_20.mp3 maps ONLY to Q20 and NOT Q26
+      expect(media.find(m => m.filename.includes('Part 2_20.mp3'))?.canonicalTarget).toBe('P2-Q020');
+      expect(media.find(m => m.filename.includes('Part 2_26.mp3'))?.canonicalTarget).toBe('P2-Q026');
+
+      // Exactly 25 unique canonical targets and 0 conflicts
+      expect(media.filter(m => m.part === 2).length).toBe(25);
+      expect(media.filter(m => m.status === 'conflict').length).toBe(0);
+    });
+
+    it('P2_LOCAL_INDEX mode (suffixes 01..25) maps Part 2_01.mp3..Part 2_25.mp3 to Q7..Q31', () => {
+      const p2LocalFiles = Array.from({ length: 25 }, (_, i) => {
+        const localIdx = i + 1;
+        const numStr = localIdx < 10 ? `0${localIdx}` : `${localIdx}`;
+        return new File([''], `Test 01_Part 2_${numStr}.mp3`);
+      });
+
+      const media = matchPackageMedia({ audioFiles: p2LocalFiles });
+      expect(media.conventions?.p2Convention).toBe('P2_LOCAL_INDEX');
+
+      expect(media.find(m => m.filename.includes('Part 2_01.mp3'))?.targetNumberOrRange).toBe('Q7');
+      expect(media.find(m => m.filename.includes('Part 2_06.mp3'))?.targetNumberOrRange).toBe('Q12');
+      expect(media.find(m => m.filename.includes('Part 2_07.mp3'))?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename.includes('Part 2_20.mp3'))?.targetNumberOrRange).toBe('Q26');
+      expect(media.find(m => m.filename.includes('Part 2_25.mp3'))?.targetNumberOrRange).toBe('Q31');
+
+      expect(media.filter(m => m.part === 2).length).toBe(25);
+      expect(media.filter(m => m.status === 'conflict').length).toBe(0);
+    });
+
+    it('P2_NUMBERING_AMBIGUOUS mode (mixed 01..20 and 27) blocks Draft cleanly', () => {
+      const mixedFiles = [
+        new File([''], 'Part 2_01.mp3'),
+        new File([''], 'Part 2_02.mp3'),
+        new File([''], 'Part 2_27.mp3'),
+      ];
+
+      const media = matchPackageMedia({ audioFiles: mixedFiles });
+      expect(media.conventions?.p2Convention).toBe('P2_NUMBERING_AMBIGUOUS');
+
+      const pkg = buildOriToeicPackage({ audioFiles: mixedFiles });
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'P2_NUMBERING_AMBIGUOUS')).toBe(true);
+    });
+  });
+
   // 4. FILENAME STYLES REGRESSION TEST
   describe('FILENAME STYLES REGRESSION', () => {
     it('handles space, underscore, hyphen variants and proves .mp3 extension never triggers false Part 3', () => {
       const audioList = [
         new File([''], 'Test 01_Part 1_01.mp3'),
         new File([''], 'Test 01_Part 1_06.mp3'),
-        new File([''], 'Test 01_Part 2_01.mp3'),
-        new File([''], 'Test 01_Part 2_06.mp3'),
         new File([''], 'Test 01_Part 2_07.mp3'),
-        new File([''], 'Test 01_Part 2_25.mp3'),
+        new File([''], 'Test 01_Part 2_12.mp3'),
+        new File([''], 'Test 01_Part 2_13.mp3'),
+        new File([''], 'Test 01_Part 2_31.mp3'),
         new File([''], 'Test 01_Part 3_01.mp3'),
         new File([''], 'Test 01_Part 3_13.mp3'),
         new File([''], 'Test 01_Part 4_01.mp3'),
         new File([''], 'Test 01_Part 4_10.mp3'),
         new File([''], 'Test_01_Part_1_02.mp3'),
-        new File([''], 'Test-01-Part-2-03.mp3'),
+        new File([''], 'Test-01-Part-2-08.mp3'),
       ];
 
       const media = matchPackageMedia({ audioFiles: audioList });
 
       expect(media.find(m => m.filename === 'Test 01_Part 1_01.mp3')?.targetNumberOrRange).toBe('Q1');
       expect(media.find(m => m.filename === 'Test 01_Part 1_06.mp3')?.targetNumberOrRange).toBe('Q6');
-      expect(media.find(m => m.filename === 'Test 01_Part 2_01.mp3')?.targetNumberOrRange).toBe('Q7');
-      expect(media.find(m => m.filename === 'Test 01_Part 2_06.mp3')?.targetNumberOrRange).toBe('Q12');
-      expect(media.find(m => m.filename === 'Test 01_Part 2_07.mp3')?.targetNumberOrRange).toBe('Q13');
-      expect(media.find(m => m.filename === 'Test 01_Part 2_25.mp3')?.targetNumberOrRange).toBe('Q31');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_07.mp3')?.targetNumberOrRange).toBe('Q7');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_12.mp3')?.targetNumberOrRange).toBe('Q12');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_13.mp3')?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_31.mp3')?.targetNumberOrRange).toBe('Q31');
       expect(media.find(m => m.filename === 'Test 01_Part 3_01.mp3')?.targetNumberOrRange).toBe('Q32–34');
       expect(media.find(m => m.filename === 'Test 01_Part 3_13.mp3')?.targetNumberOrRange).toBe('Q68–70');
       expect(media.find(m => m.filename === 'Test 01_Part 4_01.mp3')?.targetNumberOrRange).toBe('Q71–73');
@@ -361,7 +430,7 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
     it('18. P2 absolute 07–31 mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'E26-T01-07.mp3'), new File([''], 'E26-T01-31.mp3')],
+        audioFiles: Array.from({ length: 25 }, (_, i) => new File([''], `E26-T01-${i + 7 < 10 ? '0' : ''}${i + 7}.mp3`)),
       });
       expect(media.some(m => m.targetNumberOrRange === 'Q7')).toBe(true);
       expect(media.some(m => m.targetNumberOrRange === 'Q31')).toBe(true);
@@ -369,7 +438,7 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
     it('19. P2 sequential 01–25 mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'part2/01.mp3'), new File([''], 'part2/25.mp3')],
+        audioFiles: Array.from({ length: 25 }, (_, i) => new File([''], `part2/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`)),
       });
       expect(media.some(m => m.targetNumberOrRange === 'Q7')).toBe(true);
       expect(media.some(m => m.targetNumberOrRange === 'Q31')).toBe(true);
@@ -377,28 +446,28 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
     it('20. P3 question-range mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'E26-T01-32-34.mp3')],
+        audioFiles: Array.from({ length: 13 }, (_, i) => new File([''], `E26-T01-${32 + i * 3}-${34 + i * 3}.mp3`)),
       });
       expect(media.some(m => m.targetNumberOrRange === 'Q32–34')).toBe(true);
     });
 
     it('21. P3 sequential mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'part3/01.mp3')],
+        audioFiles: Array.from({ length: 13 }, (_, i) => new File([''], `part3/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`)),
       });
       expect(media.length).toBeGreaterThan(0);
     });
 
     it('22. P4 question-range mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'E26-T01-71-73.mp3')],
+        audioFiles: Array.from({ length: 10 }, (_, i) => new File([''], `E26-T01-${71 + i * 3}-${73 + i * 3}.mp3`)),
       });
       expect(media.some(m => m.targetNumberOrRange.includes('Q71') && m.targetNumberOrRange.includes('73'))).toBe(true);
     });
 
     it('23. P4 sequential mapping', () => {
       const media = matchPackageMedia({
-        audioFiles: [new File([''], 'part4/01.mp3')],
+        audioFiles: Array.from({ length: 10 }, (_, i) => new File([''], `part4/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`)),
       });
       expect(media.length).toBeGreaterThan(0);
     });

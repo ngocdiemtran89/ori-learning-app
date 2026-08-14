@@ -105,6 +105,16 @@ export interface PackageIssue {
   target?: string;
 }
 
+export type P2NumberingConvention = 'P2_GLOBAL_QNUM' | 'P2_LOCAL_INDEX' | 'P2_NUMBERING_AMBIGUOUS' | 'P2_NONE';
+export type P3NumberingConvention = 'P3_RANGE' | 'P3_LOCAL_INDEX' | 'P3_GLOBAL_STARTQ' | 'P3_NUMBERING_AMBIGUOUS' | 'P3_NONE';
+export type P4NumberingConvention = 'P4_RANGE' | 'P4_LOCAL_INDEX' | 'P4_GLOBAL_STARTQ' | 'P4_NUMBERING_AMBIGUOUS' | 'P4_NONE';
+
+export interface PackageMediaConventions {
+  p2Convention: P2NumberingConvention;
+  p3Convention: P3NumberingConvention;
+  p4Convention: P4NumberingConvention;
+}
+
 export interface ToeicPackageValidationReport {
   isValidForDraft: boolean;
   blockers: PackageIssue[];
@@ -129,6 +139,7 @@ export interface ToeicPackageValidationReport {
     missingAudioCount: number;
     missingImageCount: number;
     missingAnswerCount: number;
+    conventions: PackageMediaConventions;
   };
 }
 

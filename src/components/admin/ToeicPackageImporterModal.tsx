@@ -557,33 +557,56 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
             <div className="space-y-6">
               {/* GROUPED MEDIA SUMMARY HEADER */}
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-center text-xs">
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">P1 AUDIO</div>
                   <div className="text-base font-black text-slate-800">{validationReport.counts.p1AudioCount} / 6</div>
+                  <div className="text-[9px] text-slate-400 font-bold">Clip 01–06</div>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">P2 AUDIO</div>
                   <div className="text-base font-black text-slate-800">{validationReport.counts.p2AudioCount} / 25</div>
+                  <div className="text-[9px] font-extrabold text-ori-700">
+                    {validationReport.counts.conventions?.p2Convention === 'P2_GLOBAL_QNUM' && 'Theo số câu TOEIC (Q7-Q31)'}
+                    {validationReport.counts.conventions?.p2Convention === 'P2_LOCAL_INDEX' && 'Theo clip nội bộ (01-25)'}
+                    {validationReport.counts.conventions?.p2Convention === 'P2_NUMBERING_AMBIGUOUS' && '⚠️ Không xác định'}
+                    {(!validationReport.counts.conventions?.p2Convention || validationReport.counts.conventions?.p2Convention === 'P2_NONE') && 'Chưa có file'}
+                  </div>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">P3 GROUPS</div>
                   <div className="text-base font-black text-slate-800">{validationReport.counts.p3GroupAudioCount} / 13</div>
+                  <div className="text-[9px] font-extrabold text-ori-700">
+                    {validationReport.counts.conventions?.p3Convention === 'P3_RANGE' && 'Dải câu TOEIC (Q32-34)'}
+                    {validationReport.counts.conventions?.p3Convention === 'P3_LOCAL_INDEX' && 'Theo clip nội bộ (01-13)'}
+                    {validationReport.counts.conventions?.p3Convention === 'P3_GLOBAL_STARTQ' && 'Số câu bắt đầu (Q32..)'}
+                    {validationReport.counts.conventions?.p3Convention === 'P3_NUMBERING_AMBIGUOUS' && '⚠️ Không xác định'}
+                    {(!validationReport.counts.conventions?.p3Convention || validationReport.counts.conventions?.p3Convention === 'P3_NONE') && 'Chưa có file'}
+                  </div>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">P4 GROUPS</div>
                   <div className="text-base font-black text-slate-800">{validationReport.counts.p4GroupAudioCount} / 10</div>
+                  <div className="text-[9px] font-extrabold text-ori-700">
+                    {validationReport.counts.conventions?.p4Convention === 'P4_RANGE' && 'Dải câu TOEIC (Q71-73)'}
+                    {validationReport.counts.conventions?.p4Convention === 'P4_LOCAL_INDEX' && 'Theo clip nội bộ (01-10)'}
+                    {validationReport.counts.conventions?.p4Convention === 'P4_GLOBAL_STARTQ' && 'Số câu bắt đầu (Q71..)'}
+                    {validationReport.counts.conventions?.p4Convention === 'P4_NUMBERING_AMBIGUOUS' && '⚠️ Không xác định'}
+                    {(!validationReport.counts.conventions?.p4Convention || validationReport.counts.conventions?.p4Convention === 'P4_NONE') && 'Chưa có file'}
+                  </div>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">TỔNG AUDIO</div>
                   <div className={`text-base font-black ${validationReport.counts.totalAudioFiles === 54 ? 'text-emerald-600' : 'text-amber-600'}`}>
                     {validationReport.counts.totalAudioFiles} / 54
                   </div>
+                  <div className="text-[9px] text-slate-400 font-bold">54 file audio chuẩn</div>
                 </div>
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between">
                   <div className="text-[10px] font-extrabold text-slate-500 uppercase">P1 IMAGES</div>
                   <div className={`text-base font-black ${validationReport.counts.p1ImageCount === 6 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {validationReport.counts.p1ImageCount} / 6
                   </div>
+                  <div className="text-[9px] text-slate-400 font-bold">Tổng media = {validationReport.counts.readyMediaCount}</div>
                 </div>
               </div>
 

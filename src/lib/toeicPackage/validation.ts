@@ -327,6 +327,35 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
 
   const totalAudioFiles = p1AudioCount + p2AudioCount + p3GroupAudioCount + p4GroupAudioCount;
 
+  // 5. Numbering Conventions & Ambiguity Validation
+  const conventions = (pkg.media as any)?.conventions || {
+    p2Convention: 'P2_NONE',
+    p3Convention: 'P3_NONE',
+    p4Convention: 'P4_NONE',
+  };
+
+  if (conventions.p2Convention === 'P2_NUMBERING_AMBIGUOUS') {
+    blockers.push({
+      severity: 'BLOCKER',
+      code: 'P2_NUMBERING_AMBIGUOUS',
+      message: 'Không xác định được cách đánh số audio Part 2. Hệ thống hỗ trợ: 1–25 = số clip nội bộ hoặc 7–31 = số câu TOEIC.',
+    });
+  }
+  if (conventions.p3Convention === 'P3_NUMBERING_AMBIGUOUS') {
+    blockers.push({
+      severity: 'BLOCKER',
+      code: 'P3_NUMBERING_AMBIGUOUS',
+      message: 'Không xác định được cách đánh số audio Part 3. Hệ thống hỗ trợ: 1–13 = clip nội bộ hoặc 32-34..68-70 = dải câu TOEIC.',
+    });
+  }
+  if (conventions.p4Convention === 'P4_NUMBERING_AMBIGUOUS') {
+    blockers.push({
+      severity: 'BLOCKER',
+      code: 'P4_NUMBERING_AMBIGUOUS',
+      message: 'Không xác định được cách đánh số audio Part 4. Hệ thống hỗ trợ: 1–10 = clip nội bộ hoặc 71-73..98-100 = dải câu TOEIC.',
+    });
+  }
+
   // isValidForDraft is strictly blockers.length === 0
   const isValidForDraft = blockers.length === 0;
 
@@ -354,6 +383,7 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
       missingAudioCount,
       missingImageCount,
       missingAnswerCount,
+      conventions,
     },
   };
 }
