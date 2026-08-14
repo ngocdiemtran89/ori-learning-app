@@ -19,6 +19,9 @@ import {
   ArrowLeft,
   Play,
   Sparkles,
+  Crop,
+  Image as ImageIcon,
+  RotateCcw,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { extractPdfTextItems } from '../../lib/cms/pdfUtils';
@@ -26,6 +29,8 @@ import { RawPackageSources, OriToeicPackageV1, ToeicPackageValidationReport } fr
 import { buildOriToeicPackage } from '../../lib/toeicPackage/packageBuilder';
 import { validateToeicPackage } from '../../lib/toeicPackage/validation';
 import { importToeicPackage } from '../../lib/toeicPackage/packageImporter';
+import { extractPart1ImagesFromPdf, Part1ExtractedImage } from '../../lib/toeicPackage/part1ImageExtractor';
+import { Part1PdfCropModal } from './Part1PdfCropModal';
 
 interface ToeicPackageImporterModalProps {
   isOpen: boolean;
@@ -49,6 +54,15 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
   const [audioFiles, setAudioFiles] = useState<File[]>([]);
   const [bilingualFile, setBilingualFile] = useState<File | null>(null);
 
+  // Part 1 Image Management
+  const [part1CroppedMap, setPart1CroppedMap] = useState<Record<number, File | Blob>>({});
+  const [part1ExtractedMeta, setPart1ExtractedMeta] = useState<Record<number, Part1ExtractedImage>>({});
+  const [isExtractingImages, setIsExtractingImages] = useState(false);
+
+  // PDF Crop Modal State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropTargetQNum, setCropTargetQNum] = useState<number>(1);
+
   // STEP 2 Processing & Parsed State
   const [isProcessing, setIsProcessing] = useState(false);
   const [processStatus, setProcessStatus] = useState('');
@@ -66,6 +80,24 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
   const [execError, setExecError] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  // Reset entire import session to clean state
+  const handleResetSession = () => {
+    setTestTitle('Đề thi TOEIC Mới (Package Import)');
+    setListeningPdfFile(null);
+    setReadingPdfFile(null);
+    setAnswerKeyFile(null);
+    setTranscriptFile(null);
+    setAudioFiles([]);
+    setBilingualFile(null);
+    setPart1CroppedMap({});
+    setPart1ExtractedMeta({});
+    setPkg(null);
+    setValidationReport(null);
+    setStep(1);
+    setCreatedTestId(null);
+    setExecError(null);
+  };
 
   // Handle Audio files / ZIP upload in Step 1
   const handleAudioInput = async (files: FileList | File[]) => {
@@ -90,7 +122,65 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
         list.push(f);
       }
     }
-    setAudioFiles(prev => [...prev, ...list]);
+    setAudioFiles(list);
+  };
+
+  // Trigger Automatic Part 1 Image Extraction
+  const handleAutoExtractPart1Images = async (fileToUse?: File) => {
+    const pdfToUse = fileToUse || listeningPdfFile;
+    if (!pdfToUse) return;
+
+    setIsExtractingImages(true);
+    try {
+      const extracted = await extractPart1ImagesFromPdf(pdfToUse);
+      setPart1ExtractedMeta(extracted);
+      
+      const newCroppedMap: Record<number, File | Blob> = { ...part1CroppedMap };
+      Object.values(extracted).forEach((item) => {
+        if (item.blob && !newCroppedMap[item.questionNumber]) {
+          newCroppedMap[item.questionNumber] = item.blob;
+        }
+      });
+      setPart1CroppedMap(newCroppedMap);
+    } catch (err) {
+      console.error('Part 1 auto extraction failed:', err);
+    } finally {
+      setIsExtractingImages(false);
+    }
+  };
+
+  // Handle manual crop save
+  const handleCropSaved = (qNum: number, croppedBlob: Blob) => {
+    setPart1CroppedMap((prev) => ({ ...prev, [qNum]: croppedBlob }));
+    setPart1ExtractedMeta((prev) => ({
+      ...prev,
+      [qNum]: {
+        questionNumber: qNum,
+        blob: croppedBlob,
+        filename: `p1_q${qNum}_manual_crop.png`,
+        width: 400,
+        height: 300,
+        provenance: 'MANUAL_CROP',
+        status: 'AUTO_EXTRACTED',
+      },
+    }));
+  };
+
+  // Handle manual upload for single Q1..Q6 image
+  const handleManualImageUpload = (qNum: number, file: File) => {
+    setPart1CroppedMap((prev) => ({ ...prev, [qNum]: file }));
+    setPart1ExtractedMeta((prev) => ({
+      ...prev,
+      [qNum]: {
+        questionNumber: qNum,
+        blob: file,
+        filename: file.name,
+        width: 400,
+        height: 300,
+        provenance: 'MANUAL_UPLOAD',
+        status: 'AUTO_EXTRACTED',
+      },
+    }));
   };
 
   // STEP 2: Extract PDF texts & build package
@@ -109,6 +199,12 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
         setProcessStatus('Đang đọc PDF Listening...');
         const items = await extractPdfTextItems(listeningPdfFile);
         listeningPdfText = items.map((i: { text: string }) => i.text).join(' ');
+
+        // Auto extract Part 1 images if not yet extracted
+        if (Object.keys(part1CroppedMap).length < 6) {
+          setProcessStatus('Đang tự động trích xuất 6 hình ảnh Part 1...');
+          await handleAutoExtractPart1Images(listeningPdfFile);
+        }
       }
 
       if (readingPdfFile) {
@@ -149,6 +245,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
         answerKeyText,
         transcriptPdfText,
         audioFiles,
+        part1PdfCroppedImages: part1CroppedMap,
         bilingualJsonText,
       };
 
@@ -170,6 +267,16 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
   // Run Package Importer (Dry Run or Create Draft)
   const handleExecuteImport = async (dryRun: boolean) => {
     if (!pkg) return;
+
+    // Strict Gate Enforcement: Re-validate before execution
+    const latestReport = validateToeicPackage(pkg);
+    setValidationReport(latestReport);
+
+    if (!dryRun && !latestReport.isValidForDraft) {
+      setExecError('Không thể tạo Draft: Gói đề thi còn vướng lỗi BLOCKER nghiêm trọng.');
+      return;
+    }
+
     setIsExecuting(true);
     setExecError(null);
     setExecProgress(10);
@@ -217,15 +324,24 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
             </div>
             <div>
               <h2 className="font-extrabold text-base tracking-tight">IMPORT ĐỀ TOEIC HOÀN CHỈNH</h2>
-              <p className="text-xs text-white/80">Tự động đọc PDF, Audio, Đáp Án & chuyển đổi thành Gói Đề TOEIC Standard 200 Câu</p>
+              <p className="text-xs text-white/80">Tự động đọc PDF, Audio, Đáp Án & chuẩn hóa cấu trúc 200 câu chuẩn TOEIC</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleResetSession}
+              title="Xóa phiên import hiện tại để bắt đầu mới"
+              className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl transition-colors text-xs font-bold flex items-center gap-1.5 text-white"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset Session
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* WIZARD STEPPERS */}
@@ -276,13 +392,29 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* LISTENING PDF */}
                 <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-2">
-                  <span className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-ori-600" /> LISTENING PDF
-                  </span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-ori-600" /> LISTENING PDF
+                    </span>
+                    {listeningPdfFile && (
+                      <button
+                        onClick={() => handleAutoExtractPart1Images()}
+                        disabled={isExtractingImages}
+                        className="px-2.5 py-1 bg-ori-100 hover:bg-ori-200 text-ori-800 text-[11px] font-extrabold rounded-lg flex items-center gap-1"
+                      >
+                        {isExtractingImages ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        <span>Tự trích ảnh Part 1</span>
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="file"
                     accept="application/pdf"
-                    onChange={e => setListeningPdfFile(e.target.files?.[0] || null)}
+                    onChange={e => {
+                      const file = e.target.files?.[0] || null;
+                      setListeningPdfFile(file);
+                      if (file) handleAutoExtractPart1Images(file);
+                    }}
                     className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-extrabold file:bg-ori-50 file:text-ori-700 hover:file:bg-ori-100 cursor-pointer"
                   />
                   {listeningPdfFile && <p className="text-[11px] font-bold text-emerald-600">✓ Đã chọn: {listeningPdfFile.name}</p>}
@@ -335,7 +467,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-extrabold text-slate-700 uppercase flex items-center gap-2">
-                    <Music className="w-4 h-4 text-amber-600" /> AUDIO / HÌNH ẢNH (CHỌN NHIỀU FILE KHẮP CÁC PHẦN HOẶC FILE ZIP)
+                    <Music className="w-4 h-4 text-amber-600" /> AUDIO / HÌNH ẢNH LISTENING (CHỌN CÁC FILE HOẶC ZIP)
                   </span>
                   <span className="text-xs font-bold text-slate-500">Đã chọn: {audioFiles.length} file</span>
                 </div>
@@ -420,35 +552,151 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
             </div>
           )}
 
-          {/* STEP 4 — MEDIA */}
-          {step === 4 && pkg && (
-            <div className="space-y-4">
-              <h3 className="text-xs font-extrabold uppercase text-slate-700">KẾT QUẢ KHỚP MEDIA GÓI ĐỀ ({pkg.media.length} ITEMS)</h3>
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden text-xs max-h-96 overflow-y-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px]">
-                    <tr>
-                      <th className="p-3">ĐỐI TƯỢNG</th>
-                      <th className="p-3">LOẠI</th>
-                      <th className="p-3">TÊN FILE NGUỒN</th>
-                      <th className="p-3">TRẠNG THÁI</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 font-medium">
-                    {pkg.media.map((m, idx) => (
-                      <tr key={idx} className="hover:bg-slate-100/50">
-                        <td className="p-3 font-bold text-slate-800">{m.targetNumberOrRange}</td>
-                        <td className="p-3 uppercase font-extrabold text-[10px] text-slate-500">{m.mediaType}</td>
-                        <td className="p-3 font-mono text-[11px] text-slate-600">{m.filename}</td>
-                        <td className="p-3 font-bold">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-extrabold ${m.status === 'ready' ? 'bg-emerald-100 text-emerald-700' : m.status === 'conflict' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'}`}>
-                            {m.status}
-                          </span>
-                        </td>
+          {/* STEP 4 — MEDIA & PART 1 IMAGES */}
+          {step === 4 && pkg && validationReport && (
+            <div className="space-y-6">
+              {/* GROUPED MEDIA SUMMARY HEADER */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-center text-xs">
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">P1 AUDIO</div>
+                  <div className="text-base font-black text-slate-800">{validationReport.counts.p1AudioCount} / 6</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">P2 AUDIO</div>
+                  <div className="text-base font-black text-slate-800">{validationReport.counts.p2AudioCount} / 25</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">P3 GROUPS</div>
+                  <div className="text-base font-black text-slate-800">{validationReport.counts.p3GroupAudioCount} / 13</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">P4 GROUPS</div>
+                  <div className="text-base font-black text-slate-800">{validationReport.counts.p4GroupAudioCount} / 10</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">TỔNG AUDIO</div>
+                  <div className={`text-base font-black ${validationReport.counts.totalAudioFiles === 54 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {validationReport.counts.totalAudioFiles} / 54
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[10px] font-extrabold text-slate-500 uppercase">P1 IMAGES</div>
+                  <div className={`text-base font-black ${validationReport.counts.p1ImageCount === 6 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {validationReport.counts.p1ImageCount} / 6
+                  </div>
+                </div>
+              </div>
+
+              {/* PART 1 IMAGE MANAGER SECTION */}
+              <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-ori-600" /> QUẢN LÝ 6 HÌNH ẢNH PART 1 (Q1–Q6)
+                  </span>
+                  <div className="flex gap-2">
+                    {listeningPdfFile && (
+                      <button
+                        onClick={() => handleAutoExtractPart1Images()}
+                        disabled={isExtractingImages}
+                        className="px-3 py-1.5 bg-ori-600 hover:bg-ori-500 text-white text-xs font-extrabold rounded-xl flex items-center gap-1 shadow-sm"
+                      >
+                        {isExtractingImages ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        <span>Tự trích ảnh từ PDF</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                  {[1, 2, 3, 4, 5, 6].map((qNum) => {
+                    const imgBlob = part1CroppedMap[qNum];
+                    const meta = part1ExtractedMeta[qNum];
+                    const imgUrl = imgBlob ? URL.createObjectURL(imgBlob) : null;
+
+                    return (
+                      <div key={qNum} className="bg-white border border-slate-200 p-3 rounded-2xl space-y-2 flex flex-col justify-between text-center">
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-black text-slate-800">
+                            <span>Q{qNum}</span>
+                            {meta?.provenance && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-extrabold uppercase">
+                                {meta.provenance.replace('PDF_', '').replace('_', ' ')}
+                              </span>
+                            )}
+                          </div>
+
+                          {imgUrl ? (
+                            <div className="h-24 bg-slate-100 rounded-xl overflow-hidden flex items-center justify-center p-1">
+                              <img src={imgUrl} alt={`Q${qNum}`} className="max-h-full max-w-full object-contain rounded-lg" />
+                            </div>
+                          ) : (
+                            <div className="h-24 border border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-[10px] text-slate-400 font-medium p-2">
+                              <span>Thiếu hình Q{qNum}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1 pt-1">
+                          <button
+                            onClick={() => {
+                              setCropTargetQNum(qNum);
+                              setCropModalOpen(true);
+                            }}
+                            className="w-full py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-[10px] rounded-lg flex items-center justify-center gap-1"
+                          >
+                            <Crop className="w-3 h-3 text-ori-600" /> Cắt từ PDF
+                          </button>
+
+                          <label className="block w-full py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-[10px] rounded-lg cursor-pointer">
+                            <span>Tải ảnh</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleManualImageUpload(qNum, e.target.files[0]);
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* MEDIA MATCHING DETAILED TABLE */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-extrabold uppercase text-slate-700">KẾT QUẢ KHỚP MEDIA GÓI ĐỀ ({pkg.media.length} ITEMS)</h3>
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden text-xs max-h-80 overflow-y-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-100 text-slate-600 font-extrabold uppercase text-[10px]">
+                      <tr>
+                        <th className="p-3">CANONICAL TARGET</th>
+                        <th className="p-3">ĐỐI TƯỢNG</th>
+                        <th className="p-3">LOẠI</th>
+                        <th className="p-3">TÊN FILE NGUỒN</th>
+                        <th className="p-3">TRẠNG THÁI</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-medium">
+                      {pkg.media.map((m, idx) => (
+                        <tr key={idx} className="hover:bg-slate-100/50">
+                          <td className="p-3 font-mono font-bold text-ori-700">{m.canonicalTarget || m.targetNumberOrRange}</td>
+                          <td className="p-3 font-bold text-slate-800">{m.targetNumberOrRange}</td>
+                          <td className="p-3 uppercase font-extrabold text-[10px] text-slate-500">{m.mediaType}</td>
+                          <td className="p-3 font-mono text-[11px] text-slate-600">{m.filename}</td>
+                          <td className="p-3 font-bold">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase font-extrabold ${m.status === 'ready' ? 'bg-emerald-100 text-emerald-700' : m.status === 'conflict' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
+                              {m.status}
+                            </span>
+                            {m.error && <p className="text-[10px] text-red-600 font-normal mt-0.5">{m.error}</p>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -463,8 +711,9 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               <div className="grid grid-cols-5 md:grid-cols-10 gap-2 max-h-80 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-2xl text-center">
                 {pkg.questions.map(q => {
                   const ans = q.correct_answer;
+                  const isPart2D = q.question_number >= 7 && q.question_number <= 31 && ans === 'D';
                   return (
-                    <div key={q.question_number} className={`p-2 rounded-xl text-xs font-extrabold ${ans ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'}`}>
+                    <div key={q.question_number} className={`p-2 rounded-xl text-xs font-extrabold ${isPart2D ? 'bg-red-200 text-red-900 border border-red-400' : ans ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-500'}`}>
                       <div>#{q.question_number}</div>
                       <div className="text-sm font-black">{ans || '-'}</div>
                     </div>
@@ -477,12 +726,36 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
           {/* STEP 6 — PREVIEW & HEALTH REPORT */}
           {step === 6 && pkg && validationReport && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between bg-slate-100 p-4 rounded-2xl text-xs font-bold">
-                <span className="text-slate-800 font-extrabold">TRẠNG THÁI SỨC KHỎE GÓI ĐỀ:</span>
-                <div className="flex gap-4">
-                  <span className="text-red-600">BLOCKERS: {validationReport.blockers.length}</span>
-                  <span className="text-amber-600">WARNINGS: {validationReport.warnings.length}</span>
-                  <span className="text-blue-600">INFOS: {validationReport.infos.length}</span>
+              {/* COMPACT GATE HEADER SUMMARY */}
+              <div className="bg-slate-800 text-white p-5 rounded-3xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-2xl ${validationReport.isValidForDraft ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {validationReport.isValidForDraft ? <CheckCircle2 className="w-6 h-6" /> : <AlertOctagon className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-sm uppercase tracking-wide">TRẠNG THÁI SỨC KHỎE GÓI ĐỀ THI</h3>
+                      <p className={`text-xs font-black ${validationReport.isValidForDraft ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {validationReport.isValidForDraft ? 'READY TO CREATE DRAFT (ĐỦ ĐIỀU KIỆN TẠO DRAFT)' : 'BLOCKED — FIX REQUIRED (CÓ LỖI BLOCKER NGHỄN)'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 text-xs font-bold">
+                    <span className="px-3 py-1 bg-red-500/20 text-red-300 rounded-xl">BLOCKERS: {validationReport.blockers.length}</span>
+                    <span className="px-3 py-1 bg-amber-500/20 text-amber-300 rounded-xl">WARNINGS: {validationReport.warnings.length}</span>
+                  </div>
+                </div>
+
+                {/* ASSET COMPLEteness GRID */}
+                <div className="grid grid-cols-2 md:grid-cols-8 gap-2 text-center text-[11px] font-bold pt-2 border-t border-slate-700">
+                  <div className="bg-slate-700/60 p-2 rounded-xl">CÂU HỎI: {validationReport.counts.totalQuestions}/200</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">ĐÁP ÁN: {validationReport.counts.totalAnswers}/200</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">P1 IMAGES: {validationReport.counts.p1ImageCount}/6</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">P1 AUDIO: {validationReport.counts.p1AudioCount}/6</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">P2 AUDIO: {validationReport.counts.p2AudioCount}/25</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">P3 AUDIO: {validationReport.counts.p3GroupAudioCount}/13</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">P4 AUDIO: {validationReport.counts.p4GroupAudioCount}/10</div>
+                  <div className="bg-slate-700/60 p-2 rounded-xl">TỔNG AUDIO: {validationReport.counts.totalAudioFiles}/54</div>
                 </div>
               </div>
 
@@ -490,7 +763,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               {validationReport.blockers.length > 0 && (
                 <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2 text-xs text-red-900">
                   <span className="font-extrabold uppercase flex items-center gap-1.5 text-red-700">
-                    <AlertOctagon className="w-4 h-4" /> LỖI NGHỄN KHÔNG THỂ TẠO DRAFT ({validationReport.blockers.length}):
+                    <AlertOctagon className="w-4 h-4" /> LỖI NGHỄN BLOCKER THẮT NÚT ({validationReport.blockers.length}):
                   </span>
                   <ul className="list-disc list-inside space-y-1 font-bold">
                     {validationReport.blockers.map((b, i) => (
@@ -504,7 +777,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
               {validationReport.warnings.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-2 text-xs text-amber-900">
                   <span className="font-extrabold uppercase flex items-center gap-1.5 text-amber-700">
-                    <AlertTriangle className="w-4 h-4" /> CẢNH BÁO MỨC TRUNG BÌNH ({validationReport.warnings.length}):
+                    <AlertTriangle className="w-4 h-4" /> CẢNH BÁO KHÔNG NGHỄN ({validationReport.warnings.length}):
                   </span>
                   <ul className="list-disc list-inside space-y-1 font-medium">
                     {validationReport.warnings.map((w, i) => (
@@ -521,7 +794,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-2"
                 >
                   <FileCode className="w-4 h-4" />
-                  {showJsonView ? 'Ẩn JSON Nâng Cao' : 'Xem JSON Nâng Cao (Debug)'}
+                  {showJsonView ? 'Ẩn JSON Nâng Cao' : 'Xem JSON Nâng Cao (Debug mediaAssignments)'}
                 </button>
 
                 <button
@@ -536,7 +809,22 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
 
               {showJsonView && (
                 <pre className="p-4 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-2xl overflow-x-auto max-h-80">
-                  {JSON.stringify(pkg, null, 2)}
+                  {JSON.stringify(
+                    {
+                      ...pkg,
+                      mediaAssignments: pkg.media.map(m => ({
+                        sourceFile: m.filename,
+                        part: m.part,
+                        localIndex: m.localIndex,
+                        targetType: m.targetType,
+                        targetNumberOrRange: m.targetNumberOrRange,
+                        canonicalTarget: m.canonicalTarget,
+                        status: m.status,
+                      })),
+                    },
+                    null,
+                    2
+                  )}
                 </pre>
               )}
             </div>
@@ -586,7 +874,7 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
                     <button
                       onClick={() => handleExecuteImport(false)}
                       disabled={validationReport ? !validationReport.isValidForDraft : false}
-                      className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md disabled:opacity-50"
+                      className="px-5 py-2.5 bg-ori-600 hover:bg-ori-500 text-white font-extrabold text-xs rounded-xl shadow-md disabled:opacity-40"
                     >
                       [TẠO ĐỀ DRAFT TỪ PACKAGE]
                     </button>
@@ -641,6 +929,15 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
         </div>
 
       </div>
+
+      {/* CROP MODAL */}
+      <Part1PdfCropModal
+        isOpen={cropModalOpen}
+        onClose={() => setCropModalOpen(false)}
+        pdfFile={listeningPdfFile}
+        targetQuestionNumber={cropTargetQNum}
+        onCropSaved={handleCropSaved}
+      />
     </div>
   );
 };

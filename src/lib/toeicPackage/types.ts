@@ -63,6 +63,9 @@ export interface OriPackageMediaEntry {
   id: string;
   targetType: 'question' | 'group' | 'single_track';
   targetNumberOrRange: string; // e.g. "Q1", "Q32-34"
+  canonicalTarget: string; // e.g. "P1-Q001", "P2-Q007", "P3-Q032-034", "P4-Q071-073", "P1-IMG-Q001"
+  part?: number; // 1..4
+  localIndex?: number;
   mediaType: 'image' | 'audio';
   file?: File | Blob;
   filename: string;
@@ -116,6 +119,12 @@ export interface ToeicPackageValidationReport {
     p6GroupCount: number;
     p7GroupCount: number;
     totalAnswers: number;
+    p1AudioCount: number; // /6
+    p2AudioCount: number; // /25
+    p3GroupAudioCount: number; // /13
+    p4GroupAudioCount: number; // /10
+    totalAudioFiles: number; // /54
+    p1ImageCount: number; // /6
     readyMediaCount: number;
     missingAudioCount: number;
     missingImageCount: number;

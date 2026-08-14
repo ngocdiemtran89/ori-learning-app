@@ -142,18 +142,18 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
   });
 
   if (p3GroupCount !== 13) {
-    warnings.push({
-      severity: 'WARNING',
+    blockers.push({
+      severity: 'BLOCKER',
       code: 'P3_GROUP_COUNT_MISMATCH',
-      message: `Part 3 có ${p3GroupCount}/13 nhóm câu hỏi.`,
+      message: `Part 3 phải có đúng 13 nhóm câu hỏi (hiện tại: ${p3GroupCount}/13).`,
     });
   }
 
   if (p4GroupCount !== 10) {
-    warnings.push({
-      severity: 'WARNING',
+    blockers.push({
+      severity: 'BLOCKER',
       code: 'P4_GROUP_COUNT_MISMATCH',
-      message: `Part 4 có ${p4GroupCount}/10 nhóm câu hỏi.`,
+      message: `Part 4 phải có đúng 10 nhóm câu hỏi (hiện tại: ${p4GroupCount}/10).`,
     });
   }
 
@@ -182,6 +182,16 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
       return;
     }
 
+    // Part 2 Special Rule: Q7..Q31 answers MUST be A, B, or C only!
+    if (ans.question_number >= 7 && ans.question_number <= 31 && ans.correct_answer === 'D') {
+      blockers.push({
+        severity: 'BLOCKER',
+        code: 'INVALID_PART2_ANSWER_D',
+        message: `Câu Part 2 #${ans.question_number} không thể có đáp án "D" (chỉ nhận A, B, C).`,
+        target: `Q${ans.question_number}`,
+      });
+    }
+
     seenAnsQNums.add(ans.question_number);
     ansMap.set(ans.question_number, ans.correct_answer);
   });
@@ -194,85 +204,130 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
   }
 
   if (missingAnswerCount > 0) {
-    warnings.push({
-      severity: 'WARNING',
+    blockers.push({
+      severity: 'BLOCKER',
       code: 'MISSING_ANSWERS',
-      message: `Còn thiếu đáp án cho ${missingAnswerCount} câu hỏi.`,
+      message: `Còn thiếu đáp án cho ${missingAnswerCount} câu hỏi (cần đủ 200/200 đáp án).`,
     });
   }
 
   // 4. Media & Image Checks
   let readyMediaCount = 0;
-  let missingAudioCount = 0;
-  let missingImageCount = 0;
+  let p1AudioCount = 0;
+  let p2AudioCount = 0;
+  let p3GroupAudioCount = 0;
+  let p4GroupAudioCount = 0;
+  let p1ImageCount = 0;
+
+  // Track media target collisions & physical files
+  const p1ImageFiles = new Map<any, number>();
 
   pkg.media.forEach((m) => {
     if (m.status === 'conflict') {
       blockers.push({
         severity: 'BLOCKER',
         code: 'DUPLICATE_MEDIA_TARGET',
-        message: `Phát hiện nhiều file media cùng gán vào đối tượng ${m.targetNumberOrRange}.`,
+        message: m.error || `Phát hiện nhiều file media cùng gán vào đối tượng ${m.targetNumberOrRange}.`,
         target: m.targetNumberOrRange,
       });
-    } else if (m.status === 'ready' || m.status === 'skip') {
+    } else if (m.status === 'ready') {
       readyMediaCount++;
+      if (m.mediaType === 'audio') {
+        if (m.part === 1) p1AudioCount++;
+        else if (m.part === 2) p2AudioCount++;
+        else if (m.part === 3) p3GroupAudioCount++;
+        else if (m.part === 4) p4GroupAudioCount++;
+      } else if (m.mediaType === 'image' && m.part === 1) {
+        p1ImageCount++;
+        if (m.file) {
+          if (p1ImageFiles.has(m.file)) {
+            blockers.push({
+              severity: 'BLOCKER',
+              code: 'DUPLICATE_P1_IMAGE_FILE',
+              message: `Hình ảnh Part 1 bị dùng trùng lặp cho ${m.targetNumberOrRange} và Q${p1ImageFiles.get(m.file)}.`,
+              target: m.targetNumberOrRange,
+            });
+          } else {
+            const qNum = parseInt(m.targetNumberOrRange.replace(/[^0-9]+/g, ''), 10);
+            p1ImageFiles.set(m.file, qNum);
+          }
+        }
+      }
     }
   });
 
   // Check Part 1 Images Q1..Q6
+  let missingImageCount = 0;
   for (let qNum = 1; qNum <= 6; qNum++) {
     const q = qMap.get(qNum);
     const hasImage = Boolean(q?.image_url || q?.local_image_file);
     if (!hasImage) {
       missingImageCount++;
-    }
-  }
-
-  if (missingImageCount > 0) {
-    warnings.push({
-      severity: 'WARNING',
-      code: 'MISSING_P1_IMAGES',
-      message: `Thiếu ${missingImageCount} hình ảnh Part 1.`,
-    });
-  }
-
-  // Check Audio Q1..Q100
-  if (pkg.test.listening_audio_mode === 'segmented') {
-    for (let qNum = 1; qNum <= 31; qNum++) {
-      const q = qMap.get(qNum);
-      if (!q?.audio_url && !q?.local_audio_file) {
-        missingAudioCount++;
-      }
-    }
-    // Groups Q32-70 & Q71-100
-    pkg.groups.forEach((g) => {
-      if ((g.part === 'part3' || g.part === 'part4') && !g.audio_url && !g.local_audio_file) {
-        missingAudioCount++;
-      }
-    });
-
-    if (missingAudioCount > 0) {
-      warnings.push({
-        severity: 'WARNING',
-        code: 'MISSING_LISTENING_AUDIO',
-        message: `Thiếu ${missingAudioCount} file audio Listening.`,
+      blockers.push({
+        severity: 'BLOCKER',
+        code: 'MISSING_P1_IMAGE_QUESTION',
+        message: `Thiếu hình ảnh Part 1 cho câu #${qNum} (bấm 'Tự trích ảnh' hoặc 'Cắt từ PDF').`,
+        target: `Q${qNum}`,
       });
     }
   }
 
-  // 5. Bilingual Info
-  let missingViCount = 0;
-  pkg.questions.forEach((q) => {
-    if (!q.translation_vi) missingViCount++;
-  });
-  if (missingViCount > 0) {
-    infos.push({
-      severity: 'INFO',
-      code: 'MISSING_VIETNAMESE_TRANSLATIONS',
-      message: `Còn ${missingViCount} câu chưa có bản dịch tiếng Việt.`,
+  // Check Listening Audio completeness (54 physical clips: 6 P1, 25 P2, 13 P3, 10 P4)
+  let missingAudioCount = 0;
+  if (pkg.test.listening_audio_mode === 'segmented') {
+    for (let qNum = 1; qNum <= 6; qNum++) {
+      const q = qMap.get(qNum);
+      if (!q?.audio_url && !q?.local_audio_file) {
+        missingAudioCount++;
+        blockers.push({
+          severity: 'BLOCKER',
+          code: 'MISSING_P1_AUDIO',
+          message: `Thiếu file audio Part 1 clip ${qNum < 10 ? '0' : ''}${qNum} → Q${qNum}.`,
+          target: `Q${qNum}`,
+        });
+      }
+    }
+
+    for (let qNum = 7; qNum <= 31; qNum++) {
+      const q = qMap.get(qNum);
+      const localIdx = qNum - 6;
+      if (!q?.audio_url && !q?.local_audio_file) {
+        missingAudioCount++;
+        blockers.push({
+          severity: 'BLOCKER',
+          code: 'MISSING_P2_AUDIO',
+          message: `Thiếu file audio Part 2 clip ${localIdx < 10 ? '0' : ''}${localIdx} → Q${qNum}.`,
+          target: `Q${qNum}`,
+        });
+      }
+    }
+
+    pkg.groups.forEach((g) => {
+      if (g.part === 'part3' && !g.audio_url && !g.local_audio_file) {
+        missingAudioCount++;
+        const localIdx = Math.floor((g.start_question - 32) / 3) + 1;
+        blockers.push({
+          severity: 'BLOCKER',
+          code: 'MISSING_P3_AUDIO',
+          message: `Thiếu file audio Part 3 nhóm ${localIdx < 10 ? '0' : ''}${localIdx} → Q${g.start_question}–${g.end_question}.`,
+          target: `Q${g.start_question}–${g.end_question}`,
+        });
+      } else if (g.part === 'part4' && !g.audio_url && !g.local_audio_file) {
+        missingAudioCount++;
+        const localIdx = Math.floor((g.start_question - 71) / 3) + 1;
+        blockers.push({
+          severity: 'BLOCKER',
+          code: 'MISSING_P4_AUDIO',
+          message: `Thiếu file audio Part 4 nhóm ${localIdx < 10 ? '0' : ''}${localIdx} → Q${g.start_question}–${g.end_question}.`,
+          target: `Q${g.start_question}–${g.end_question}`,
+        });
+      }
     });
   }
 
+  const totalAudioFiles = p1AudioCount + p2AudioCount + p3GroupAudioCount + p4GroupAudioCount;
+
+  // isValidForDraft is strictly blockers.length === 0
   const isValidForDraft = blockers.length === 0;
 
   return {
@@ -281,14 +336,20 @@ export function validateToeicPackage(pkg: OriToeicPackageV1): ToeicPackageValida
     warnings,
     infos,
     counts: {
-      totalQuestions: seenQNums.size,
+      totalQuestions: pkg.questions.length,
       partCounts,
       totalGroups: pkg.groups.length,
       p3GroupCount,
       p4GroupCount,
       p6GroupCount,
       p7GroupCount,
-      totalAnswers: seenAnsQNums.size,
+      totalAnswers: pkg.answers.length,
+      p1AudioCount,
+      p2AudioCount,
+      p3GroupAudioCount,
+      p4GroupAudioCount,
+      totalAudioFiles,
+      p1ImageCount,
       readyMediaCount,
       missingAudioCount,
       missingImageCount,

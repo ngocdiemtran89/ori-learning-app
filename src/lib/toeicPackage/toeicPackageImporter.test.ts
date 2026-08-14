@@ -1,5 +1,5 @@
 // ============================================================
-// Phase P3.5G: One-Click TOEIC Test Package Importer Test Suite (55 Items)
+// Phase P3.5G: One-Click TOEIC Test Package Importer Test Suite
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
@@ -11,17 +11,34 @@ import { importToeicPackage } from './packageImporter';
 import { RawPackageSources } from './types';
 
 describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
+  // Complete 54 physical audio files + 6 images for canonical valid test
   const sampleRawSources: RawPackageSources = {
     listeningPdfText: 'PART 1 ... PART 2 ... PART 3 ... PART 4 ...',
     readingPdfText: 'PART 5 ... PART 6 ... PART 7 ...',
     answerKeyText: Array.from({ length: 200 }, (_, i) => `${i + 1}. A`).join('\n'),
     transcriptPdfText: 'Q32-34 Transcript for group 1',
     audioFiles: [
-      new File(['dummy'], 'E26-T01-01.mp3'),
-      new File(['dummy'], 'E26-T01-07.mp3'),
-      new File(['dummy'], 'E26-T01-32-34.mp3'),
-      new File(['dummy'], 'E26-T01-71-73.mp3'),
+      ...Array.from({ length: 6 }, (_, i) => new File(['dummy'], `q00${i + 1}.mp3`)),
+      ...Array.from({ length: 25 }, (_, i) => new File(['dummy'], `q0${i + 7 < 10 ? '0' : ''}${i + 7}.mp3`)),
+      ...Array.from({ length: 13 }, (_, i) => {
+        const start = 32 + i * 3;
+        const end = start + 2;
+        return new File(['dummy'], `q0${start}-0${end}.mp3`);
+      }),
+      ...Array.from({ length: 10 }, (_, i) => {
+        const start = 71 + i * 3;
+        const end = start + 2;
+        return new File(['dummy'], `q${start < 100 ? '0' : ''}${start}-${end < 100 ? '0' : ''}${end}.mp3`);
+      }),
     ],
+    part1PdfCroppedImages: {
+      1: new Blob(['img1'], { type: 'image/png' }),
+      2: new Blob(['img2'], { type: 'image/png' }),
+      3: new Blob(['img3'], { type: 'image/png' }),
+      4: new Blob(['img4'], { type: 'image/png' }),
+      5: new Blob(['img5'], { type: 'image/png' }),
+      6: new Blob(['img6'], { type: 'image/png' }),
+    },
   };
 
   // PACKAGE STRUCTURE (1..5)
@@ -212,10 +229,10 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       expect(media.some(m => m.status === 'conflict')).toBe(true);
     });
 
-    it('26. missing media reported in validation', () => {
+    it('26. missing media reported in validation as BLOCKER', () => {
       const pkg = buildOriToeicPackage({ audioFiles: [] });
       const val = validateToeicPackage(pkg);
-      expect(val.warnings.some(w => w.code === 'MISSING_LISTENING_AUDIO')).toBe(true);
+      expect(val.blockers.some(b => b.code.includes('MISSING'))).toBe(true);
     });
 
     it('27. macOS noise ignored', () => {
@@ -295,6 +312,22 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
     it('38. missing answers reported', () => {
       const parsed = parseAnswerKeyText('1. A\n2. B');
       expect(parsed.answers.length).toBe(2);
+    });
+
+    it('38b. ORI combined answer JSON structure accepted', () => {
+      const oriJson = JSON.stringify({
+        schemaVersion: 1,
+        test: 1,
+        answerKey: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [String(i + 1), 'A'])),
+      });
+      const parsed = parseAnswerKeyText(oriJson);
+      expect(parsed.answers.length).toBe(200);
+    });
+
+    it('38c. Part 2 answer D rejected', () => {
+      const text = '7. D';
+      const parsed = parseAnswerKeyText(text);
+      expect(parsed.part2InvalidDQNums).toContain(7);
     });
   });
 
