@@ -224,7 +224,7 @@ export const ToeicLearningPracticeV2Page: React.FC = () => {
             </span>
           </div>
 
-          {currentQ.question_text && (
+          {!['P1', 'part1', 'P2', 'part2'].includes(currentQ.part) && currentQ.question_text && (
             <h3 className="text-base font-extrabold text-slate-900 leading-relaxed">
               {currentQ.question_text}
             </h3>

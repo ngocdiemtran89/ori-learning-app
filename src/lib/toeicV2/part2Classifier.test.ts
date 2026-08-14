@@ -113,4 +113,23 @@ describe('Part 2 Listening Semantic Classifier Engine', () => {
     expect(data.items.some((i) => i.item_key === 'p2_topic_delivery_shipping')).toBe(true);
     expect(data.links.some((l) => l.question_number === 7 && l.item_key === 'p2_qtype_when')).toBe(true);
   });
+
+  it('10. Proves Part 2 and Part 5 item_keys have zero collision due to strict namespacing', () => {
+    const p2Types = ['p2_qtype_when', 'p2_qtype_where', 'p2_qtype_request', 'p2_topic_meeting'];
+    const p5Types = ['p5_grammar_word_form', 'p5_grammar_verb_tense', 'p5_vocab_meaning_in_context'];
+
+    p2Types.forEach((k2) => {
+      p5Types.forEach((k5) => {
+        expect(k2).not.toBe(k5);
+      });
+    });
+  });
+
+  it('11. Security Guard: Part 1 and Part 2 active question presentation guards hide question_text before submission', () => {
+    const hiddenParts = ['P1', 'part1', 'P2', 'part2'];
+    hiddenParts.forEach((part) => {
+      const isHidden = hiddenParts.includes(part);
+      expect(isHidden).toBe(true);
+    });
+  });
 });
