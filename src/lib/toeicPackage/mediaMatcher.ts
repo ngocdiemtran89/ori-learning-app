@@ -90,15 +90,14 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaEn
 
   realAudioFiles.forEach(f => {
     const path = f.name.toLowerCase();
-    // Strip audio extension so ".mp3" does not falsely trigger "p3" regex!
     const pathWithoutExt = path.substring(0, path.lastIndexOf('.'));
     const basename = (f.name.split('/').pop() || f.name).toLowerCase();
 
-    // Enhanced Part Detection on pathWithoutExt (matching space, underscore, hyphen, e.g. "part 1", "part_1", "part-1", "p1")
-    const isP1 = Boolean(pathWithoutExt.match(/(?:\bpart|\bp)[\s_\-]*1(?!\d)/i));
-    const isP2 = Boolean(pathWithoutExt.match(/(?:\bpart|\bp)[\s_\-]*2(?!\d)/i));
-    const isP3 = Boolean(pathWithoutExt.match(/(?:\bpart|\bp)[\s_\-]*3(?!\d)/i));
-    const isP4 = Boolean(pathWithoutExt.match(/(?:\bpart|\bp)[\s_\-]*4(?!\d)/i));
+    // Exact explicit Part Detection on pathWithoutExt (handles space, underscore, hyphen)
+    const isP1 = /part[\s_\-]*1|p1/i.test(pathWithoutExt);
+    const isP2 = /part[\s_\-]*2|p2/i.test(pathWithoutExt);
+    const isP3 = /part[\s_\-]*3|p3/i.test(pathWithoutExt);
+    const isP4 = /part[\s_\-]*4|p4/i.test(pathWithoutExt);
 
     // A. Canonical ORI question audio (q001.mp3 .. q031.mp3)
     const oriQMatch = basename.match(/^q0*([1-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/);
@@ -125,7 +124,44 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaEn
       return;
     }
 
-    // C. Native Explicit Question Range Matching for Part 3 & Part 4 (e.g. E26-T01-32-34.mp3)
+    // C. Single Question Tokens (Part 1 & Part 2)
+    const nameWithoutExt = basename.substring(0, basename.lastIndexOf('.'));
+    const tokens = nameWithoutExt.split(/[^0-9]+/).filter(Boolean).map(t => parseInt(t, 10));
+
+    if (tokens.length > 0) {
+      const lastToken = tokens[tokens.length - 1];
+
+      // Folder / filename hint P2 (Part 2 Q7..Q31)
+      if (isP2) {
+        let qNum = lastToken;
+        let localIdx = lastToken;
+        if (lastToken >= 1 && lastToken <= 25) {
+          localIdx = lastToken;
+          qNum = 6 + lastToken;
+        } else if (lastToken >= 7 && lastToken <= 31) {
+          localIdx = lastToken - 6;
+          qNum = lastToken;
+        }
+
+        if (qNum >= 7 && qNum <= 31) {
+          const canonicalTarget = `P2-Q${qNum < 10 ? '00' : '0'}${qNum}`;
+          candidateList.push({ file: f, targetType: 'question', targetKey: `Q${qNum}`, canonicalTarget, part: 2, localIndex: localIdx, mediaType: 'audio' });
+          return;
+        }
+      }
+
+      // Folder / filename hint P1 (Part 1 Q1..Q6)
+      if (isP1) {
+        let qNum = lastToken;
+        if (lastToken >= 1 && lastToken <= 6) {
+          const canonicalTarget = `P1-Q00${qNum}`;
+          candidateList.push({ file: f, targetType: 'question', targetKey: `Q${qNum}`, canonicalTarget, part: 1, localIndex: qNum, mediaType: 'audio' });
+          return;
+        }
+      }
+    }
+
+    // D. Explicit Question Range Matching for Part 3 & Part 4 (e.g. E26-T01-32-34.mp3)
     const p3GroupParsed = parseGroupAudioFilename(f.name, 'p3_audio');
     if (p3GroupParsed.matchType === 'range' && p3GroupParsed.isValidRange && p3GroupParsed.startQ !== null && p3GroupParsed.endQ !== null && !isP4) {
       const startQ = p3GroupParsed.startQ;
@@ -160,41 +196,9 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaEn
       return;
     }
 
-    // D. Single Question Tokens (Part 1 & Part 2 & Group Fallback)
-    const nameWithoutExt = basename.substring(0, basename.lastIndexOf('.'));
-    const tokens = nameWithoutExt.split(/[^0-9]+/).filter(Boolean).map(t => parseInt(t, 10));
-
+    // E. Folder-guided / Absolute Fallbacks
     if (tokens.length > 0) {
       const lastToken = tokens[tokens.length - 1];
-
-      // Folder / filename hint P2
-      if (isP2) {
-        let qNum = lastToken;
-        let localIdx = lastToken;
-        if (lastToken >= 1 && lastToken <= 25) {
-          localIdx = lastToken;
-          qNum = 6 + lastToken;
-        } else if (lastToken >= 7 && lastToken <= 31) {
-          localIdx = lastToken - 6;
-          qNum = lastToken;
-        }
-
-        if (qNum >= 7 && qNum <= 31) {
-          const canonicalTarget = `P2-Q${qNum < 10 ? '00' : '0'}${qNum}`;
-          candidateList.push({ file: f, targetType: 'question', targetKey: `Q${qNum}`, canonicalTarget, part: 2, localIndex: localIdx, mediaType: 'audio' });
-          return;
-        }
-      }
-
-      // Folder / filename hint P1
-      if (isP1) {
-        let qNum = lastToken;
-        if (lastToken >= 1 && lastToken <= 6) {
-          const canonicalTarget = `P1-Q00${qNum}`;
-          candidateList.push({ file: f, targetType: 'question', targetKey: `Q${qNum}`, canonicalTarget, part: 1, localIndex: qNum, mediaType: 'audio' });
-          return;
-        }
-      }
 
       // Folder-guided Part 3 Sequential Index (1..13)
       if (isP3 && lastToken >= 1 && lastToken <= 13) {

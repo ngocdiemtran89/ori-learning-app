@@ -41,6 +41,195 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
     },
   };
 
+  // 3. STATIC CANONICAL MEDIA & BOUNDARIES
+  describe('STATIC CANONICAL MEDIA BOUNDARIES', () => {
+    it('verifies exact boundary mappings for all 54 physical audio files & 6 images', () => {
+      const p1Audio = Array.from({ length: 6 }, (_, i) => new File([''], `part1/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`));
+      const p2Audio = Array.from({ length: 25 }, (_, i) => new File([''], `part2/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`));
+      const p3Audio = Array.from({ length: 13 }, (_, i) => new File([''], `part3/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`));
+      const p4Audio = Array.from({ length: 10 }, (_, i) => new File([''], `part4/${i + 1 < 10 ? '0' : ''}${i + 1}.mp3`));
+
+      const media = matchPackageMedia({ audioFiles: [...p1Audio, ...p2Audio, ...p3Audio, ...p4Audio] });
+
+      // P1: 01 -> Q1, 06 -> Q6
+      expect(media.find(m => m.filename.includes('part1/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q1');
+      expect(media.find(m => m.filename.includes('part1/06.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q6');
+
+      // P2: 01 -> Q7, 02 -> Q8, 06 -> Q12, 07 -> Q13, 25 -> Q31
+      expect(media.find(m => m.filename.includes('part2/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q7');
+      expect(media.find(m => m.filename.includes('part2/02.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q8');
+      expect(media.find(m => m.filename.includes('part2/06.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q12');
+      expect(media.find(m => m.filename.includes('part2/07.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename.includes('part2/25.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q31');
+
+      // P3: 01 -> Q32-Q34, 02 -> Q35-Q37, 13 -> Q68-Q70
+      expect(media.find(m => m.filename.includes('part3/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q32–34');
+      expect(media.find(m => m.filename.includes('part3/02.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q35–37');
+      expect(media.find(m => m.filename.includes('part3/13.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q68–70');
+
+      // P4: 01 -> Q71-Q73, 02 -> Q74-Q76, 10 -> Q98-Q100
+      expect(media.find(m => m.filename.includes('part4/01.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q71–73');
+      expect(media.find(m => m.filename.includes('part4/02.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q74–76');
+      expect(media.find(m => m.filename.includes('part4/10.mp3')?.valueOf())?.targetNumberOrRange).toBe('Q98–100');
+
+      // Physical counts
+      const p1Count = media.filter(m => m.part === 1 && m.mediaType === 'audio').length;
+      const p2Count = media.filter(m => m.part === 2 && m.mediaType === 'audio').length;
+      const p3Count = media.filter(m => m.part === 3 && m.mediaType === 'audio').length;
+      const p4Count = media.filter(m => m.part === 4 && m.mediaType === 'audio').length;
+
+      expect(p1Count).toBe(6);
+      expect(p2Count).toBe(25);
+      expect(p3Count).toBe(13);
+      expect(p4Count).toBe(10);
+      expect(p1Count + p2Count + p3Count + p4Count).toBe(54);
+
+      // Zero canonicalTarget conflicts
+      expect(media.filter(m => m.status === 'conflict').length).toBe(0);
+    });
+  });
+
+  // 4. FILENAME STYLES REGRESSION TEST
+  describe('FILENAME STYLES REGRESSION', () => {
+    it('handles space, underscore, hyphen variants and proves .mp3 extension never triggers false Part 3', () => {
+      const audioList = [
+        new File([''], 'Test 01_Part 1_01.mp3'),
+        new File([''], 'Test 01_Part 1_06.mp3'),
+        new File([''], 'Test 01_Part 2_01.mp3'),
+        new File([''], 'Test 01_Part 2_06.mp3'),
+        new File([''], 'Test 01_Part 2_07.mp3'),
+        new File([''], 'Test 01_Part 2_25.mp3'),
+        new File([''], 'Test 01_Part 3_01.mp3'),
+        new File([''], 'Test 01_Part 3_13.mp3'),
+        new File([''], 'Test 01_Part 4_01.mp3'),
+        new File([''], 'Test 01_Part 4_10.mp3'),
+        new File([''], 'Test_01_Part_1_02.mp3'),
+        new File([''], 'Test-01-Part-2-03.mp3'),
+      ];
+
+      const media = matchPackageMedia({ audioFiles: audioList });
+
+      expect(media.find(m => m.filename === 'Test 01_Part 1_01.mp3')?.targetNumberOrRange).toBe('Q1');
+      expect(media.find(m => m.filename === 'Test 01_Part 1_06.mp3')?.targetNumberOrRange).toBe('Q6');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_01.mp3')?.targetNumberOrRange).toBe('Q7');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_06.mp3')?.targetNumberOrRange).toBe('Q12');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_07.mp3')?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename === 'Test 01_Part 2_25.mp3')?.targetNumberOrRange).toBe('Q31');
+      expect(media.find(m => m.filename === 'Test 01_Part 3_01.mp3')?.targetNumberOrRange).toBe('Q32–34');
+      expect(media.find(m => m.filename === 'Test 01_Part 3_13.mp3')?.targetNumberOrRange).toBe('Q68–70');
+      expect(media.find(m => m.filename === 'Test 01_Part 4_01.mp3')?.targetNumberOrRange).toBe('Q71–73');
+      expect(media.find(m => m.filename === 'Test 01_Part 4_10.mp3')?.targetNumberOrRange).toBe('Q98–100');
+
+      // Zero false conflicts caused by extension
+      expect(media.filter(m => m.status === 'conflict').length).toBe(0);
+    });
+  });
+
+  // 7. PREVIEW GATE AUTOMATED TEST CASES
+  describe('PREVIEW GATE AUTOMATED TEST CASES', () => {
+    it('54 audio + 6 images + 200 questions + 200 answers => READY (isValidForDraft: true)', () => {
+      const pkg = buildOriToeicPackage(sampleRawSources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(true);
+      expect(val.blockers.length).toBe(0);
+    });
+
+    it('53 audio => BLOCKED', () => {
+      const sources: RawPackageSources = {
+        ...sampleRawSources,
+        audioFiles: sampleRawSources.audioFiles?.slice(0, 53),
+      };
+      const pkg = buildOriToeicPackage(sources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code.includes('MISSING'))).toBe(true);
+    });
+
+    it('5 P1 images => BLOCKED', () => {
+      const sources: RawPackageSources = {
+        ...sampleRawSources,
+        part1PdfCroppedImages: {
+          1: new Blob(['img1']),
+          2: new Blob(['img2']),
+          3: new Blob(['img3']),
+          4: new Blob(['img4']),
+          5: new Blob(['img5']),
+          // 6 missing
+        },
+      };
+      const pkg = buildOriToeicPackage(sources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'MISSING_P1_IMAGE_QUESTION')).toBe(true);
+    });
+
+    it('duplicate media target => BLOCKED', () => {
+      const sources: RawPackageSources = {
+        ...sampleRawSources,
+        audioFiles: [
+          ...(sampleRawSources.audioFiles || []),
+          new File(['dummy'], 'duplicate_q001.mp3'),
+        ],
+      };
+      const pkg = buildOriToeicPackage(sources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'DUPLICATE_MEDIA_TARGET')).toBe(true);
+    });
+
+    it('Part 2 answer D => BLOCKED', () => {
+      const answersText = Array.from({ length: 200 }, (_, i) => `${i + 1}. ${i + 1 === 7 ? 'D' : 'A'}`).join('\n');
+      const sources: RawPackageSources = {
+        ...sampleRawSources,
+        answerKeyText: answersText,
+      };
+      const pkg = buildOriToeicPackage(sources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'INVALID_PART2_ANSWER_D')).toBe(true);
+    });
+
+    it('199 answers => BLOCKED', () => {
+      const answersText = Array.from({ length: 199 }, (_, i) => `${i + 1}. A`).join('\n');
+      const sources: RawPackageSources = {
+        ...sampleRawSources,
+        answerKeyText: answersText,
+      };
+      const pkg = buildOriToeicPackage(sources);
+      const val = validateToeicPackage(pkg);
+      expect(val.isValidForDraft).toBe(false);
+      expect(val.blockers.some(b => b.code === 'MISSING_ANSWERS')).toBe(true);
+    });
+  });
+
+  // 8. STALE SESSION & RE-RUN MATCHER TEST
+  describe('STALE SESSION & IDEMPOTENCY', () => {
+    it('running matcher twice produces exact 54 items, not 108', () => {
+      const media1 = matchPackageMedia(sampleRawSources);
+      const media2 = matchPackageMedia(sampleRawSources);
+      expect(media1.length).toBe(60); // 6 images + 54 audio
+      expect(media2.length).toBe(60);
+      expect(media1.filter(m => m.mediaType === 'audio').length).toBe(54);
+    });
+
+    it('uploading package B replaces A media without appending', () => {
+      const packageA: RawPackageSources = {
+        audioFiles: [new File(['a'], 'part1/01.mp3')],
+      };
+      const packageB: RawPackageSources = {
+        audioFiles: [new File(['b'], 'part1/02.mp3')],
+      };
+
+      const mediaA = matchPackageMedia(packageA);
+      const mediaB = matchPackageMedia(packageB);
+
+      expect(mediaA.length).toBe(1);
+      expect(mediaA[0].filename).toBe('part1/01.mp3');
+      expect(mediaB.length).toBe(1);
+      expect(mediaB[0].filename).toBe('part1/02.mp3');
+    });
+  });
+
   // PACKAGE STRUCTURE (1..5)
   describe('PACKAGE STRUCTURE', () => {
     it('1. canonical 200-question structure accepted', () => {

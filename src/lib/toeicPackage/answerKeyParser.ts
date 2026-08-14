@@ -38,7 +38,9 @@ export function parseAnswerKeyText(rawText: string): AnswerKeyParseResult {
       if (['A', 'B', 'C', 'D'].includes(ans)) {
         if (qNum >= 7 && qNum <= 31 && ans === 'D') {
           part2InvalidDQNums.push(qNum);
-        } else if (seen.has(qNum)) {
+        }
+
+        if (seen.has(qNum)) {
           duplicateQNums.push(qNum);
         } else {
           seen.add(qNum);
@@ -111,8 +113,6 @@ export function parseAnswerKeyText(rawText: string): AnswerKeyParseResult {
   }
 
   // 2. Text / CSV Regex Parsing
-  // Match patterns like:
-  // "1. A", "1: A", "1 - A", "Q1. A", "Question 1: A", "1, A", "1,A"
   const pattern = /(?:Q(?:uestion)?\s*)?([0-9]{1,3})[\s.:,\-\/]+([A-Da-dE-Ze-z])/g;
 
   let match: RegExpExecArray | null;
