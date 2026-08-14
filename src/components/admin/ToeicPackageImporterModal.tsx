@@ -22,6 +22,9 @@ import {
   Crop,
   Image as ImageIcon,
   RotateCcw,
+  Copy,
+  ExternalLink,
+  Upload,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { extractPdfTextItems } from '../../lib/cms/pdfUtils';
@@ -32,6 +35,9 @@ import { importToeicPackage } from '../../lib/toeicPackage/packageImporter';
 import { extractPart1ImagesFromPdf, Part1ExtractedImage } from '../../lib/toeicPackage/part1ImageExtractor';
 import { matchPackageMedia } from '../../lib/toeicPackage/mediaMatcher';
 import { Part1PdfCropModal } from './Part1PdfCropModal';
+import { generateChatGptVisionMasterPrompt } from '../../features/toeic-import-studio/pdf/packetGenerator';
+import { patchOriToeicPackageWithGptResult } from '../../lib/toeicPackage/gptResultPatcher';
+import { isPlaceholderString } from '../../lib/toeicPackage/contentIntegrity';
 
 interface ToeicPackageImporterModalProps {
   isOpen: boolean;
@@ -79,6 +85,72 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
   const [execStatus, setExecStatus] = useState('');
   const [createdTestId, setCreatedTestId] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
+
+  // GPT HYBRID RECOVERY STATE
+  const [gptImportOpen, setGptImportOpen] = useState(false);
+  const [gptJsonInput, setGptJsonInput] = useState('');
+  const [gptMergeError, setGptMergeError] = useState<string | null>(null);
+  const [gptMergeSuccessMsg, setGptMergeSuccessMsg] = useState<string | null>(null);
+  const [copiedPromptType, setCopiedPromptType] = useState<'listening' | 'reading' | null>(null);
+
+  const handleCopyGptPrompt = (sourceType: 'listening' | 'reading') => {
+    const prompt = generateChatGptVisionMasterPrompt(sourceType, 1, 1, 1, 30);
+    navigator.clipboard.writeText(prompt);
+    setCopiedPromptType(sourceType);
+    setTimeout(() => setCopiedPromptType(null), 3000);
+  };
+
+  const handleApplyGptMerge = () => {
+    if (!pkg || !gptJsonInput.trim()) return;
+    setGptMergeError(null);
+    setGptMergeSuccessMsg(null);
+
+    const res = patchOriToeicPackageWithGptResult(pkg, gptJsonInput);
+    if (!res.success || res.errors.length > 0) {
+      setGptMergeError(res.errors.join('\n'));
+    } else {
+      setPkg(res.patchedPkg);
+      setValidationReport(res.report);
+      setGptMergeSuccessMsg(
+        `✓ Đã hợp nhất thành công ${res.patchedQuestionsCount} câu hỏi và ${res.patchedGroupsCount} nhóm từ kết quả ChatGPT!`
+      );
+      setGptJsonInput('');
+      if (res.report.counts.placeholderQuestionsCount === 0) {
+        setTimeout(() => {
+          setGptImportOpen(false);
+        }, 1500);
+      }
+    }
+  };
+
+  const getPartBreakdownStats = () => {
+    if (!pkg) return null;
+    const parts = ['part1', 'part2', 'part3', 'part4', 'part5', 'part6', 'part7'] as const;
+    const stats: Record<string, { total: number; real: number; placeholder: number }> = {};
+
+    parts.forEach((p) => {
+      const qs = pkg.questions.filter((q) => q.part === p);
+      let real = 0;
+      qs.forEach((q) => {
+        if (p === 'part1' || p === 'part2') {
+          real++;
+        } else {
+          const isQPl =
+            isPlaceholderString(q.question_text) ||
+            (Array.isArray(q.options) && q.options.some((opt) => isPlaceholderString(opt.text)));
+          if (!isQPl) real++;
+        }
+      });
+
+      stats[p] = {
+        total: qs.length,
+        real,
+        placeholder: qs.length - real,
+      };
+    });
+
+    return stats;
+  };
 
   useEffect(() => {
     if (!pkg) return;
@@ -569,32 +641,105 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
             </div>
           )}
 
-          {/* STEP 3 — KIỂM TRA 200 CÂU */}
+          {/* STEP 3 — KIỂM TRA 200 CÂU & NỘI DUNG THẬT */}
           {step === 3 && pkg && (
             <div className="space-y-6">
-              <div className="bg-slate-100 p-4 rounded-2xl flex items-center justify-between text-xs font-bold text-slate-700">
-                <span>CẤU TRÚC ĐỀ NORMALIZE:</span>
-                <span className="text-emerald-700 font-extrabold">{pkg.questions.length} / 200 CÂU HỎI HỢP LỆ</span>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                {[
-                  { p: 'part1', label: 'Part 1 (Q1–6)', count: pkg.questions.filter(q => q.part === 'part1').length, target: 6 },
-                  { p: 'part2', label: 'Part 2 (Q7–31)', count: pkg.questions.filter(q => q.part === 'part2').length, target: 25 },
-                  { p: 'part3', label: 'Part 3 (Q32–70)', count: pkg.questions.filter(q => q.part === 'part3').length, target: 39 },
-                  { p: 'part4', label: 'Part 4 (Q71–100)', count: pkg.questions.filter(q => q.part === 'part4').length, target: 30 },
-                  { p: 'part5', label: 'Part 5 (Q101–130)', count: pkg.questions.filter(q => q.part === 'part5').length, target: 30 },
-                  { p: 'part6', label: 'Part 6 (Q131–146)', count: pkg.questions.filter(q => q.part === 'part6').length, target: 16 },
-                  { p: 'part7', label: 'Part 7 (Q147–200)', count: pkg.questions.filter(q => q.part === 'part7').length, target: 54 },
-                ].map(item => (
-                  <div key={item.p} className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex items-center justify-between">
-                    <span className="font-bold text-slate-700">{item.label}</span>
-                    <span className={`px-2 py-0.5 rounded-full font-extrabold text-[11px] ${item.count === item.target ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
-                      {item.count}/{item.target}
+              <div className="bg-slate-100 p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between text-xs font-bold text-slate-700 gap-3">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div>
+                    <span className="text-slate-500 uppercase text-[10px] block font-extrabold">CẤU TRÚC ĐỀ</span>
+                    <span className="text-emerald-700 font-extrabold text-sm">{pkg.questions.length} / 200</span>
+                  </div>
+                  <div className="h-6 w-[1px] bg-slate-300 hidden md:block" />
+                  <div>
+                    <span className="text-slate-500 uppercase text-[10px] block font-extrabold">NỘI DUNG ĐÃ ĐỌC</span>
+                    <span className={`font-extrabold text-sm ${validationReport?.counts?.realContentQuestionsCount === 200 ? 'text-emerald-700' : 'text-amber-600'}`}>
+                      {validationReport?.counts?.realContentQuestionsCount ?? 31} / 200
                     </span>
                   </div>
-                ))}
+                  <div className="h-6 w-[1px] bg-slate-300 hidden md:block" />
+                  <div>
+                    <span className="text-slate-500 uppercase text-[10px] block font-extrabold">CẦN ĐỌC / BỔ SUNG</span>
+                    <span className={`font-extrabold text-sm ${(validationReport?.counts?.placeholderQuestionsCount || 0) === 0 ? 'text-slate-400' : 'text-rose-600'}`}>
+                      {validationReport?.counts?.placeholderQuestionsCount ?? 169} CÂU
+                    </span>
+                  </div>
+                </div>
               </div>
+
+              {/* CONTENT EXTRACTION PANEL (WHEN PLACEHOLDERS EXIST) */}
+              {Boolean(validationReport && (validationReport.counts.placeholderQuestionsCount ?? 0) > 0) && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 p-5 rounded-3xl space-y-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-amber-500 text-white rounded-2xl">
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-black text-sm text-amber-950 uppercase tracking-tight">
+                        PDF chưa đọc được đầy đủ nội dung (Cần bổ sung qua GPT Hybrid)
+                      </h3>
+                      <p className="text-xs text-amber-900 font-medium mt-0.5">
+                        Lý do: PDF dạng ảnh/scan hoặc không có text layer. Hệ thống đã tạo <b>{validationReport?.counts?.placeholderQuestionsCount ?? 0} câu khung (scaffolding)</b>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60">
+                    <button
+                      onClick={() => setGptImportOpen(true)}
+                      className="px-4 py-2 bg-ori-600 hover:bg-ori-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+                    >
+                      <Sparkles className="w-4 h-4" /> [ĐỌC BẰNG IMAGE PACKET]
+                    </button>
+                    <button
+                      onClick={() => setGptImportOpen(true)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+                    >
+                      <Upload className="w-4 h-4" /> [IMPORT KẾT QUẢ CHATGPT]
+                    </button>
+                    <button
+                      onClick={() => window.open('/admin/tools/toeic-import-studio', '_blank')}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-300 transition-all ml-auto"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" /> [MỞ IMPORT STUDIO NÂNG CAO]
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* PER PART DETAILED CONTENT METRICS */}
+              {(() => {
+                const partStats = getPartBreakdownStats();
+                if (!partStats) return null;
+
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    {[
+                      { p: 'part1', label: 'Part 1 (Q1–6)', real: partStats.part1.real, total: 6, isSpoken: true },
+                      { p: 'part2', label: 'Part 2 (Q7–31)', real: partStats.part2.real, total: 25, isSpoken: true },
+                      { p: 'part3', label: 'Part 3 (Q32–70)', real: partStats.part3.real, total: 39, isSpoken: false },
+                      { p: 'part4', label: 'Part 4 (Q71–100)', real: partStats.part4.real, total: 30, isSpoken: false },
+                      { p: 'part5', label: 'Part 5 (Q101–130)', real: partStats.part5.real, total: 30, isSpoken: false },
+                      { p: 'part6', label: 'Part 6 (Q131–146)', real: partStats.part6.real, total: 16, isSpoken: false },
+                      { p: 'part7', label: 'Part 7 (Q147–200)', real: partStats.part7.real, total: 54, isSpoken: false },
+                    ].map((item) => (
+                      <div key={item.p} className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex flex-col justify-between space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-slate-700">{item.label}</span>
+                          <span className={`px-2 py-0.5 rounded-full font-extrabold text-[10px] ${
+                            item.real === item.total ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {item.real}/{item.total} {item.isSpoken ? 'nghe' : 'thật'}
+                          </span>
+                        </div>
+                        {item.total - item.real > 0 && !item.isSpoken && (
+                          <p className="text-[10px] text-rose-600 font-extrabold">⚠️ Thiếu {item.total - item.real} câu (scaffold)</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1008,6 +1153,120 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
         targetQuestionNumber={cropTargetQNum}
         onCropSaved={handleCropSaved}
       />
+
+      {/* GPT HYBRID RECOVERY MODAL */}
+      {gptImportOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* MODAL HEADER */}
+            <div className="px-6 py-4 bg-gradient-to-r from-ori-600 to-indigo-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/10 rounded-2xl">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm uppercase tracking-tight">KHÔI PHỤC NỘI DUNG QUA CHATGPT VISION / HYBRID</h3>
+                  <p className="text-xs text-white/80">Xuất Prompt chuẩn hóa hoặc nhập mã JSON ChatGPT để điền nội dung đề thi</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setGptImportOpen(false);
+                  setGptMergeError(null);
+                  setGptMergeSuccessMsg(null);
+                }}
+                className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto flex-1 text-xs">
+              {/* STEP A: COPY VISION PROMPTS */}
+              <div className="space-y-3 bg-slate-50 border border-slate-200 p-4 rounded-2xl">
+                <h4 className="font-extrabold text-slate-800 uppercase flex items-center gap-2">
+                  <Copy className="w-4 h-4 text-ori-600" /> BƯỚC 1: SAO CHÉP PROMPT GỬI CHATGPT VISION
+                </h4>
+                <p className="text-slate-600 font-medium">
+                  Tải ảnh PDF đề thi lên ChatGPT kèm Prompt dưới đây để ChatGPT đọc và xuất JSON chuẩn ORI:
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => handleCopyGptPrompt('listening')}
+                    className="p-3 bg-white border border-slate-200 hover:border-ori-500 rounded-xl font-bold text-slate-700 hover:text-ori-600 text-left flex items-center justify-between transition-all shadow-sm"
+                  >
+                    <span>Sao chép Prompt Listening P3–P4 (Q32–Q100)</span>
+                    {copiedPromptType === 'listening' ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-extrabold">✓ Đã copy</span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleCopyGptPrompt('reading')}
+                    className="p-3 bg-white border border-slate-200 hover:border-sky-500 rounded-xl font-bold text-slate-700 hover:text-sky-600 text-left flex items-center justify-between transition-all shadow-sm"
+                  >
+                    <span>Sao chép Prompt Reading P5–P7 (Q101–Q200)</span>
+                    {copiedPromptType === 'reading' ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md font-extrabold">✓ Đã copy</span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* STEP B: PASTE CHATGPT JSON */}
+              <div className="space-y-3">
+                <h4 className="font-extrabold text-slate-800 uppercase flex items-center gap-2">
+                  <Upload className="w-4 h-4 text-emerald-600" /> BƯỚC 2: DÁN KẾT QUẢ JSON TỪ CHATGPT VÀO ĐÂY
+                </h4>
+                <textarea
+                  rows={8}
+                  value={gptJsonInput}
+                  onChange={(e) => setGptJsonInput(e.target.value)}
+                  placeholder="Dán mã JSON trả về từ ChatGPT vào đây (ví dụ: { schemaVersion: 1, questions: [...] })..."
+                  className="w-full p-3 font-mono text-[11px] bg-slate-900 text-emerald-400 border border-slate-700 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+
+                {gptMergeError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-bold whitespace-pre-wrap">
+                    ⚠️ {gptMergeError}
+                  </div>
+                )}
+
+                {gptMergeSuccessMsg && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 font-extrabold">
+                    {gptMergeSuccessMsg}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setGptImportOpen(false);
+                      setGptMergeError(null);
+                      setGptMergeSuccessMsg(null);
+                    }}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    onClick={handleApplyGptMerge}
+                    disabled={!gptJsonInput.trim()}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold rounded-xl shadow-md flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-4 h-4" /> [HỢP NHẤT VÀO GÓI ĐỀ TỰ ĐỘNG]
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
