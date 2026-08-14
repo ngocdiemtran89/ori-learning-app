@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { buildOriToeicPackage } from './packageBuilder';
 import { validateToeicPackage } from './validation';
 import { parseAnswerKeyText } from './answerKeyParser';
-import { matchPackageMedia } from './mediaMatcher';
+import { matchPackageMedia, detectP2NumberingConvention } from './mediaMatcher';
 import { importToeicPackage } from './packageImporter';
 import { RawPackageSources } from './types';
 
@@ -91,6 +91,16 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
   // BATCH CONVENTION TESTS FOR PART 2 (GLOBAL QNUM 07..31 & LOCAL INDEX 01..25)
   describe('PART 2 BATCH NUMBERING CONVENTIONS', () => {
+    it('detectP2NumberingConvention correctly identifies P2_GLOBAL_QNUM for suffixes 7..31', () => {
+      const p2GlobalFiles = Array.from({ length: 25 }, (_, i) => {
+        const qNum = 7 + i;
+        const numStr = qNum < 10 ? `0${qNum}` : `${qNum}`;
+        return new File([''], `Test 01_Part 2_${numStr}.mp3`);
+      });
+
+      expect(detectP2NumberingConvention(p2GlobalFiles)).toBe('P2_GLOBAL_QNUM');
+    });
+
     it('P2_GLOBAL_QNUM mode (suffixes 07..31) maps Test 01_Part 2_07.mp3..Test 01_Part 2_31.mp3 directly to Q7..Q31 without Q26-Q31 conflicts', () => {
       const p2GlobalFiles = Array.from({ length: 25 }, (_, i) => {
         const qNum = 7 + i;
@@ -105,6 +115,7 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       expect(media.find(m => m.filename.includes('Part 2_07.mp3'))?.targetNumberOrRange).toBe('Q7');
       expect(media.find(m => m.filename.includes('Part 2_12.mp3'))?.targetNumberOrRange).toBe('Q12');
       expect(media.find(m => m.filename.includes('Part 2_13.mp3'))?.targetNumberOrRange).toBe('Q13');
+      expect(media.find(m => m.filename.includes('Part 2_19.mp3'))?.targetNumberOrRange).toBe('Q19');
       expect(media.find(m => m.filename.includes('Part 2_20.mp3'))?.targetNumberOrRange).toBe('Q20');
       expect(media.find(m => m.filename.includes('Part 2_21.mp3'))?.targetNumberOrRange).toBe('Q21');
       expect(media.find(m => m.filename.includes('Part 2_25.mp3'))?.targetNumberOrRange).toBe('Q25');
@@ -118,6 +129,42 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
 
       // Exactly 25 unique canonical targets and 0 conflicts
       expect(media.filter(m => m.part === 2).length).toBe(25);
+      expect(media.filter(m => m.status === 'conflict').length).toBe(0);
+    });
+
+    it('REGRESSION TEST FOR CURRENT BUG: Part2_19 MUST map to Q19 (NOT Q25) and Part2_20 MUST map to Q20 (NOT Q26) in GLOBAL mode', () => {
+      const p2GlobalFiles = Array.from({ length: 25 }, (_, i) => {
+        const qNum = 7 + i;
+        const numStr = qNum < 10 ? `0${qNum}` : `${qNum}`;
+        return new File([''], `Test 01_Part 2_${numStr}.mp3`);
+      });
+
+      const media = matchPackageMedia({ audioFiles: p2GlobalFiles });
+
+      // Assert Part 2_19 maps to Q19 and NOT Q25
+      const entry19 = media.find(m => m.filename.includes('Part 2_19.mp3'));
+      expect(entry19?.targetNumberOrRange).toBe('Q19');
+      expect(entry19?.canonicalTarget).toBe('P2-Q019');
+      expect(entry19?.targetNumberOrRange).not.toBe('Q25');
+
+      // Assert Part 2_20 maps to Q20 and NOT Q26
+      const entry20 = media.find(m => m.filename.includes('Part 2_20.mp3'));
+      expect(entry20?.targetNumberOrRange).toBe('Q20');
+      expect(entry20?.canonicalTarget).toBe('P2-Q020');
+      expect(entry20?.targetNumberOrRange).not.toBe('Q26');
+
+      // Assert Part 2_21 maps to Q21 and NOT Q27
+      const entry21 = media.find(m => m.filename.includes('Part 2_21.mp3'));
+      expect(entry21?.targetNumberOrRange).toBe('Q21');
+      expect(entry21?.canonicalTarget).toBe('P2-Q021');
+
+      // Assert Part 2_25, 26, 27, 31
+      expect(media.find(m => m.filename.includes('Part 2_25.mp3'))?.targetNumberOrRange).toBe('Q25');
+      expect(media.find(m => m.filename.includes('Part 2_26.mp3'))?.targetNumberOrRange).toBe('Q26');
+      expect(media.find(m => m.filename.includes('Part 2_27.mp3'))?.targetNumberOrRange).toBe('Q27');
+      expect(media.find(m => m.filename.includes('Part 2_31.mp3'))?.targetNumberOrRange).toBe('Q31');
+
+      // Conflicts on Q26..Q31 must be exactly 0
       expect(media.filter(m => m.status === 'conflict').length).toBe(0);
     });
 
@@ -155,6 +202,56 @@ describe('Phase P3.5G - One-Click TOEIC Test Package Importer Suite', () => {
       const val = validateToeicPackage(pkg);
       expect(val.isValidForDraft).toBe(false);
       expect(val.blockers.some(b => b.code === 'P2_NUMBERING_AMBIGUOUS')).toBe(true);
+    });
+
+    it('FULL WIZARD RUNTIME INTEGRATION TEST FOR TEST 1: 54 audio (P2 07..31) + 6 P1 images => 60 ready media items, 0 conflicts', () => {
+      const realTest1AudioFiles = [
+        ...Array.from({ length: 6 }, (_, i) => new File([''], `Test 01_Part 1_0${i + 1}.mp3`)),
+        ...Array.from({ length: 25 }, (_, i) => {
+          const qNum = 7 + i;
+          return new File([''], `Test 01_Part 2_${qNum < 10 ? '0' : ''}${qNum}.mp3`);
+        }),
+        ...Array.from({ length: 13 }, (_, i) => {
+          const start = 32 + i * 3;
+          const end = start + 2;
+          return new File([''], `Test 01_Part 3_${start}-${end}.mp3`);
+        }),
+        ...Array.from({ length: 10 }, (_, i) => {
+          const start = 71 + i * 3;
+          const end = start + 2;
+          return new File([''], `Test 01_Part 4_${start}-${end}.mp3`);
+        }),
+      ];
+
+      const rawSources: RawPackageSources = {
+        listeningPdfText: 'PART 1 ... PART 2 ... PART 3 ... PART 4 ...',
+        readingPdfText: 'PART 5 ... PART 6 ... PART 7 ...',
+        answerKeyText: Array.from({ length: 200 }, (_, i) => `${i + 1}. A`).join('\n'),
+        audioFiles: realTest1AudioFiles,
+        part1PdfCroppedImages: {
+          1: new Blob(['img1']),
+          2: new Blob(['img2']),
+          3: new Blob(['img3']),
+          4: new Blob(['img4']),
+          5: new Blob(['img5']),
+          6: new Blob(['img6']),
+        },
+      };
+
+      const pkg = buildOriToeicPackage(rawSources, 'Test 1');
+      const val = validateToeicPackage(pkg);
+
+      expect(val.counts.p1AudioCount).toBe(6);
+      expect(val.counts.p2AudioCount).toBe(25);
+      expect(val.counts.p3GroupAudioCount).toBe(13);
+      expect(val.counts.p4GroupAudioCount).toBe(10);
+      expect(val.counts.totalAudioFiles).toBe(54);
+      expect(val.counts.p1ImageCount).toBe(6);
+      expect(val.counts.readyMediaCount).toBe(60);
+      expect(val.counts.conventions.p2Convention).toBe('P2_GLOBAL_QNUM');
+
+      expect(val.isValidForDraft).toBe(true);
+      expect(val.blockers.length).toBe(0);
     });
   });
 

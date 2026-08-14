@@ -2,7 +2,7 @@
 // Phase P3.5G: One-Click TOEIC Test Package Importer - 7-Step Admin Wizard
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   FileText,
@@ -25,11 +25,12 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { extractPdfTextItems } from '../../lib/cms/pdfUtils';
-import { RawPackageSources, OriToeicPackageV1, ToeicPackageValidationReport } from '../../lib/toeicPackage/types';
+import { RawPackageSources, OriToeicPackageV1, ToeicPackageValidationReport, OriPackageMediaEntry } from '../../lib/toeicPackage/types';
 import { buildOriToeicPackage } from '../../lib/toeicPackage/packageBuilder';
 import { validateToeicPackage } from '../../lib/toeicPackage/validation';
 import { importToeicPackage } from '../../lib/toeicPackage/packageImporter';
 import { extractPart1ImagesFromPdf, Part1ExtractedImage } from '../../lib/toeicPackage/part1ImageExtractor';
+import { matchPackageMedia } from '../../lib/toeicPackage/mediaMatcher';
 import { Part1PdfCropModal } from './Part1PdfCropModal';
 
 interface ToeicPackageImporterModalProps {
@@ -78,6 +79,51 @@ export const ToeicPackageImporterModal: React.FC<ToeicPackageImporterModalProps>
   const [execStatus, setExecStatus] = useState('');
   const [createdTestId, setCreatedTestId] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pkg) return;
+    const media = matchPackageMedia({
+      audioFiles,
+      part1PdfCroppedImages: part1CroppedMap,
+    });
+
+    const questionsCopy = pkg.questions.map((q) => ({ ...q }));
+    const groupsCopy = pkg.groups.map((g) => ({ ...g }));
+
+    media.forEach((m: OriPackageMediaEntry) => {
+      if (m.file) {
+        if (m.targetType === 'question') {
+          const qNum = parseInt(m.targetNumberOrRange.replace(/[^0-9]+/g, ''), 10);
+          const q = questionsCopy.find((x) => x.question_number === qNum);
+          if (q) {
+            if (m.mediaType === 'image') q.local_image_file = m.file;
+            if (m.mediaType === 'audio') q.local_audio_file = m.file as File;
+          }
+        } else if (m.targetType === 'group') {
+          const match = m.targetNumberOrRange.match(/([0-9]+)[–\-]([0-9]+)/);
+          if (match) {
+            const startQ = parseInt(match[1], 10);
+            const endQ = parseInt(match[2], 10);
+            const g = groupsCopy.find((x) => x.start_question === startQ && x.end_question === endQ);
+            if (g && m.mediaType === 'audio') {
+              g.local_audio_file = m.file as File;
+            }
+          }
+        }
+      }
+    });
+
+    const updatedPkg: OriToeicPackageV1 = {
+      ...pkg,
+      questions: questionsCopy,
+      groups: groupsCopy,
+      media,
+    };
+
+    const report = validateToeicPackage(updatedPkg);
+    setPkg(updatedPkg);
+    setValidationReport(report);
+  }, [audioFiles, part1CroppedMap]);
 
   if (!isOpen) return null;
 

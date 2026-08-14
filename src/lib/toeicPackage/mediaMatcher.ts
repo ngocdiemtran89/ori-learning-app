@@ -9,6 +9,157 @@ export interface OriPackageMediaList extends Array<OriPackageMediaEntry> {
   conventions?: PackageMediaConventions;
 }
 
+// Helper to extract last numeric token from file basename
+export const getLastNumericToken = (file: File): number | null => {
+  const basename = (file.name.split('/').pop() || file.name).toLowerCase();
+  const nameWithoutExt = basename.substring(0, basename.lastIndexOf('.'));
+  const tokens = nameWithoutExt.split(/[^0-9]+/).filter(Boolean).map(t => parseInt(t, 10));
+  return tokens.length > 0 ? tokens[tokens.length - 1] : null;
+};
+
+// --- A. PURE BATCH DETECTOR FOR PART 2 ---
+export function detectP2NumberingConvention(p2Files: File[]): P2NumberingConvention {
+  if (!p2Files || p2Files.length === 0) return 'P2_NONE';
+
+  const suffixes = p2Files
+    .map(getLastNumericToken)
+    .filter((s): s is number => s !== null);
+
+  const sortedUnique = Array.from(new Set(suffixes)).sort((a, b) => a - b);
+
+  // Exact 25 unique suffixes matching 1..25 => P2_LOCAL_INDEX
+  const isExactLocal25 =
+    sortedUnique.length === 25 &&
+    sortedUnique.every((val, idx) => val === idx + 1);
+
+  if (isExactLocal25) {
+    return 'P2_LOCAL_INDEX';
+  }
+
+  // Exact 25 unique suffixes matching 7..31 => P2_GLOBAL_QNUM
+  const isExactGlobal25 =
+    sortedUnique.length === 25 &&
+    sortedUnique.every((val, idx) => val === idx + 7);
+
+  if (isExactGlobal25) {
+    return 'P2_GLOBAL_QNUM';
+  }
+
+  // Canonical ORI format q007.mp3..q031.mp3
+  const isCanonicalOriP2 =
+    p2Files.length === 25 &&
+    p2Files.every(f => /^q0*([7-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/i.test((f.name.split('/').pop() || f.name).toLowerCase()));
+
+  if (isCanonicalOriP2) {
+    return 'P2_GLOBAL_QNUM';
+  }
+
+  // Fallback for 25 files in 7..31 without duplicates
+  if (
+    p2Files.length === 25 &&
+    sortedUnique.length === 25 &&
+    sortedUnique[0] === 7 &&
+    sortedUnique[24] === 31
+  ) {
+    return 'P2_GLOBAL_QNUM';
+  }
+
+  // Fallback for 25 files in 1..25 without duplicates
+  if (
+    p2Files.length === 25 &&
+    sortedUnique.length === 25 &&
+    sortedUnique[0] === 1 &&
+    sortedUnique[24] === 25
+  ) {
+    return 'P2_LOCAL_INDEX';
+  }
+
+  // Subsets where all suffixes are strictly within 7..31
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 7 && s <= 31)) {
+    return 'P2_GLOBAL_QNUM';
+  }
+
+  // Subsets where all suffixes are strictly within 1..25
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 1 && s <= 25) && !sortedUnique.some(s => s >= 26)) {
+    return 'P2_LOCAL_INDEX';
+  }
+
+  return 'P2_NUMBERING_AMBIGUOUS';
+}
+
+// --- B. PURE BATCH DETECTOR FOR PART 3 ---
+export function detectP3NumberingConvention(p3Files: File[]): P3NumberingConvention {
+  if (!p3Files || p3Files.length === 0) return 'P3_NONE';
+
+  const allRanges = p3Files.map(f => parseGroupAudioFilename(f.name, 'p3_audio'));
+  const areAllRanges = allRanges.every(r => r.matchType === 'range' && r.isValidRange);
+
+  if (areAllRanges) {
+    return 'P3_RANGE';
+  }
+
+  const suffixes = p3Files
+    .map(getLastNumericToken)
+    .filter((s): s is number => s !== null);
+
+  const sortedUnique = Array.from(new Set(suffixes)).sort((a, b) => a - b);
+
+  if (sortedUnique.length === 13 && sortedUnique.every((val, idx) => val === idx + 1)) {
+    return 'P3_LOCAL_INDEX';
+  }
+
+  if (sortedUnique.length === 13 && sortedUnique.every((val, idx) => val === 32 + idx * 3)) {
+    return 'P3_GLOBAL_STARTQ';
+  }
+
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 1 && s <= 13)) {
+    return 'P3_LOCAL_INDEX';
+  }
+
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 32 && s <= 68 && (s - 32) % 3 === 0)) {
+    return 'P3_GLOBAL_STARTQ';
+  }
+
+  return 'P3_NUMBERING_AMBIGUOUS';
+}
+
+// --- C. PURE BATCH DETECTOR FOR PART 4 ---
+export function detectP4NumberingConvention(p4Files: File[]): P4NumberingConvention {
+  if (!p4Files || p4Files.length === 0) return 'P4_NONE';
+
+  const allRanges = p4Files.map(f => parseGroupAudioFilename(f.name, 'p4_audio'));
+  const areAllRanges = allRanges.every(r => r.matchType === 'range' && r.isValidRange);
+
+  if (areAllRanges) {
+    return 'P4_RANGE';
+  }
+
+  const suffixes = p4Files
+    .map(getLastNumericToken)
+    .filter((s): s is number => s !== null);
+
+  const sortedUnique = Array.from(new Set(suffixes)).sort((a, b) => a - b);
+
+  if (sortedUnique.length === 10 && sortedUnique.every((val, idx) => val === idx + 1)) {
+    return 'P4_LOCAL_INDEX';
+  }
+
+  if (sortedUnique.length === 10 && sortedUnique.every((val, idx) => val === 71 + idx * 3)) {
+    return 'P4_GLOBAL_STARTQ';
+  }
+
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 1 && s <= 10)) {
+    return 'P4_LOCAL_INDEX';
+  }
+
+  if (sortedUnique.length > 0 && sortedUnique.every(s => s >= 71 && s <= 98 && (s - 71) % 3 === 0)) {
+    return 'P4_GLOBAL_STARTQ';
+  }
+
+  return 'P4_NUMBERING_AMBIGUOUS';
+}
+
+// --- AUTHORITATIVE MEDIA MATCHING FUNCTION ---
 export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaList {
   const mediaEntries: OriPackageMediaEntry[] = [];
   
@@ -146,99 +297,10 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
     }
   });
 
-  // Helper to extract last numeric token from file basename
-  const getLastToken = (file: File): number | null => {
-    const basename = (file.name.split('/').pop() || file.name).toLowerCase();
-    const nameWithoutExt = basename.substring(0, basename.lastIndexOf('.'));
-    const tokens = nameWithoutExt.split(/[^0-9]+/).filter(Boolean).map(t => parseInt(t, 10));
-    return tokens.length > 0 ? tokens[tokens.length - 1] : null;
-  };
-
-  // --- A. BATCH CONVENTION DETECTOR FOR PART 2 ---
-  let p2Convention: P2NumberingConvention = 'P2_NONE';
-  if (p2Files.length > 0) {
-    const p2Suffixes = p2Files.map(getLastToken).filter((s): s is number => s !== null);
-    const uniqueSuffixes = new Set(p2Suffixes);
-
-    if (p2Suffixes.length > 0 && uniqueSuffixes.size === p2Suffixes.length) {
-      const minS = Math.min(...p2Suffixes);
-      const maxS = Math.max(...p2Suffixes);
-
-      if (minS >= 7 && maxS <= 31) {
-        p2Convention = 'P2_GLOBAL_QNUM';
-      } else if (minS >= 1 && maxS <= 25) {
-        p2Convention = 'P2_LOCAL_INDEX';
-      } else {
-        p2Convention = 'P2_NUMBERING_AMBIGUOUS';
-      }
-    } else if (p2Files.length > 0) {
-      // Check canonical ORI q007.mp3 filenames
-      const isCanonicalOriP2 = p2Files.every(f => /^q0*([7-9]|[12][0-9]|3[01])\.(mp3|wav|ogg|m4a)$/i.test((f.name.split('/').pop() || f.name).toLowerCase()));
-      if (isCanonicalOriP2) {
-        p2Convention = 'P2_GLOBAL_QNUM';
-      } else {
-        p2Convention = 'P2_NUMBERING_AMBIGUOUS';
-      }
-    }
-  }
-
-  // --- B. BATCH CONVENTION DETECTOR FOR PART 3 ---
-  let p3Convention: P3NumberingConvention = 'P3_NONE';
-  if (p3Files.length > 0) {
-    const allRanges = p3Files.map(f => parseGroupAudioFilename(f.name, 'p3_audio'));
-    const areAllRanges = allRanges.every(r => r.matchType === 'range' && r.isValidRange);
-
-    if (areAllRanges) {
-      p3Convention = 'P3_RANGE';
-    } else {
-      const p3Suffixes = p3Files.map(getLastToken).filter((s): s is number => s !== null);
-      const uniqueSuffixes = new Set(p3Suffixes);
-
-      if (p3Suffixes.length > 0 && uniqueSuffixes.size === p3Suffixes.length) {
-        const minS = Math.min(...p3Suffixes);
-        const maxS = Math.max(...p3Suffixes);
-
-        if (minS >= 1 && maxS <= 13) {
-          p3Convention = 'P3_LOCAL_INDEX';
-        } else if (minS >= 32 && maxS <= 68 && p3Suffixes.every(s => (s - 32) % 3 === 0)) {
-          p3Convention = 'P3_GLOBAL_STARTQ';
-        } else {
-          p3Convention = 'P3_NUMBERING_AMBIGUOUS';
-        }
-      } else {
-        p3Convention = 'P3_NUMBERING_AMBIGUOUS';
-      }
-    }
-  }
-
-  // --- C. BATCH CONVENTION DETECTOR FOR PART 4 ---
-  let p4Convention: P4NumberingConvention = 'P4_NONE';
-  if (p4Files.length > 0) {
-    const allRanges = p4Files.map(f => parseGroupAudioFilename(f.name, 'p4_audio'));
-    const areAllRanges = allRanges.every(r => r.matchType === 'range' && r.isValidRange);
-
-    if (areAllRanges) {
-      p4Convention = 'P4_RANGE';
-    } else {
-      const p4Suffixes = p4Files.map(getLastToken).filter((s): s is number => s !== null);
-      const uniqueSuffixes = new Set(p4Suffixes);
-
-      if (p4Suffixes.length > 0 && uniqueSuffixes.size === p4Suffixes.length) {
-        const minS = Math.min(...p4Suffixes);
-        const maxS = Math.max(...p4Suffixes);
-
-        if (minS >= 1 && maxS <= 10) {
-          p4Convention = 'P4_LOCAL_INDEX';
-        } else if (minS >= 71 && maxS <= 98 && p4Suffixes.every(s => (s - 71) % 3 === 0)) {
-          p4Convention = 'P4_GLOBAL_STARTQ';
-        } else {
-          p4Convention = 'P4_NUMBERING_AMBIGUOUS';
-        }
-      } else {
-        p4Convention = 'P4_NUMBERING_AMBIGUOUS';
-      }
-    }
-  }
+  // Detect Batch Conventions
+  const p2Convention = detectP2NumberingConvention(p2Files);
+  const p3Convention = detectP3NumberingConvention(p3Files);
+  const p4Convention = detectP4NumberingConvention(p4Files);
 
   const candidateList: Array<{
     file: File;
@@ -253,7 +315,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
 
   // MAPPING EXECUTION — PART 1 AUDIO
   p1Files.forEach(f => {
-    const token = getLastToken(f);
+    const token = getLastNumericToken(f);
     if (token !== null && token >= 1 && token <= 6) {
       candidateList.push({
         file: f,
@@ -269,7 +331,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
 
   // MAPPING EXECUTION — PART 2 AUDIO
   p2Files.forEach(f => {
-    const token = getLastToken(f);
+    const token = getLastNumericToken(f);
     if (p2Convention === 'P2_GLOBAL_QNUM') {
       if (token !== null && token >= 7 && token <= 31) {
         const qNum = token;
@@ -335,7 +397,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
         });
       }
     } else if (p3Convention === 'P3_LOCAL_INDEX') {
-      const token = getLastToken(f);
+      const token = getLastNumericToken(f);
       if (token !== null && token >= 1 && token <= 13) {
         const startQ = 32 + (token - 1) * 3;
         const endQ = startQ + 2;
@@ -350,7 +412,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
         });
       }
     } else if (p3Convention === 'P3_GLOBAL_STARTQ') {
-      const token = getLastToken(f);
+      const token = getLastNumericToken(f);
       if (token !== null && token >= 32 && token <= 68) {
         const startQ = token;
         const endQ = startQ + 2;
@@ -367,7 +429,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
       }
     } else {
       // Ambiguous Part 3
-      const token = getLastToken(f) || 32;
+      const token = getLastNumericToken(f) || 32;
       candidateList.push({
         file: f,
         targetType: 'group',
@@ -400,7 +462,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
         });
       }
     } else if (p4Convention === 'P4_LOCAL_INDEX') {
-      const token = getLastToken(f);
+      const token = getLastNumericToken(f);
       if (token !== null && token >= 1 && token <= 10) {
         const startQ = 71 + (token - 1) * 3;
         const endQ = startQ + 2;
@@ -415,7 +477,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
         });
       }
     } else if (p4Convention === 'P4_GLOBAL_STARTQ') {
-      const token = getLastToken(f);
+      const token = getLastNumericToken(f);
       if (token !== null && token >= 71 && token <= 98) {
         const startQ = token;
         const endQ = startQ + 2;
@@ -432,7 +494,7 @@ export function matchPackageMedia(sources: RawPackageSources): OriPackageMediaLi
       }
     } else {
       // Ambiguous Part 4
-      const token = getLastToken(f) || 71;
+      const token = getLastNumericToken(f) || 71;
       candidateList.push({
         file: f,
         targetType: 'group',
