@@ -45,6 +45,7 @@ import { ToeicTestOverviewPage } from './pages/ToeicTestOverviewPage';
 import { ToeicTestRunnerPage } from './pages/ToeicTestRunnerPage';
 import { ToeicLearningBankV2Page } from './pages/ToeicLearningBankV2Page';
 import { ToeicLearningPracticeV2Page } from './pages/ToeicLearningPracticeV2Page';
+import { AdminDesignSystemPage } from './pages/AdminDesignSystemPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const App: React.FC = () => {
@@ -131,9 +132,10 @@ export const App: React.FC = () => {
                 <Route path="/admin/content/test-bank/new" element={<AdminToeicTestEditPage />} />
                 <Route path="/admin/content/test-bank/:testId/edit" element={<AdminToeicTestEditPage />} />
 
-                {/* Admin Tools: TOEIC Audio Cutter & Import Studio */}
+                {/* Admin Tools: TOEIC Audio Cutter & Import Studio & Design System */}
                 <Route path="/admin/tools/toeic-audio-cutter" element={<AdminToeicAudioCutterPage />} />
                 <Route path="/admin/tools/toeic-import-studio" element={<ImportStudioPage />} />
+                <Route path="/admin/design-system" element={<AdminDesignSystemPage />} />
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

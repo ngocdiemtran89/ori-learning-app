@@ -1,47 +1,64 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 
-interface PageHeaderProps {
+export interface PageHeaderProps {
   title: string;
-  subtitle?: string;
-  backPath?: string;
-  backLabel?: string;
-  badge?: string;
+  subtitle?: string | React.ReactNode;
+  description?: string | React.ReactNode;
+  badge?: React.ReactNode;
+  actions?: React.ReactNode;
   action?: React.ReactNode;
+  icon?: React.ReactNode | React.ElementType | any;
+  breadcrumbs?: Array<{ label: string; href?: string }>;
 }
 
 export const PageHeader: React.FC<PageHeaderProps> = ({
   title,
   subtitle,
-  backPath,
-  backLabel = 'Quay lại',
+  description,
   badge,
+  actions,
   action,
+  breadcrumbs,
 }) => {
+  const displaySub = subtitle || description;
+  const displayActions = actions || action;
   return (
-    <div className="space-y-2 mb-6">
-      {backPath && (
-        <NavLink
-          to={backPath}
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-ori-600 transition-colors mb-1"
-        >
-          <ArrowLeft className="w-4 h-4" /> {backLabel}
-        </NavLink>
+    <div className="pb-6 mb-6 border-b border-slate-200/80 space-y-3">
+      {/* Breadcrumbs if present */}
+      {breadcrumbs && breadcrumbs.length > 0 && (
+        <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+          {breadcrumbs.map((crumb, idx) => (
+            <React.Fragment key={idx}>
+              {idx > 0 && <span className="text-slate-300">/</span>}
+              {crumb.href ? (
+                <a href={crumb.href} className="hover:text-slate-800 transition-colors">
+                  {crumb.label}
+                </a>
+              ) : (
+                <span className="text-slate-700 font-semibold">{crumb.label}</span>
+              )}
+            </React.Fragment>
+          ))}
+        </nav>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-        <div className="space-y-1">
-          {badge && (
-            <span className="inline-block px-2.5 py-0.5 rounded-full bg-ori-50 text-ori-600 text-[11px] font-bold uppercase tracking-wider">
-              {badge}
-            </span>
+      {/* Main Title & Action Row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1 max-w-3xl">
+          <div className="flex items-center gap-2.5">
+            <h1 className="type-page-title">{title}</h1>
+            {badge}
+          </div>
+          {displaySub && (
+            <div className="type-body text-slate-600 max-w-2xl">{displaySub}</div>
           )}
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">{title}</h1>
-          {subtitle && <p className="text-xs sm:text-sm text-slate-500">{subtitle}</p>}
         </div>
 
-        {action && <div className="shrink-0">{action}</div>}
+        {displayActions && (
+          <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+            {displayActions}
+          </div>
+        )}
       </div>
     </div>
   );

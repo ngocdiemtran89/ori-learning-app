@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Check, AlertCircle, Bot } from 'lucide-react';
+import { PageHeader, Card, CardHeader, SectionHeader, Button, Badge } from '../components/ui';
 import { ToeicClassifierSourceStep } from '../components/admin/classifier/ToeicClassifierSourceStep';
 import { ToeicClassifierSummary } from '../components/admin/classifier/ToeicClassifierSummary';
 import { ToeicClassifierPartReview } from '../components/admin/classifier/ToeicClassifierPartReview';
@@ -18,7 +19,7 @@ export const AdminToeicClassifierPage: React.FC = () => {
 
   // Metadata state for the test
   const [metadata, setMetadata] = useState({
-    title: 'Đề thi mới (Phân loại tự động)',
+    title: 'ORI 2026 - Test 1 (Phân loại tự động)',
     slug: 'de-thi-tu-dong-' + Date.now(),
     test_code: '',
     description: '',
@@ -56,28 +57,31 @@ export const AdminToeicClassifierPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
-        <NavLink
-          to="/admin/content/test-bank"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-ori-600 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" /> Quay lại Ngân Hàng Đề
-        </NavLink>
-      </div>
-
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <h1 className="text-xl font-extrabold text-slate-900">Phân Loại Đề TOEIC Tự Động</h1>
-        <p className="text-xs font-medium text-slate-500">
-          Chức năng này sẽ tự động phân tích cấu trúc đề thi (Part 1-7), phân nhóm câu hỏi và ghép đáp án. Kết quả sẽ được nhập dưới dạng <strong>BẢN NHÁP</strong>.
-        </p>
-      </div>
+      <PageHeader
+        title="Phân Loại Đề TOEIC Tự Động"
+        description="Tự động phân tích cấu trúc đề thi (Part 1–7), nhóm câu hỏi và ghép đáp án. Kết quả được lưu dưới dạng BẢN NHÁP DRAFT."
+        breadcrumbs={[
+          { label: 'Ngân hàng Đề thi', href: '/admin/content/test-bank' },
+          { label: 'Phân loại tự động' },
+        ]}
+        badge={<Badge variant="purple" icon={<Bot className="w-3.5 h-3.5" />}>AUTO CLASSIFIER</Badge>}
+        actions={
+          <NavLink to="/admin/content/test-bank">
+            <Button variant="outline" leftIcon={<ArrowLeft className="w-4 h-4" />}>
+              Quay lại
+            </Button>
+          </NavLink>
+        }
+      />
 
       {!draft ? (
         <ToeicClassifierSourceStep onSourceExtracted={handleSourceExtracted} />
       ) : (
         <div className="space-y-6">
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <h2 className="text-sm font-extrabold text-slate-900">Thông tin chung (Metadata)</h2>
+          <Card>
+            <CardHeader>
+              <SectionHeader title="Thông tin chung (Metadata)" subtitle="Tên đề thi hiển thị và mã định danh URL" />
+            </CardHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">Tên đề thi *</label>
@@ -98,7 +102,7 @@ export const AdminToeicClassifierPage: React.FC = () => {
                 />
               </div>
             </div>
-          </div>
+          </Card>
 
           <ToeicClassifierSummary draft={draft} />
           

@@ -37,6 +37,8 @@ import { ExportTab } from './ExportTab';
 import { createDefaultVisualAssetRegistry, ToeicVisualAssetRegistry } from '../../../lib/toeicPackage/visualAssetTypes';
 import { extractPart1ImagesFromPdf } from '../../../lib/toeicPackage/part1ImageExtractor';
 
+
+
 export const ImportStudioPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<number>(1);
   const [draftId] = useState<string>('ori-toeic-test-1');

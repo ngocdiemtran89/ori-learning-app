@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Search, Edit3, AlertCircle, CheckCircle2, Filter, Image as ImageIcon, Crop, Eye } from 'lucide-react';
+import { Table, Search, Edit3, AlertCircle, CheckCircle2, Filter, Image as ImageIcon, Crop, Eye, Mic, Globe } from 'lucide-react';
 import { StagingQuestion, StagingGroup } from '../types';
 import { ToeicVisualAssetRegistry } from '../../../lib/toeicPackage/visualAssetTypes';
 import { QuestionEditorModal } from './QuestionEditorModal';
@@ -224,12 +224,14 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                           })()
                         ) : q.part === 2 ? (
                           (q as any).transcript ? (
-                            <span className="text-slate-800 font-medium">
-                              🎙 {(q as any).transcript}
+                            <span className="text-slate-800 font-medium flex items-center gap-1.5">
+                              <Mic className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span>{(q as any).transcript}</span>
                             </span>
                           ) : (
-                            <span className="text-slate-500 italic flex items-center gap-1">
-                              🎙 Spoken Prompt (Audio-only)
+                            <span className="text-slate-500 italic flex items-center gap-1 text-xs">
+                              <Mic className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span>Spoken Prompt (Audio-only)</span>
                             </span>
                           )
                         ) : (
@@ -237,8 +239,9 @@ export const StagingTableTab: React.FC<StagingTableTabProps> = ({
                         )}
                       </div>
                       {q.questionVi && (
-                        <div className="text-emerald-700 font-normal text-[11px] line-clamp-1">
-                          🇻🇳 {q.questionVi}
+                        <div className="text-slate-500 font-normal text-xs italic flex items-center gap-1 line-clamp-1">
+                          <Globe className="w-3 h-3 text-emerald-600 shrink-0" />
+                          <span>{q.questionVi}</span>
                         </div>
                       )}
                     </td>

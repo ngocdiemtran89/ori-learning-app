@@ -1,38 +1,71 @@
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
+import { Card } from './Card';
 
-interface StatCardProps {
-  title: string;
+export interface StatCardProps {
+  label?: string;
+  title?: string;
   value: string | number;
+  target?: string | number;
+  unit?: string;
   subtext?: string;
-  icon: LucideIcon;
-  variant?: 'sky' | 'emerald' | 'purple' | 'amber';
+  status?: 'complete' | 'warning' | 'error' | 'neutral' | string;
+  statusLabel?: string;
+  variant?: string;
+  icon?: React.ReactNode | React.ComponentType<any> | any;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
+  label,
   title,
   value,
+  target,
+  unit,
   subtext,
-  icon: Icon,
-  variant = 'sky',
+  status = 'neutral',
+  statusLabel,
+  icon,
 }) => {
-  const variantStyles = {
-    sky: 'bg-sky-50 text-ori-600 border-sky-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    purple: 'bg-purple-50 text-purple-600 border-purple-100',
-    amber: 'bg-amber-50 text-amber-600 border-amber-100',
+  const displayLabel = label || title || '';
+  const displayUnit = unit || subtext || '';
+  const statusColors = {
+    complete: 'bg-emerald-500 text-white',
+    warning: 'bg-amber-500 text-white',
+    error: 'bg-rose-500 text-white',
+    neutral: 'bg-slate-300 text-slate-700',
   };
 
+  const IconComp = typeof icon === 'function' ? (icon as React.ElementType) : null;
+
   return (
-    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${variantStyles[variant]}`}>
-        <Icon className="w-6 h-6" />
+    <Card padding="sm" className="relative flex flex-col justify-between space-y-3 min-h-[100px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="type-table-header text-slate-500 font-bold">{displayLabel}</span>
+        {icon && (
+          <span className="text-slate-400">
+            {IconComp ? <IconComp className="w-5 h-5" /> : (icon as React.ReactNode)}
+          </span>
+        )}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-semibold text-slate-500 truncate">{title}</div>
-        <div className="text-lg font-extrabold text-slate-900 tracking-tight mt-0.5">{value}</div>
-        {subtext && <div className="text-[11px] text-slate-400 font-medium mt-0.5">{subtext}</div>}
+
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-1.5 tabular-nums">
+          <span className="text-2xl font-extrabold text-slate-900 leading-none">{value}</span>
+          {target !== undefined && (
+            <span className="text-xs font-semibold text-slate-400">/ {target}</span>
+          )}
+          {displayUnit && <span className="text-xs font-medium text-slate-500">{displayUnit}</span>}
+        </div>
+
+        {statusLabel && (
+          <span
+            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+              statusColors[status as keyof typeof statusColors] || statusColors.neutral
+            }`}
+          >
+            {statusLabel}
+          </span>
+        )}
       </div>
-    </div>
+    </Card>
   );
 };

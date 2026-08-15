@@ -1,27 +1,37 @@
 import React from 'react';
-import { LucideIcon, FolderOpen } from 'lucide-react';
+import { Inbox } from 'lucide-react';
 
-interface EmptyStateProps {
+export interface EmptyStateProps {
   title: string;
-  description: string;
-  icon?: LucideIcon;
+  description?: string;
+  icon?: React.ReactNode | React.ComponentType<any> | any;
   action?: React.ReactNode;
+  className?: string;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
   title,
   description,
-  icon: Icon = FolderOpen,
+  icon = <Inbox className="w-8 h-8 text-slate-400" />,
   action,
+  className = '',
 }) => {
+  const IconComp = typeof icon === 'function' ? (icon as React.ElementType) : null;
+
   return (
-    <div className="min-h-[220px] flex flex-col items-center justify-center p-8 bg-white rounded-2xl border border-slate-200 shadow-sm text-center">
-      <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-4">
-        <Icon className="w-6 h-6" />
+    <div
+      className={`p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50 flex flex-col items-center justify-center space-y-4 ${className}`.trim()}
+    >
+      <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center shadow-2xs">
+        {IconComp ? <IconComp className="w-8 h-8 text-slate-400" /> : (icon as React.ReactNode)}
       </div>
-      <h3 className="text-base font-extrabold text-slate-900">{title}</h3>
-      <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4 leading-relaxed">{description}</p>
-      {action && <div>{action}</div>}
+
+      <div className="space-y-1 max-w-sm mx-auto">
+        <h3 className="type-component-heading text-slate-800">{title}</h3>
+        {description && <p className="type-body text-slate-500">{description}</p>}
+      </div>
+
+      {action && <div className="pt-2">{action}</div>}
     </div>
   );
 };
